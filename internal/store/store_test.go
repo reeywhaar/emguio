@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"emguio/internal/seal"
 )
 
 // The suite makes users by the dozen and is not testing bcrypt.
@@ -19,11 +22,21 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// sealer is the same key every time, so a test that reopens a directory can read it back.
+func sealer(t *testing.T) *seal.Sealer {
+	t.Helper()
+	s, err := seal.New(bytes.Repeat([]byte{7}, seal.KeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
 // A temporary file, not :memory:. WAL behaves differently in memory and WAL is what is being
 // relied on, including the two pools.
 func openStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(t.TempDir())
+	st, err := Open(t.TempDir(), sealer(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +55,7 @@ func TestOpenAppliesTheSchema(t *testing.T) {
 		t.Fatal("nothing was applied")
 	}
 
-	for _, table := range []string{"users", "invites", "sessions"} {
+	for _, table := range []string{"users", "invites", "sessions", "email_configs"} {
 		var n int
 		if err := st.reader.QueryRow(
 			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?", table).Scan(&n); err != nil {
@@ -79,13 +92,13 @@ func TestBothPoolsHaveTheirPragmas(t *testing.T) {
 // Running twice must be a no-op, or a restart re-applies the schema and fails.
 func TestMigrationsAreIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	st, err := Open(dir)
+	st, err := Open(dir, sealer(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	st.Close()
 
-	st, err = Open(dir)
+	st, err = Open(dir, sealer(t))
 	if err != nil {
 		t.Fatalf("second open: %v", err)
 	}
@@ -96,7 +109,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 // statements are still correct.
 func TestAVersionAheadOfTheBuildRefusesToOpen(t *testing.T) {
 	dir := t.TempDir()
-	st, err := Open(dir)
+	st, err := Open(dir, sealer(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +118,7 @@ func TestAVersionAheadOfTheBuildRefusesToOpen(t *testing.T) {
 	}
 	st.Close()
 
-	if _, err := Open(dir); err == nil {
+	if _, err := Open(dir, sealer(t)); err == nil {
 		t.Fatal("opened a database written by a newer build")
 	}
 }
@@ -123,7 +136,7 @@ func TestTheClockIsInjectable(t *testing.T) {
 // written into the container layer and lost on the next replace.
 func TestAMissingDataDirectoryRefusesToStart(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "not-mounted")
-	_, err := Open(missing)
+	_, err := Open(missing, sealer(t))
 	if err == nil {
 		t.Fatal("started without the data directory, and would have lost the database")
 	}
@@ -140,7 +153,7 @@ func TestOpenRefusesAFileWhereTheDirectoryShouldBe(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(path); err == nil {
+	if _, err := Open(path, sealer(t)); err == nil {
 		t.Fatal("accepted a file as the data directory")
 	}
 }
@@ -149,7 +162,7 @@ func TestOpenRefusesAFileWhereTheDirectoryShouldBe(t *testing.T) {
 // files that have to be copied together.
 func TestCloseEmptiesTheWriteAheadLog(t *testing.T) {
 	dir := t.TempDir()
-	st, err := Open(dir)
+	st, err := Open(dir, sealer(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +187,7 @@ func TestCloseEmptiesTheWriteAheadLog(t *testing.T) {
 	}
 
 	// And what was written is in the file that remains.
-	reopened, err := Open(dir)
+	reopened, err := Open(dir, sealer(t))
 	if err != nil {
 		t.Fatal(err)
 	}

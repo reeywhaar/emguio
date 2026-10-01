@@ -14,6 +14,7 @@ import (
 
 	"emguio/internal/app"
 	"emguio/internal/config"
+	"emguio/internal/connect"
 	"emguio/internal/session"
 	"emguio/internal/store"
 )
@@ -33,8 +34,13 @@ type Server struct {
 	spa      *SPA
 	mux      *http.ServeMux
 
+	// connector is the only way out to a mail server. A field so a test can trust its own
+	// certificates and reach loopback.
+	connector *connect.Connector
+
 	loginAll  *limiter
 	loginUser *limiter
+	tests     *limiter
 
 	// writeDeadline is how long a request that changes something may run. A field so a test
 	// can make it short.
@@ -58,8 +64,11 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA) *Serve
 		spa:      spa,
 		mux:      http.NewServeMux(),
 
+		connector: connect.New(cfg.AllowNetworks),
+
 		loginAll:  newLimiter(30, 2*time.Second),
 		loginUser: newLimiter(5, 20*time.Second),
+		tests:     newLimiter(10, 6*time.Second),
 
 		writeDeadline: WriteDeadline,
 	}
@@ -73,6 +82,13 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA) *Serve
 	s.mux.HandleFunc("POST /api/auth/invites/{token}/accept", s.acceptInvite)
 	s.mux.Handle("POST /api/auth/logout", s.requireSession(s.logout))
 	s.mux.Handle("GET /api/auth/me", s.requireSession(s.me))
+
+	s.mux.Handle("GET /api/email-configs", s.requireSession(s.listEmailConfigs))
+	s.mux.Handle("POST /api/email-configs", s.requireSession(s.createEmailConfig))
+	s.mux.Handle("POST /api/email-configs/test", s.requireSession(s.testEmailConfig))
+	s.mux.Handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
+	s.mux.Handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
+	s.mux.Handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
 
 	// Catch-all, so a mistyped API path never falls through to the SPA and reaches a fetch as
 	// an HTML document it cannot parse.

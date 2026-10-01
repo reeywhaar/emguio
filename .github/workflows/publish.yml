@@ -126,7 +126,8 @@ jobs:
           docker run --rm "$REF" version
           # A volume, because the server never creates /data: without one it exits at start.
           docker run -d --name emguio-smoke -p 8080:80 -v emguio-smoke:/data \
-            -e EMGUIO_PUBLIC_URL=http://localhost:8080 "$REF"
+            -e EMGUIO_PUBLIC_URL=http://localhost:8080 \
+            -e EMGUIO_SECRET_KEY="$(openssl rand -base64 32)" "$REF"
           # The container's own logs, however this ends: a failure without them is a guess.
           trap 'docker logs emguio-smoke; docker rm -f emguio-smoke >/dev/null' EXIT
           for i in $(seq 1 30); do
@@ -147,6 +148,11 @@ jobs:
             -d '{"username":"smoke","password":"a smoke-test password"}' \
             "http://localhost:8080/api/auth/invites/$token/accept"
           curl -fsS -b jar http://localhost:8080/ | grep -q 'id="root"'
+          # An email config saves and lists, which is the key and the sealing working together.
+          curl -fsS -b jar -H 'Content-Type: application/json' \
+            -d '{"name":"","email":"smoke@example.com","incoming":{"protocol":"imap","host":"imap.example.com","port":993,"tls":"implicit","username":"smoke","password":"a password"},"outgoing":null}' \
+            http://localhost:8080/api/email-configs | grep -q '"id":"ec_'
+          curl -fsS -b jar http://localhost:8080/api/email-configs | grep -q 'imap.example.com'
 
   # A job of its own rather than steps on `publish`, because a failing `test` *skips*
   # `publish` rather than failing it, and a step in a job that never starts cannot report

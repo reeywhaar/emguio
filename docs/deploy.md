@@ -12,6 +12,8 @@ ghcr.io/reeywhaar/emguio:latest
 | --- | --- | --- |
 | `EMGUIO_PUBLIC_URL` | *required* | The address you open in a browser |
 | `EMGUIO_DATA_DIR` | `/data` | Where `emguio.db` lives. Fixed in the image; a variable for local runs |
+| `EMGUIO_SECRET_KEY` | *required* | 32 random bytes, base64. Seals the passwords of email configs |
+| `EMGUIO_ALLOW_NETWORKS` | — | Private addresses or ranges emguio may connect to, comma-separated |
 | `EMGUIO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
 **There is no config file.** What an operator adjusts once the process is running belongs in
@@ -40,11 +42,33 @@ say.
 A trailing slash is trimmed. A path is refused — emguio serves from the root, and a prefix would
 produce links that half work.
 
+## `EMGUIO_SECRET_KEY`
+
+Required. It seals the password of every email config, and emguio refuses to start without it:
+
+```sh
+openssl rand -base64 32
+```
+
+**Keep it apart from the data directory and its backups**, which is the point of it: a copied
+database is not a list of mail passwords. **And keep it**: a new key makes every saved password
+unreadable, and each user has to enter theirs again. See [email-configs.md](email-configs.md).
+
+## `EMGUIO_ALLOW_NETWORKS`
+
+emguio connects only to public addresses, because every host it dials was typed by a user. A
+mail server on the same network as emguio is named here, as addresses or CIDR ranges:
+
+```sh
+EMGUIO_ALLOW_NETWORKS=10.0.0.0/8,192.168.1.20
+```
+
 ## The data directory
 
 ```sh
 docker run -d --name emguio \
   -e EMGUIO_PUBLIC_URL=https://mail.example.com \
+  -e EMGUIO_SECRET_KEY=… \
   -v emguio-data:/data \
   -p 8080:80 \
   ghcr.io/reeywhaar/emguio:latest
@@ -97,7 +121,8 @@ Multi-stage, and the stages do not depend on each other.
 - **Node stage** builds the bundle. It arrives with `web/`.
 - **`COPY` path by path**, not a `.dockerignore`. An allowlist cannot accidentally admit
   `web/node_modules` or a local `data/`.
-- **Alpine runtime with `ca-certificates`** — mail servers are reached over TLS.
+- **Alpine runtime with `ca-certificates`** — mail servers are reached over TLS, and their
+  certificates are checked against the system's roots.
 - **`HEALTHCHECK` runs `emguio healthcheck`**, a second process asking the first, so the image
   needs no HTTP client and a wedged server fails it.
 
@@ -142,7 +167,8 @@ secrets, and stays quiet when they are not.
 ```sh
 cd web && npm ci && npm run build && cd ..
 mkdir -p data
-EMGUIO_PUBLIC_URL=http://localhost EMGUIO_DATA_DIR=data go run . serve
+EMGUIO_PUBLIC_URL=http://localhost EMGUIO_DATA_DIR=data \
+  EMGUIO_SECRET_KEY=<the same key every run> go run . serve
 ```
 
 `npm run dev` in `web/` serves the frontend with reloading and sends `/api` to the Go server on

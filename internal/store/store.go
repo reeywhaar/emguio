@@ -16,6 +16,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"emguio/internal/seal"
 	"emguio/internal/store/migrations"
 )
 
@@ -37,6 +38,10 @@ type Store struct {
 
 	// now is injectable so expiry is driven rather than slept through.
 	now func() time.Time
+
+	// sealer seals the passwords of email configs. They never leave this package unsealed except
+	// to be dialed with.
+	sealer *seal.Sealer
 }
 
 const readers = 4
@@ -44,7 +49,7 @@ const readers = 4
 // Open opens the database in dir, applies migrations, and verifies its pragmas.
 //
 // dir must already exist and is never created — see docs/deploy.md.
-func Open(dir string) (*Store, error) {
+func Open(dir string, sealer *seal.Sealer) (*Store, error) {
 	info, err := os.Stat(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -67,7 +72,7 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 
-	s := &Store{writer: writer, reader: reader, now: time.Now}
+	s := &Store{writer: writer, reader: reader, now: time.Now, sealer: sealer}
 	if err := migrations.Run(context.Background(), writer); err != nil {
 		s.Close()
 		return nil, err

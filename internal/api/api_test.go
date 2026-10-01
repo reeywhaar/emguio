@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"testing/fstest"
 
 	"emguio/internal/config"
+	"emguio/internal/seal"
 	"emguio/internal/store"
 )
 
@@ -27,7 +29,11 @@ func newServerStore(t *testing.T, files fstest.MapFS) (*Server, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(t.TempDir())
+	sealer, err := seal.New(bytes.Repeat([]byte{7}, seal.KeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(t.TempDir(), sealer)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,4 +5,5 @@
  */
 export const qk = {
   me: ["me"] as const,
+  emailConfigs: ["email-configs"] as const,
 };

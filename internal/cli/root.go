@@ -13,6 +13,7 @@ import (
 
 	"emguio/internal/app"
 	"emguio/internal/config"
+	"emguio/internal/seal"
 	"emguio/internal/store"
 )
 
@@ -51,7 +52,11 @@ func setup() (*config.Config, *store.Store, *slog.Logger, error) {
 	level.Set(cfg.LogLevel)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
-	st, err := store.Open(cfg.DataDir)
+	sealer, err := seal.New(cfg.SecretKey)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	st, err := store.Open(cfg.DataDir, sealer)
 	if err != nil {
 		return nil, nil, nil, err
 	}

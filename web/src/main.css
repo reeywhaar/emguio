@@ -2,7 +2,10 @@
 
 /*
  * Semantic tokens, not colors. Components name what a color is for; this is the only file
- * that says what those are. The values are taskio's, so the two read as one family.
+ * that says what those are.
+ *
+ * Plain elements: a thing is told apart from what it sits on by a hairline and a step in
+ * ground, never by a shadow.
  *
  * brand is what the application does; accent is what it refuses. brand-ink is what can be read
  * on top of the brand, and flips with the theme because the brand does.
@@ -11,23 +14,21 @@
  * className in the application, half of which somebody eventually forgets.
  */
 @theme {
-  /* What a thing is painted with — a card, a field, a dialog — and the two warm grounds behind
-     it: the page, and the rail. Warm behind cool is what makes a card read as paper on a desk. */
-  --color-bg: #edeff3;
-  --color-page: #ebeae9;
-  --color-surface: #eae5df;
-  --color-fg: #2f3540;
-  --color-muted: #616a7a;
-  --color-faint: #747d8c;
-  --color-line: #d3d8e0;
-  --color-fill: #dfe3ea;
+  /* What a field or a card is painted with, the page behind it, and the rail beside it. */
+  --color-bg: #ffffff;
+  --color-page: #fafafa;
+  --color-surface: #f4f4f5;
+  --color-fg: #1f2329;
+  --color-muted: #5f6672;
+  --color-faint: #80868f;
+  --color-line: #e3e5e8;
+  --color-fill: #f0f1f3;
   /* A darker patch of whatever it is on, so a current row takes its hue from the ground. */
-  --color-shade: rgb(0 0 0 / 0.06);
-  /* The rail is in front of the page, and the shadow it casts says so without a rule. */
-  --shadow-rail: 4px 0 12px -6px rgb(0 0 0 / 0.18);
+  --color-shade: rgb(0 0 0 / 0.05);
   --color-brand: #ef6500;
   --color-brand-ink: #ffffff;
   --color-accent: #b91c1c;
+  --color-ok: #15803d;
   --color-warn: #b45309;
 }
 
@@ -36,103 +37,20 @@
    everybody. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #2a2d33;
-    --color-page: #2a2724;
-    --color-surface: #232120;
+    --color-bg: #202226;
+    --color-page: #17181b;
+    --color-surface: #1c1d21;
     --color-fg: #e7e9ee;
     --color-muted: #a2a8b4;
-    --color-faint: #848b98;
-    --color-line: #34373e;
-    --color-fill: #33373f;
-    /* A dark ground has nothing left to darken, so the current row comes forward instead. */
-    --color-shade: rgb(255 255 255 / 0.07);
-    --shadow-rail: 4px 0 14px -6px rgb(0 0 0 / 0.7);
+    --color-faint: #7d8490;
+    --color-line: #31343a;
+    --color-fill: #2a2c31;
+    --color-shade: rgb(255 255 255 / 0.06);
     --color-brand: #818cf8;
     --color-brand-ink: #111113;
     --color-accent: #f87171;
+    --color-ok: #4ade80;
     --color-warn: #f59e0b;
-  }
-}
-
-/*
- * The two states a surface can be in, and the whole of the style.
- *
- * raised is lit from the top left and casts to the bottom right; sunken is the same light on the
- * inside. Nothing has a border: the edge of a thing is where the light stops.
- *
- * Three layers a side, because a single box-shadow has an even falloff, and an even falloff
- * looks like a sticker with a grey smudge behind it.
- */
-.raised {
-  /* Running against the light rather than with it, which is what separates a raised surface
-     from the ground it matches. An image, so the color the element chose stays underneath. */
-  background-image: var(--sheen);
-  box-shadow:
-    -1px -1px 1.5px color-mix(in srgb, var(--lit) 55%, transparent),
-    -2px -2px 4px color-mix(in srgb, var(--lit) 32%, transparent),
-    -4px -4px 9px color-mix(in srgb, var(--lit) 16%, transparent),
-    1px 1px 1.5px color-mix(in srgb, var(--cast) 55%, transparent),
-    2px 3px 5px color-mix(in srgb, var(--cast) 32%, transparent),
-    4px 6px 11px color-mix(in srgb, var(--cast) 16%, transparent);
-}
-
-.sunken {
-  /* The same sheen upside down, because the surface is. */
-  background-image: var(--sheen-in);
-  box-shadow: var(--well);
-}
-
-/* A field says it has focus by lighting the mouth of its own well. The pale lip goes while the
-   ring is there, or it shows through the ring along two sides. */
-.sunken:focus,
-.sunken:focus-within {
-  box-shadow:
-    inset 0 0 0 1.5px color-mix(in srgb, var(--color-brand) 65%, transparent),
-    var(--well-depth);
-}
-
-/* Pressed is raised turned inside out, which is what a finger on a real button does. */
-.raised:active:not(:disabled):not([data-still]),
-.raised[aria-pressed="true"] {
-  box-shadow:
-    inset -1px -1px 1.5px color-mix(in srgb, var(--lit) 50%, transparent),
-    inset -2px -2px 3px color-mix(in srgb, var(--lit) 28%, transparent),
-    inset 1px 1px 1.5px color-mix(in srgb, var(--cast) 50%, transparent),
-    inset 2px 3px 6px color-mix(in srgb, var(--cast) 28%, transparent);
-}
-
-/* The brand, worn plainly, with the ink named for the job. No background-image, so a raised
-   thing keeps its sheen. */
-.wash {
-  background-color: var(--color-brand);
-  color: var(--color-brand-ink);
-}
-
-:root {
-  --lit: rgb(255 255 255 / 0.7);
-  --cast: rgb(158 172 193 / 0.36);
-  --well-lit: #fff8;
-  --well-shade: #0001;
-  --sheen-stops: rgb(255 255 255 / 0.2), rgb(0 0 0 / 0.008);
-  --sheen: linear-gradient(0deg, var(--sheen-stops));
-  --sheen-in: linear-gradient(180deg, var(--sheen-stops));
-  /* In two parts, because focus draws the depth again under a ring of its own: a hard pale line
-     along the bottom and right, and a soft shade tucked under the top and left. */
-  --well-depth:
-    inset 1px 1px 2px 0.5px var(--well-shade),
-    inset 1px 1px 1px var(--well-shade);
-  --well: inset -1px -1px 0 0 var(--well-lit), var(--well-depth);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* A dark ground has almost nothing to darken and nothing to bounce, so the highlight is
-       nearly gone and the shadow does the speaking. */
-    --lit: rgb(255 255 255 / 0.03);
-    --cast: rgb(0 0 0 / 0.38);
-    --well-lit: rgb(255 255 255 / 0.06);
-    --well-shade: rgb(0 0 0 / 0.45);
-    --sheen-stops: rgb(255 255 255 / 0.05), rgb(0 0 0 / 0.12);
   }
 }
 
@@ -146,6 +64,7 @@
 /* Without this a light page renders a dark-mode select, and the first paint flashes. */
 :root {
   color-scheme: light dark;
+  accent-color: var(--color-brand);
 }
 
 body {
@@ -159,6 +78,14 @@ input,
 select,
 textarea {
   font-size: 16px;
+}
+
+@media (min-width: 40rem) {
+  input,
+  select,
+  textarea {
+    font-size: 14px;
+  }
 }
 
 /* Something on its way: a band of lighter grey travelling across a darker one, which reads as
@@ -188,19 +115,6 @@ textarea {
     animation: none;
     background-image: none;
     background-color: var(--color-fill);
-  }
-}
-
-/* A corner that eases into the side, where the browser draws one. Not on a pill, which would
-   stop reading as a capsule. */
-@supports (corner-shape: squircle) {
-  *,
-  ::before,
-  ::after {
-    corner-shape: squircle;
-  }
-  .rounded-full {
-    corner-shape: round;
   }
 }
 

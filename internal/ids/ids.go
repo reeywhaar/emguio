@@ -21,9 +21,10 @@ const Alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
 // Prefixes.
 const (
-	User    = "u_"
-	Invite  = "i_"
-	Session = "s_"
+	User        = "u_"
+	Invite      = "i_"
+	Session     = "s_"
+	EmailConfig = "ec_"
 )
 
 const (

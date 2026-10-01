@@ -2,11 +2,15 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
+
+	"emguio/internal/seal"
 )
 
 // Environment variables read by this package.
@@ -23,6 +27,14 @@ const (
 
 	// LogLevelEnv sets the slog level: debug, info, warn or error.
 	LogLevelEnv = "EMGUIO_LOG_LEVEL"
+
+	// SecretKeyEnv is 32 random bytes, base64, that seal the passwords of email configs.
+	// Required, and never stored beside what it seals — see docs/email-configs.md.
+	SecretKeyEnv = "EMGUIO_SECRET_KEY"
+
+	// AllowNetworksEnv names private networks emguio may connect to anyway, for a mail server
+	// on the same LAN: addresses or CIDR ranges, separated by commas.
+	AllowNetworksEnv = "EMGUIO_ALLOW_NETWORKS"
 )
 
 // Defaults for everything that has one.
@@ -38,6 +50,11 @@ type Config struct {
 
 	// Secure is PublicURL being https, derived once rather than at each Set-Cookie.
 	Secure bool
+
+	SecretKey []byte
+
+	// AllowNetworks are dialed although they are private.
+	AllowNetworks []netip.Prefix
 }
 
 // Link builds an absolute URL into this instance.
@@ -69,6 +86,12 @@ func Load() (*Config, error) {
 	if dir := strings.TrimSpace(os.Getenv(DataDirEnv)); dir != "" {
 		cfg.DataDir = dir
 	}
+	if cfg.SecretKey, err = parseSecretKey(os.Getenv(SecretKeyEnv)); err != nil {
+		return nil, err
+	}
+	if cfg.AllowNetworks, err = parseNetworks(os.Getenv(AllowNetworksEnv)); err != nil {
+		return nil, err
+	}
 
 	// A startup error rather than a fall back to info: a level that quietly works is one
 	// nobody finds until the log lacks what they came for.
@@ -78,6 +101,45 @@ func Load() (*Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// parseSecretKey takes either base64 alphabet, padded or not, because `openssl rand -base64`
+// and a hand-copied value disagree about both.
+func parseSecretKey(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("%s is required: it seals the passwords of email configs. Generate one with `openssl rand -base64 32` and keep it apart from the database's backups", SecretKeyEnv)
+	}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if key, err := enc.DecodeString(raw); err == nil {
+			if len(key) != seal.KeySize {
+				return nil, fmt.Errorf("%s is %d bytes, and it has to be %d: generate one with `openssl rand -base64 32`", SecretKeyEnv, len(key), seal.KeySize)
+			}
+			return key, nil
+		}
+	}
+	return nil, fmt.Errorf("%s is not base64: generate one with `openssl rand -base64 32`", SecretKeyEnv)
+}
+
+// parseNetworks reads addresses and CIDR ranges. A bare address is a range of one.
+func parseNetworks(raw string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(part); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(part)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %q is not an address or a CIDR range", AllowNetworksEnv, part)
+		}
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out, nil
 }
 
 // parsePublicURL validates and normalizes.

@@ -20,6 +20,7 @@ type Migration struct {
 // all is the declared order, which is documentation; the sort below is what decides.
 var all = []Migration{
 	initialSchema,
+	emailConfigs,
 }
 
 // exec runs a statement block as one migration.
