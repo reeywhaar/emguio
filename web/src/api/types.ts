@@ -117,9 +117,10 @@ export type ReadMessage = Message & {
   /** Sanitized, and still a stranger's: shown only in a sandboxed frame. Empty for none. */
   html: string;
   /**
-   * How many images the HTML asks for from elsewhere. Each is a blank image until somebody asks,
-   * with the address it loads from in data-src.
+   * How many images from elsewhere are held back, which they are in Junk: each a blank image
+   * until somebody asks, with the address it loads from in data-src. Elsewhere they load at
+   * once, through the proxy, and this is 0.
    */
-  remote_images: number;
+  held_images: number;
   parts: Part[];
 };

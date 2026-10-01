@@ -42,10 +42,11 @@ type readJSON struct {
 	// HTML is sanitized, and empty for a message with none. It is still a stranger's, and the
 	// page shows it only in a sandboxed frame.
 	HTML string `json:"html"`
-	// RemoteImages is how many images the HTML asks for from elsewhere. Each is a blank image
-	// until somebody asks, with the proxy's address for it in data-src.
-	RemoteImages int        `json:"remote_images"`
-	Parts        []partJSON `json:"parts"`
+	// HeldImages is how many images from elsewhere are held back, in Junk: each a blank image
+	// until somebody asks, with the proxy's address for it in data-src. Elsewhere they load
+	// through the proxy, and this is 0.
+	HeldImages int        `json:"held_images"`
+	Parts      []partJSON `json:"parts"`
 }
 
 // messageAt is the message a request names, and its mailbox and email config. It writes the
@@ -87,6 +88,9 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 			return fmt.Sprintf("/api/email-configs/%s/mailboxes/%s/messages/%s/parts/%s", c.ID, mb.ID, id, at)
 		},
 		Proxy: s.proxyURL,
+		// Loading an image tells its sender the message was opened, and when; in Junk it also
+		// tells a spammer the address is read. See docs/reading.md.
+		Hold: mb.SpecialUse == store.UseJunk,
 	})
 
 	// Whatever the list showed, read from the first bytes at sync, the whole message says better.
@@ -99,13 +103,13 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 	m := &store.Message{Header: opened.Header, UIDValidity: uidValidity}
 	m.Preview = read.Preview
 	out := readJSON{
-		messageJSON:  messageOut(m),
-		Cc:           nonNil(m.Cc),
-		Mailbox:      mb.ID,
-		Text:         read.Text,
-		HTML:         read.HTML,
-		RemoteImages: read.Remote,
-		Parts:        []partJSON{},
+		messageJSON: messageOut(m),
+		Cc:          nonNil(m.Cc),
+		Mailbox:     mb.ID,
+		Text:        read.Text,
+		HTML:        read.HTML,
+		HeldImages:  read.Held,
+		Parts:       []partJSON{},
 	}
 	for _, p := range read.Parts {
 		out.Parts = append(out.Parts, partJSON{Section: p.Section, Name: p.Name, Type: p.Type, Size: p.Size, Listed: p.Listed})

@@ -71,9 +71,9 @@ type Read struct {
 	Preview string
 	// HTML is sanitized, and empty when the message has none.
 	HTML string
-	// Remote is how many images the HTML asks for from elsewhere.
-	Remote int
-	Parts  []Part
+	// Held is how many images from elsewhere are held back until somebody asks.
+	Held  int
+	Parts []Part
 }
 
 // Options say where the HTML's images come from.
@@ -81,8 +81,11 @@ type Options struct {
 	// PartURL is where the reading pane fetches the part at section, for an image the message
 	// carries.
 	PartURL func(section string) string
-	// Proxy is where it fetches a remote image through, once somebody asks for them.
+	// Proxy is where it fetches a remote image through.
 	Proxy func(remote string) string
+	// Hold keeps remote images back until somebody asks: a blank image in place of each, and
+	// the proxy's address for it in data-src. Without it they load at once, through the proxy.
+	Hold bool
 }
 
 // ErrUnreadable is a part enmime could make nothing of.
@@ -111,7 +114,7 @@ func Show(st Structure, opts Options) *Read {
 		}
 	}
 	if rich != "" {
-		out.HTML, out.Remote = rewrite(policy.Sanitize(rich), opts, cids)
+		out.HTML, out.Held = rewrite(policy.Sanitize(rich), opts, cids)
 	}
 	shown := map[string]bool{}
 	for cid, at := range cids {
@@ -209,19 +212,19 @@ var policy = func() *bluemonday.Policy {
 }()
 
 // rewrite points the sanitized HTML's images where the reading pane can fetch them: a carried
-// image at its part, and a remote one at a blank image, with the proxy's address for it in
-// data-src for the pane to swap in when somebody asks. It reports how many were remote.
+// image at its part, and a remote one at the proxy, or, held, at a blank image with the proxy's
+// address in data-src for the pane to swap in. It reports how many were held.
 func rewrite(in string, opts Options, cids map[string]string) (string, int) {
 	z := html.NewTokenizer(strings.NewReader(in))
 	var out strings.Builder
-	remote := 0
+	held := 0
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {
 			if !errors.Is(z.Err(), io.EOF) {
 				out.Write(z.Raw())
 			}
-			return out.String(), remote
+			return out.String(), held
 		}
 		raw := string(z.Raw())
 		if tt != html.StartTagToken && tt != html.SelfClosingTagToken {
@@ -242,9 +245,9 @@ func rewrite(in string, opts Options, cids map[string]string) (string, int) {
 				attrs = append(attrs, a)
 				continue
 			}
-			src, later, far := imageSource(a.Val, opts, cids)
-			if far {
-				remote++
+			src, later, kept := imageSource(a.Val, opts, cids)
+			if kept {
+				held++
 			}
 			if src != "" {
 				attrs = append(attrs, html.Attribute{Key: "src", Val: src})
@@ -258,9 +261,9 @@ func rewrite(in string, opts Options, cids map[string]string) (string, int) {
 	}
 }
 
-// imageSource is where an image is fetched from now, empty for nowhere; for a remote one, where
-// it is fetched from once somebody asks.
-func imageSource(src string, opts Options, cids map[string]string) (now, later string, remote bool) {
+// imageSource is where an image is fetched from now, empty for nowhere, and whether it is held
+// back; for a held one, where it is fetched from once somebody asks.
+func imageSource(src string, opts Options, cids map[string]string) (now, later string, held bool) {
 	u, err := url.Parse(strings.TrimSpace(src))
 	if err != nil {
 		return "", "", false
@@ -278,10 +281,13 @@ func imageSource(src string, opts Options, cids map[string]string) (now, later s
 		}
 		return "", "", false
 	case "http", "https":
-		if opts.Proxy != nil {
+		switch {
+		case opts.Proxy == nil:
+			return blank, "", true
+		case opts.Hold:
 			return blank, opts.Proxy(u.String()), true
 		}
-		return blank, "", true
+		return opts.Proxy(u.String()), "", false
 	}
 	return "", "", false
 }

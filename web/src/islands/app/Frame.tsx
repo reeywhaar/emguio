@@ -13,14 +13,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Always on white: mail is written for a white page, and a dark theme forced onto somebody
  * else's colors makes half of it unreadable.
  */
-const policy =
-  "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; font-src data:";
+// The origin by name as well as 'self': Firefox does not count a srcdoc frame's inherited origin
+// as 'self', and blocks every image in it, the message's own included.
+const policy = (origin: string) =>
+  `default-src 'none'; img-src 'self' ${origin} data:; style-src 'unsafe-inline'; font-src data:`;
 
 // The frame never scrolls: the reading pane around it does, and two scrollbars on one message
 // is one too many. Its height is the content's, measured.
 const frame = (html: string) =>
   `<!doctype html><html><head><meta charset="utf-8">` +
-  `<meta http-equiv="Content-Security-Policy" content="${policy}">` +
+  `<meta http-equiv="Content-Security-Policy" content="${policy(window.location.origin)}">` +
   `<base target="_blank">` +
   `<style>html{color-scheme:light;overflow:hidden}` +
   `body{margin:0;padding:16px;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +

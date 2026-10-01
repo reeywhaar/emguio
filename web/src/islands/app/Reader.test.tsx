@@ -67,7 +67,7 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   mailbox: "mb_inbox",
   text: "The numbers are in.",
   html: "",
-  remote_images: 0,
+  held_images: 0,
   parts: [
     {
       section: "2",
@@ -129,7 +129,9 @@ describe("the reading pane", () => {
     expect(frame.getAttribute("sandbox")).not.toContain("allow-scripts");
     const doc = frame.getAttribute("srcdoc")!;
     expect(doc).toContain("<p>Rich</p>");
-    expect(doc).toContain("default-src 'none'; img-src 'self' data:");
+    expect(doc).toContain(
+      `default-src 'none'; img-src 'self' ${window.location.origin} data:;`,
+    );
   });
 
   // Showing them swaps them in where they stand: the message is not fetched again.
@@ -137,7 +139,7 @@ describe("the reading pane", () => {
     getMessage.mockResolvedValue(
       read({
         html: '<p>Rich <img src="data:image/gif;base64,R0lGOD" data-src="/api/proxy?u=x"></p>',
-        remote_images: 3,
+        held_images: 3,
       }),
     );
     open();

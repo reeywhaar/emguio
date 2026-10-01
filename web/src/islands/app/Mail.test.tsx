@@ -219,7 +219,7 @@ describe("the mail view", () => {
       mailbox: "mb_inbox",
       text: "Thursday at one?",
       html: "",
-      remote_images: 0,
+      held_images: 0,
       parts: [],
     });
     mount(<Mail named="ec_1" mailbox="mb_inbox" message="m_2" />);

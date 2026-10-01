@@ -62,27 +62,41 @@ func TestLinksOpenElsewhereAndSayNothingAboutWhereFrom(t *testing.T) {
 
 // Remote images tell the sender the message was opened, and from where. Each holds its place
 // with a blank image, and carries the proxy's address for the pane to swap in when asked.
-func TestRemoteImagesWaitToBeAskedFor(t *testing.T) {
-	raw := htmlOnly(`<img src="https://track.example/pixel.gif" alt="logo"><img src="http://cdn.example/b.png" data-src="https://evil.example/x.gif">`)
+var proxy = func(u string) string { return "/proxy?u=" + u }
 
-	r := Show(raw, Options{Proxy: func(u string) string { return "/proxy?u=" + u }})
-	if r.Remote != 2 || strings.Contains(r.HTML, `src="http`) || strings.Contains(r.HTML, "evil.example") {
-		t.Errorf("remote = %d\n%s", r.Remote, r.HTML)
+// A remote image loads through the proxy, which hides where the reader is.
+func TestRemoteImagesLoadThroughTheProxy(t *testing.T) {
+	raw := htmlOnly(`<img src="https://track.example/pixel.gif" alt="logo"><img src="http://cdn.example/b.png" data-src="https://evil.example/x.gif">`)
+	r := Show(raw, Options{Proxy: proxy})
+	if r.Held != 0 || strings.Contains(r.HTML, `src="http`) || strings.Contains(r.HTML, "evil.example") || strings.Contains(r.HTML, "data-src") {
+		t.Errorf("held = %d\n%s", r.Held, r.HTML)
 	}
-	if strings.Count(r.HTML, `src="data:image/gif`) != 2 {
-		t.Errorf("a waiting image does not hold its place with a blank one:\n%s", r.HTML)
+	if !strings.Contains(r.HTML, `src="/proxy?u=https://track.example/pixel.gif"`) ||
+		!strings.Contains(r.HTML, `src="/proxy?u=http://cdn.example/b.png"`) {
+		t.Errorf("the images do not load through the proxy:\n%s", r.HTML)
+	}
+	if !strings.Contains(r.HTML, `alt="logo"`) {
+		t.Errorf("the image lost its alt text:\n%s", r.HTML)
+	}
+}
+
+// Held, each waits behind a blank image, with the proxy's address there to swap in when asked.
+func TestHeldImagesWaitToBeAskedFor(t *testing.T) {
+	raw := htmlOnly(`<img src="https://track.example/pixel.gif"><img src="http://cdn.example/b.png"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">`)
+	r := Show(raw, Options{Proxy: proxy, Hold: true})
+	if r.Held != 2 || strings.Contains(r.HTML, ` src="http`) || strings.Contains(r.HTML, ` src="/proxy`) {
+		t.Errorf("held = %d\n%s", r.Held, r.HTML)
+	}
+	if strings.Count(r.HTML, `src="data:image/gif`) != 3 {
+		t.Errorf("a held image does not hold its place with a blank one:\n%s", r.HTML)
 	}
 	if !strings.Contains(r.HTML, `data-src="/proxy?u=https://track.example/pixel.gif"`) ||
 		!strings.Contains(r.HTML, `data-src="/proxy?u=http://cdn.example/b.png"`) {
 		t.Errorf("the proxy's addresses are not there to swap in:\n%s", r.HTML)
 	}
-	if !strings.Contains(r.HTML, `alt="logo"`) {
-		t.Errorf("the image lost its alt text:\n%s", r.HTML)
-	}
 
-	blocked := Show(raw, parts)
-	if blocked.Remote != 2 || strings.Contains(blocked.HTML, "data-src") {
-		t.Errorf("without a proxy: remote = %d\n%s", blocked.Remote, blocked.HTML)
+	if blocked := Show(raw, parts); blocked.Held != 2 || strings.Contains(blocked.HTML, "data-src") {
+		t.Errorf("without a proxy: held = %d\n%s", blocked.Held, blocked.HTML)
 	}
 }
 

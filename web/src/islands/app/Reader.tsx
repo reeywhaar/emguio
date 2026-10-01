@@ -28,8 +28,8 @@ export function Reader({
   mailbox: Mailbox;
   message: string;
 }) {
-  // Remote images are a request the sender sees, so they wait to be asked for, each message
-  // afresh. Asking swaps them in where they stand, without fetching the message again.
+  // Images the server held back, in Junk, wait to be asked for, each message afresh. Asking swaps
+  // them in where they stand, without fetching the message again.
   const [images, setImages] = useState(false);
   const read = useQuery({
     queryKey: qk.message(config, mailbox.id, message),
@@ -112,12 +112,12 @@ export function Reader({
             message={m.id}
             parts={m.parts}
           />
-          {m.remote_images > 0 && !images ? (
+          {m.held_images > 0 && !images ? (
             <div className="flex flex-wrap items-center gap-3 border-b border-line bg-fill px-4 py-2 text-sm sm:px-6">
               <span className="text-muted">
-                {m.remote_images === 1
+                {m.held_images === 1
                   ? "1 image from the internet is not shown."
-                  : `${m.remote_images} images from the internet are not shown.`}
+                  : `${m.held_images} images from the internet are not shown.`}
               </span>
               <Button size="bar" onClick={() => setImages(true)}>
                 Show images

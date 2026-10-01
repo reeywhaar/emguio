@@ -150,8 +150,8 @@ changes, so a part is served `immutable` and the browser keeps it.
 The first is the server: bluemonday keeps formatting, tables, the presentational attributes
 newsletters lay themselves out with, links and images, and inline styles only for properties that
 cannot name a URL. No script, no event handler, no form, no frame, no `<style>` sheet. Then every
-image source is rewritten: a carried image (`cid:`) points at its part here, and a remote one is
-held back.
+image source is rewritten: a carried image (`cid:`) points at its part here, and a remote one at
+the image proxy.
 
 The second is the browser: the HTML is shown only in an `<iframe sandbox>` without
 `allow-scripts`, whose own CSP lets images come from this origin and nowhere else. Either wall
@@ -166,19 +166,26 @@ always on white: mail is written for a white page.
 Without `<style>` sheets a newsletter that depends on them looks plainer than it should. Allowing
 them safely means rewriting their `url()`s too, and that is not done.
 
-## Remote images wait to be asked for
+## Remote images load through the proxy, except in Junk
 
-An image from elsewhere tells its sender that the message was opened, when and from where. Each
-is a blank image until somebody asks — the reading pane says how many — with the image proxy's
-address for it in `data-src`. Showing them is a choice made per message, and swaps the addresses
-in where they stand, without fetching the message again. The sender then learns that the message
-was opened, but not from where.
+An image from elsewhere tells its sender that the message was opened, and when: a tracking pixel
+has an address of its own for each recipient. The proxy hides the rest — where the reader is,
+what they read with — and only the opening is left. That is accepted, as Gmail accepts it, and
+images load with the message.
+
+Except in Junk, where loading an image also tells a spammer the address is read. There each is a
+blank image until somebody asks — the reading pane says how many — with the proxy's address for
+it in `data-src`, and asking swaps the addresses in where they stand, without fetching the
+message again.
 
 The proxy fetches only addresses it signed itself, with a key derived from the server key, so it
 relays the images in messages and nothing else. The signature makes the address the same in
 every message, with nothing stored, and it is served `immutable`: a logo in every newsletter is
 fetched once. It dials through the same screen as every mail server, accepts only what is an
 image by its own bytes rather than by the header, and relays at most 10 MB.
+
+The frame's CSP names this origin as well as `'self'`: Firefox does not count a `srcdoc` frame's
+inherited origin as `'self'`, and with that alone blocks every image in it.
 
 ## A part is served so that it cannot act as a page here
 

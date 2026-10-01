@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"emguio/internal/connect/connecttest"
 	"emguio/internal/message"
 	"emguio/internal/mirror"
+	"emguio/internal/store"
 )
 
 var pixel = base64.StdEncoding.EncodeToString([]byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;"))
@@ -32,11 +34,11 @@ var rich = message.Structure{
 }
 
 type readView struct {
-	Subject      string `json:"subject"`
-	Text         string `json:"text"`
-	HTML         string `json:"html"`
-	RemoteImages int    `json:"remote_images"`
-	Parts        []struct {
+	Subject    string `json:"subject"`
+	Text       string `json:"text"`
+	HTML       string `json:"html"`
+	HeldImages int    `json:"held_images"`
+	Parts      []struct {
 		Section string `json:"section"`
 		Name    string `json:"name"`
 		Type    string `json:"type"`
@@ -81,8 +83,8 @@ func TestAReadMessageIsSafeAndItsImagesPointHere(t *testing.T) {
 	if strings.Contains(got.HTML, "onclick") || strings.Contains(got.HTML, "track.example") || strings.Contains(got.HTML, `src="https`) {
 		t.Errorf("html = %s", got.HTML)
 	}
-	if got.RemoteImages != 1 || !strings.Contains(got.HTML, `data-src="/api/proxy?`) {
-		t.Errorf("remote images = %d, html = %s", got.RemoteImages, got.HTML)
+	if got.HeldImages != 0 || !strings.Contains(got.HTML, `src="/api/proxy?`) || strings.Contains(got.HTML, "data-src") {
+		t.Errorf("held images = %d, html = %s", got.HeldImages, got.HTML)
 	}
 	if !strings.Contains(got.HTML, `src="`+path+`/parts/1.2"`) {
 		t.Errorf("the carried image does not point at its part: %s", got.HTML)
@@ -95,6 +97,29 @@ func TestAReadMessageIsSafeAndItsImagesPointHere(t *testing.T) {
 	}
 	if strings.Join(listed, ",") != "page.html@2" {
 		t.Errorf("listed parts = %v", listed)
+	}
+}
+
+// In Junk an image would tell a spammer the address is read, so there they wait to be asked for.
+func TestImagesInJunkAreHeld(t *testing.T) {
+	s, st, c, cfg, _ := withMail(t, 0)
+	s.mirror = &fakeMirror{opened: rich}
+	ctx := context.Background()
+	st.PutMailboxes(ctx, cfg, []store.Listed{
+		{Name: "INBOX", SpecialUse: store.UseInbox, Selectable: true},
+		{Name: "Spam", SpecialUse: store.UseJunk, Selectable: true},
+	})
+	var junk string
+	boxes, _ := st.MirrorMailboxes(ctx, cfg)
+	for _, mb := range boxes {
+		if mb.SpecialUse == store.UseJunk {
+			junk = mb.ID
+		}
+	}
+	var got readView
+	json.NewDecoder(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+junk+"/messages/3-1", "").Body).Decode(&got)
+	if got.HeldImages != 1 || !strings.Contains(got.HTML, `data-src="/api/proxy?`) || strings.Contains(got.HTML, ` src="/api/proxy?`) {
+		t.Errorf("held images = %d, html = %s", got.HeldImages, got.HTML)
 	}
 }
 
