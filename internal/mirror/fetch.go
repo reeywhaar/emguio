@@ -19,8 +19,8 @@ var ErrGone = errors.New("mirror: message gone")
 const FetchIdle = 5 * time.Minute
 
 // fetcher is an email config's second session, for reading whole messages when somebody opens
-// one. A session of its own, so opening a message never waits behind a pass copying thousands of
-// headers; one at a time, because a person reads one message at a time.
+// one, and marking them read. A session of its own, so opening a message never waits behind a
+// pass copying thousands of headers; one at a time, because a person reads one at a time.
 type fetcher struct {
 	mu      sync.Mutex
 	target  store.SyncTarget
@@ -61,17 +61,9 @@ func (m *Mirror) fetcherFor(t store.SyncTarget) *fetcher {
 }
 
 func (f *fetcher) raw(ctx context.Context, m *Mirror, mailbox string, uidValidity, uid uint32) ([]byte, error) {
-	if f.session == nil || f.closed() {
-		f.close()
-		life, cancel := context.WithCancel(context.Background())
-		s, err := m.open(life, f.target)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-		f.session, f.cancel = s, cancel
+	if err := f.ready(m); err != nil {
+		return nil, err
 	}
-	f.rest()
 
 	// The request bounds the fetch: when it ends first, the session is closed under the fetch.
 	client := f.session.client
@@ -101,6 +93,77 @@ func (f *fetcher) raw(ctx context.Context, m *Mirror, mailbox string, uidValidit
 		return nil, ErrGone
 	}
 	return msgs[0].BodySection[0].Bytes, nil
+}
+
+// SetSeen marks one message read or unread on the server: the one flag emguio writes, because
+// opening a message here is reading it. The mailbox is opened with SELECT for it, which the
+// syncing session never does.
+func (m *Mirror) SetSeen(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, seen bool) error {
+	f := m.fetcherFor(t)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	err := f.setSeen(ctx, m, mailbox, uidValidity, uid, seen)
+	if err != nil && !errors.Is(err, ErrGone) {
+		f.close()
+	}
+	return err
+}
+
+func (f *fetcher) setSeen(ctx context.Context, m *Mirror, mailbox string, uidValidity, uid uint32, seen bool) error {
+	if err := f.ready(m); err != nil {
+		return err
+	}
+	client := f.session.client
+	stop := context.AfterFunc(ctx, func() { client.Close() })
+	defer stop()
+
+	data, err := client.Select(mailbox, nil).Wait()
+	var refusal *imap.Error
+	if errors.As(err, &refusal) {
+		return ErrGone
+	}
+	if err != nil {
+		return err
+	}
+	if data.UIDValidity != uidValidity {
+		return ErrGone
+	}
+	op := imap.StoreFlagsAdd
+	if !seen {
+		op = imap.StoreFlagsDel
+	}
+	set := imap.UIDSetNum(imap.UID(uid))
+	if err := client.Store(set, &imap.StoreFlags{Op: op, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close(); err != nil {
+		return err
+	}
+	// A STORE on a UID the server no longer has succeeds and changes nothing, so whether the
+	// message is still there is asked separately.
+	found, err := client.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
+	if err != nil {
+		return err
+	}
+	if len(found) == 0 {
+		return ErrGone
+	}
+	return nil
+}
+
+// ready opens the session if there is none, or the one there was has closed.
+func (f *fetcher) ready(m *Mirror) error {
+	if f.session != nil && !f.closed() {
+		f.rest()
+		return nil
+	}
+	f.close()
+	life, cancel := context.WithCancel(context.Background())
+	s, err := m.open(life, f.target)
+	if err != nil {
+		cancel()
+		return err
+	}
+	f.session, f.cancel = s, cancel
+	f.rest()
+	return nil
 }
 
 func (f *fetcher) closed() bool {

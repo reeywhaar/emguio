@@ -459,3 +459,34 @@ func TestAMessageNoLongerOnTheServerIsGone(t *testing.T) {
 		t.Errorf("a mailbox the server does not have = %v, want gone", err)
 	}
 }
+
+// Reading in emguio is reading: the server holds the flag, and other clients see it.
+func TestMarkingAMessageReadSetsTheServersFlag(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "Read me")
+	w.sync()
+	inbox := w.mailbox("INBOX")
+	unseen := func() uint32 {
+		st, err := w.server.Status("INBOX", &imap.StatusOptions{NumUnseen: true}).Wait()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *st.NumUnseen
+	}
+
+	if err := w.mirror.SetSeen(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if n := unseen(); n != 0 {
+		t.Errorf("unseen on the server after marking read = %d", n)
+	}
+	if err := w.mirror.SetSeen(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if n := unseen(); n != 1 {
+		t.Errorf("unseen on the server after marking unread = %d", n)
+	}
+	if err := w.mirror.SetSeen(context.Background(), w.target, "INBOX", inbox.UIDValidity, 9, true); !errors.Is(err, ErrGone) {
+		t.Errorf("a UID the server does not have = %v, want gone", err)
+	}
+}

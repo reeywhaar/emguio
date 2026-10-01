@@ -647,3 +647,30 @@ func (s *Store) SetPreview(ctx context.Context, messageID, preview string) error
 	}
 	return nil
 }
+
+// SetSeen records that the server now holds a message read or unread, and moves its mailbox's
+// unseen count with it, so the sidebar agrees before the next look confirms it.
+func (s *Store) SetSeen(ctx context.Context, messageID string, seen bool) error {
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("set seen: %w", err)
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE messages SET seen = ? WHERE id = ? AND seen <> ?`, seen, messageID, seen)
+	if err != nil {
+		return fmt.Errorf("set seen: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return tx.Commit()
+	}
+	step := -1
+	if !seen {
+		step = 1
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE mailboxes SET unseen = max(0, unseen + ?)
+		  WHERE id = (SELECT mailbox_id FROM messages WHERE id = ?)`, step, messageID); err != nil {
+		return fmt.Errorf("set seen: %w", err)
+	}
+	return tx.Commit()
+}

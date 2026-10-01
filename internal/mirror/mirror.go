@@ -1,8 +1,9 @@
 // Package mirror keeps the store's copy of every email config's mail in step with its server:
 // one worker per config, each holding one IMAP session.
 //
-// It only reads. Mailboxes are opened with EXAMINE and messages fetched without their bodies,
-// so nothing it does changes a flag on the server. See docs/reading.md.
+// Syncing only reads: mailboxes are opened with EXAMINE and messages fetched without their bodies,
+// so a sync never changes a flag on the server. The one write is \Seen, when somebody reads or
+// unreads a message, on a session of its own. See docs/reading.md.
 package mirror
 
 import (

@@ -96,6 +96,75 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+type flagsBody struct {
+	Seen *bool `json:"seen"`
+}
+
+// patchMessage changes a message's flags: for now, whether it is read. The server is told first,
+// and the store only once the server has taken it, so the two never disagree about which is
+// right.
+//
+// Its own request rather than something reading does on the side: a GET that changes things is
+// one a prefetch, or a link from anywhere, can make on somebody's behalf.
+func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request) {
+	var body flagsBody
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.Seen == nil {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to change: seen is the one flag this sets.")
+		return
+	}
+	u := userOf(r)
+	config, err := s.store.EmailConfig(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	opened, err := s.store.OpenMessage(r.Context(), u.ID, config.ID, r.PathValue("message"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if opened.Flags.Seen != *body.Seen {
+		if s.mirror == nil {
+			refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+			return
+		}
+		target := store.SyncTarget{ID: config.ID, UserID: u.ID, UpdatedAt: config.UpdatedAt}
+		err := s.mirror.SetSeen(r.Context(), target, opened.MailboxName, opened.UIDValidity, opened.UID, *body.Seen)
+		if !s.serverError(w, r, config.ID, err) {
+			return
+		}
+		if err := s.store.SetSeen(r.Context(), opened.ID, *body.Seen); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		opened.Flags.Seen = *body.Seen
+		s.store.Notify(u.ID)
+	}
+	writeJSON(w, http.StatusOK, messageOut(&opened.Message))
+}
+
+// serverError writes the refusal for what the mail server said, and reports whether there was
+// nothing to refuse.
+func (s *Server) serverError(w http.ResponseWriter, r *http.Request, configID string, err error) bool {
+	var f *connect.Failure
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, mirror.ErrGone):
+		// The list is behind the server; a look now brings it up to date.
+		s.mirror.Refresh(configID)
+		refuse(w, http.StatusNotFound, CodeGone, "This message is no longer on the server. It leaves the list at the next look.")
+	case errors.As(err, &f):
+		refuse(w, http.StatusBadGateway, CodeUnreachable, f.Sentence)
+	default:
+		s.fail(w, r, err)
+	}
+	return false
+}
+
 // inline are the types a part may be shown as rather than downloaded: images a browser draws and
 // cannot run.
 var inline = map[string]bool{
@@ -164,18 +233,7 @@ func (s *Server) openBody(w http.ResponseWriter, r *http.Request, configID, mess
 
 	target := store.SyncTarget{ID: config.ID, UserID: u.ID, UpdatedAt: config.UpdatedAt}
 	raw, err = s.mirror.Raw(r.Context(), target, opened.MailboxName, opened.UIDValidity, opened.UID)
-	var f *connect.Failure
-	switch {
-	case errors.Is(err, mirror.ErrGone):
-		// The list is behind the server; a look now brings it up to date.
-		s.mirror.Refresh(config.ID)
-		refuse(w, http.StatusNotFound, CodeGone, "This message is no longer on the server. It leaves the list at the next look.")
-		return nil, nil, false
-	case errors.As(err, &f):
-		refuse(w, http.StatusBadGateway, CodeUnreachable, f.Sentence)
-		return nil, nil, false
-	case err != nil:
-		s.fail(w, r, err)
+	if !s.serverError(w, r, config.ID, err) {
 		return nil, nil, false
 	}
 

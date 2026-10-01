@@ -19,6 +19,8 @@ type Mirror interface {
 	Refresh(id string)
 	// Raw is one message as the server holds it, or mirror.ErrGone.
 	Raw(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) ([]byte, error)
+	// SetSeen marks one message read or unread on the server, or says mirror.ErrGone.
+	SetSeen(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, seen bool) error
 }
 
 type mailboxJSON struct {

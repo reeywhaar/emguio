@@ -3,11 +3,19 @@
 emguio keeps a copy of each email config's mailboxes and message headers in its own database,
 and the interface reads that copy. The mirror keeps it in step with the server.
 
-## Reading never changes the server
+## Read state is the server's
 
-Mailboxes are opened with `EXAMINE`, never `SELECT`, and headers are fetched without a body
-section, so nothing emguio does sets `\Seen` or any other flag. Opening a message in emguio does
-not mark it read in any other client. Nothing is stored, appended, moved or expunged.
+Whether a message is read lives on the server, and emguio follows it: reading a message here
+marks it read there, as any mail client does, and marking it unread clears the flag there.
+
+Everything else only reads. A sync opens mailboxes with `EXAMINE` and fetches headers and
+bodies with `BODY.PEEK`, so a sync never changes a flag. The one write is `\Seen`, set or
+cleared with `STORE` on the reading session, through `PATCH …/messages/{id}` with
+`{"seen": true|false}`. The server is told first, and the store only once the server has taken
+it.
+
+A request of its own rather than something reading does on the side: a GET that changes things
+is one a prefetch, or a link from anywhere, can make on somebody's behalf.
 
 ## One worker per email config, holding one connection
 

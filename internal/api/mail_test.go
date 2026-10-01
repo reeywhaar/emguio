@@ -23,9 +23,17 @@ type fakeMirror struct {
 	raw     []byte
 	err     error
 	fetched int
+	// seen is every flag the server was told to set.
+	seen []bool
 }
 
 func (f *fakeMirror) Reconcile() { f.mu.Lock(); f.reconciled++; f.mu.Unlock() }
+func (f *fakeMirror) SetSeen(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, seen bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seen = append(f.seen, seen)
+	return f.err
+}
 func (f *fakeMirror) Raw(context.Context, store.SyncTarget, string, uint32, uint32) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

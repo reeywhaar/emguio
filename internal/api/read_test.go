@@ -242,3 +242,57 @@ func TestTheProxyNeverReachesInside(t *testing.T) {
 		t.Errorf("a loopback image = %s, want refused", resp.Status)
 	}
 }
+
+func TestMarkingReadTellsTheServerAndThenTheList(t *testing.T) {
+	_, c, fake, cfg, id := reading(t)
+	path := "/api/email-configs/" + cfg + "/messages/" + id
+
+	resp := c.do("PATCH", path, `{"seen":true}`)
+	if resp.StatusCode != http.StatusOK || c.json(resp)["seen"] != true {
+		t.Fatalf("mark read = %s", resp.Status)
+	}
+	if len(fake.seen) != 1 || !fake.seen[0] {
+		t.Fatalf("the server was told %v", fake.seen)
+	}
+	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	if unseen := boxes[0].(map[string]any)["unseen"]; unseen != float64(0) {
+		t.Errorf("INBOX unseen after reading = %v", unseen)
+	}
+
+	// Already read: nothing to tell the server.
+	c.do("PATCH", path, `{"seen":true}`)
+	if len(fake.seen) != 1 {
+		t.Errorf("told the server again: %v", fake.seen)
+	}
+}
+
+// The server first: a flag it did not take must not show as taken.
+func TestAFlagTheServerRefusedIsNotRecorded(t *testing.T) {
+	_, c, fake, cfg, id := reading(t)
+	fake.err = &connect.Failure{Class: "network", Sentence: "imap.example.com:993 closed the connection."}
+	resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{"seen":true}`)
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %s", resp.Status)
+	}
+	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	inbox := boxes[0].(map[string]any)["id"].(string)
+	msg := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))["messages"].([]any)[0].(map[string]any)
+	if msg["seen"] != false {
+		t.Error("recorded as read though the server never took it")
+	}
+
+	fake.err = mirror.ErrGone
+	if resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{"seen":true}`); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("gone = %s", resp.Status)
+	}
+}
+
+func TestAFlagChangeSaysWhatToChange(t *testing.T) {
+	_, c, _, cfg, id := reading(t)
+	if resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("an empty change = %s", resp.Status)
+	}
+	if resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{"flagged":true}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a flag this does not set = %s", resp.Status)
+	}
+}
