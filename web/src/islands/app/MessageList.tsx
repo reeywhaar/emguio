@@ -11,6 +11,7 @@ import { Paperclip, Star } from "@app/components/icons";
 import { full, when } from "@app/format";
 import { Link } from "@app/islands/app/Link";
 import { counterpart } from "@app/islands/app/mailbox";
+import { listWithPending, usePending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
 
 /** One folder's messages, newest to arrive first, reaching further back as it is scrolled. */
@@ -24,6 +25,7 @@ export function MessageList({
   /** The message open beside the list, if any. */
   open: string | null;
 }) {
+  const pending = usePending(config);
   const pages = useInfiniteQuery({
     queryKey: qk.messages(config, mailbox.id),
     queryFn: ({ pageParam }) =>
@@ -67,7 +69,11 @@ export function MessageList({
       </div>
     );
   }
-  const messages = pages.data.pages.flatMap((p) => p.messages);
+  const messages = listWithPending(
+    pages.data.pages.flatMap((p) => p.messages),
+    mailbox.id,
+    pending,
+  );
   if (messages.length === 0) {
     return <p className="p-4 text-sm text-muted">No messages here.</p>;
   }

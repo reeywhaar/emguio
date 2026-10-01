@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type InfiniteData } from "@tanstack/react-query";
 
 import {
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
@@ -7,13 +7,21 @@ import {
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
-import type { Address, Mailbox, Part } from "@app/api/types";
+import type {
+  Address,
+  Mailbox,
+  Message,
+  MessagePage,
+  Part,
+} from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Paperclip } from "@app/components/icons";
 import { full, size } from "@app/format";
 import { Actions } from "@app/islands/app/Actions";
 import { Frame } from "@app/islands/app/Frame";
+import { usePending, withPending } from "@app/islands/app/pending";
+import { useCached } from "@app/api/cached";
 import { Link } from "@app/islands/app/Link";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { paths } from "@app/islands/app/route";
@@ -40,19 +48,31 @@ export function Reader({
         message,
       ),
   });
-  const m = read.data;
+  // As the server said, with the actions pressed on it and not yet answered drawn over it.
+  const pending = usePending(config);
+  const m = read.data && withPending(read.data, mailbox.id, pending);
+  // What the list already knows of it — who, what, when, and its flags — drawn while the rest
+  // is fetched, so the headers show and the actions work from the moment it is opened.
+  const listed = useCached<InfiniteData<MessagePage>>(
+    qk.messages(config, mailbox.id),
+  );
+  const row = listed?.pages
+    .flatMap((p) => p.messages)
+    .find((x) => x.id === message);
+  const known: Message | undefined =
+    m ?? (row && withPending(row, mailbox.id, pending));
 
   return (
     <article
       aria-label="Message"
-      className="relative flex min-w-0 flex-1 flex-col overflow-y-auto bg-bg"
+      className="relative flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-bg"
     >
       <div className="flex shrink-0 flex-col gap-2 border-b border-line px-4 py-4">
         <Actions
           config={config}
           mailbox={mailbox}
           message={message}
-          m={m}
+          m={known}
           back={
             <Link
               href={paths.mail(config, mailbox.id)}
@@ -62,39 +82,48 @@ export function Reader({
             </Link>
           }
         />
-        {read.error ? (
-          <p className="text-sm text-accent">{messageOf(read.error)}</p>
-        ) : !m ? (
+        {known ? (
+          <>
+            <h2 className="text-xl font-semibold break-words">
+              {known.subject || "(no subject)"}
+            </h2>
+            <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
+              <span className="font-medium">
+                {known.from.name || known.from.email || "(no sender)"}
+              </span>
+              {known.from.name && known.from.email ? (
+                <span className="text-muted">&lt;{known.from.email}&gt;</span>
+              ) : null}
+              <span className="flex-1" />
+              <time
+                dateTime={new Date(known.date * 1000).toISOString()}
+                className="text-xs text-muted"
+              >
+                {full(known.date)}
+              </time>
+            </div>
+            <People label="To" people={known.to} />
+            <People label="Cc" people={m?.cc ?? []} />
+          </>
+        ) : read.error ? null : (
           <div className="flex flex-col gap-2">
             <Dummy className="h-6 w-2/3" />
             <Dummy className="h-4 w-1/2" />
             <Dummy className="h-4 w-1/3" />
           </div>
-        ) : (
-          <>
-            <h2 className="text-xl font-semibold break-words">
-              {m.subject || "(no subject)"}
-            </h2>
-            <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-              <span className="font-medium">
-                {m.from.name || m.from.email || "(no sender)"}
-              </span>
-              {m.from.name && m.from.email ? (
-                <span className="text-muted">&lt;{m.from.email}&gt;</span>
-              ) : null}
-              <span className="flex-1" />
-              <time
-                dateTime={new Date(m.date * 1000).toISOString()}
-                className="text-xs text-muted"
-              >
-                {full(m.date)}
-              </time>
-            </div>
-            <People label="To" people={m.to} />
-            <People label="Cc" people={m.cc} />
-          </>
         )}
+        {read.error ? (
+          <p className="text-sm text-accent">{messageOf(read.error)}</p>
+        ) : null}
       </div>
+
+      {!m && !read.error ? (
+        <div className="flex flex-col gap-2 px-4 py-4">
+          <Dummy className="h-4 w-full" />
+          <Dummy className="h-4 w-5/6" />
+          <Dummy className="h-4 w-2/3" />
+        </div>
+      ) : null}
 
       {m ? (
         <>

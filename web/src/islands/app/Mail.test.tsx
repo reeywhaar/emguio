@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmailConfig, Mailbox, Message } from "@app/api/types";
 import { Mail } from "@app/islands/app/Mail";
+import { useRoute } from "@app/islands/app/route";
 import { mount } from "@app/test/harness";
 
 const getEmailConfigs = vi.fn();
@@ -10,6 +11,7 @@ const getEmailConfigsByIdMailboxes = vi.fn();
 const getMessages = vi.fn();
 const postEmailConfigsByIdSync = vi.fn();
 const getMessage = vi.fn();
+const moveMessage = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
@@ -26,6 +28,19 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     mailbox: string,
     message: string,
   ) => getMessage(id, mailbox, message),
+  patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage: async () => ({
+    id: "m_2",
+    seen: true,
+    flagged: false,
+    answered: false,
+    draft: false,
+  }),
+  postEmailConfigsByIdMailboxesByMailboxMessagesByMessageMove: (
+    id: string,
+    mailbox: string,
+    message: string,
+    to: string,
+  ) => moveMessage(id, mailbox, message, to),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
@@ -107,6 +122,60 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.clearAllMocks());
+
+// A folder of three, and one of them open beside it.
+const three = () =>
+  getMessages.mockResolvedValue({
+    messages: [
+      message("m_1", "First"),
+      message("m_2", "Second"),
+      message("m_3", "Third"),
+    ],
+  });
+const opened = (id: string) => {
+  getMessage.mockResolvedValue({
+    ...message(id, "Open"),
+    cc: [],
+    mailbox: "mb_inbox",
+    text: "Hello.",
+    html: "",
+    held_images: 0,
+    parts: [],
+  });
+  // The server never answers here: what shows is what the press drew.
+  moveMessage.mockReturnValue(new Promise(() => {}));
+  return mount(<Mail named="ec_1" mailbox="mb_inbox" message={id} />);
+};
+const moveAway = async () => {
+  const reader = await screen.findByRole("article", { name: "Message" });
+  await within(reader).findByText("Hello.");
+  const picker =
+    await within(reader).findByLabelText<HTMLSelectElement>("Move to folder");
+  await waitFor(() => expect(picker.disabled).toBe(false));
+  fireEvent.change(picker, { target: { value: "mb_work" } });
+};
+const subjectsListed = () =>
+  within(screen.getByRole("list", { name: "Messages" }))
+    .getAllByRole("listitem")
+    .map((li) => li.textContent);
+
+// The mail view as the address says, as the application draws it.
+function Routed() {
+  const r = useRoute();
+  return r.page === "mail" ? (
+    <Mail named={r.config} mailbox={r.mailbox} message={r.message} />
+  ) : null;
+}
+
+// Moves the open message to Work, once it has arrived.
+const moveOpen = async (id: string) => {
+  const reader = await screen.findByRole("article", { name: "Message" });
+  await within(reader).findByText(`Text of ${id}`);
+  const picker =
+    await within(reader).findByLabelText<HTMLSelectElement>("Move to folder");
+  await waitFor(() => expect(picker.disabled).toBe(false));
+  fireEvent.change(picker, { target: { value: "mb_work" } });
+};
 
 describe("the mail view", () => {
   it("opens on the inbox and lists its messages", async () => {
@@ -229,5 +298,99 @@ describe("the mail view", () => {
     expect(
       within(list).getAllByRole("link")[1]!.getAttribute("aria-current"),
     ).toBe("true");
+  });
+
+  // A moved message leaves the list on the press, and the pane goes on to the one below it, or
+  // else the one above, or else the folder — before the server has answered.
+  describe("after a message is moved away", () => {
+    it("goes on to the one below it", async () => {
+      three();
+      opened("m_2");
+      await moveAway();
+      await waitFor(() =>
+        expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_3"),
+      );
+      expect(subjectsListed().some((t) => t?.includes("Second"))).toBe(false);
+    });
+
+    it("or to the one above, when it was the last", async () => {
+      three();
+      opened("m_3");
+      await moveAway();
+      await waitFor(() =>
+        expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_2"),
+      );
+    });
+
+    it("or back to the folder, when it was the only one", async () => {
+      getMessages.mockResolvedValue({ messages: [message("m_1", "Only")] });
+      opened("m_1");
+      await moveAway();
+      await waitFor(() =>
+        expect(window.location.pathname).toBe("/c/ec_1/mb_inbox"),
+      );
+    });
+  });
+
+  // A pile of actions goes to the server one at a time, in the order pressed, each drawn over
+  // what the server said. A refusal at the end takes back that one and nothing before it.
+  it("sends a pile of moves in order, and a refused last one undoes only itself", async () => {
+    three();
+    getMessage.mockImplementation(
+      async (_c: string, _mb: string, id: string) => ({
+        ...message(id, `Open ${id}`),
+        cc: [],
+        mailbox: "mb_inbox",
+        text: `Text of ${id}`,
+        html: "",
+        held_images: 0,
+        parts: [],
+      }),
+    );
+    const answers: { ok: () => void; no: (err: Error) => void }[] = [];
+    moveMessage.mockImplementation(
+      () => new Promise<void>((ok, no) => answers.push({ ok: () => ok(), no })),
+    );
+    window.history.pushState({}, "", "/c/ec_1/mb_inbox/m_1");
+    mount(<Routed />);
+
+    await moveOpen("m_1");
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_2"),
+    );
+    await moveOpen("m_2");
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_3"),
+    );
+
+    // Both drawn gone; only the first has been sent.
+    expect(subjectsListed().join()).not.toMatch(/First|Second/);
+    await waitFor(() => expect(answers).toHaveLength(1));
+    expect(moveMessage.mock.calls.map((c) => c[2])).toEqual(["m_1"]);
+
+    answers[0]!.ok();
+    await waitFor(() => expect(answers).toHaveLength(2));
+    expect(moveMessage.mock.calls.map((c) => c[2])).toEqual(["m_1", "m_2"]);
+    answers[1]!.no(new Error("refused"));
+
+    await waitFor(() => expect(subjectsListed().join()).toMatch(/Second/));
+    expect(subjectsListed().join()).not.toMatch(/First/);
+  });
+
+  // Its row in the list is enough to draw who, what and when, and to act on it.
+  it("acts on a message before the whole of it has arrived", async () => {
+    three();
+    getMessage.mockReturnValue(new Promise(() => {}));
+    moveMessage.mockReturnValue(new Promise(() => {}));
+    mount(<Mail named="ec_1" mailbox="mb_inbox" message="m_2" />);
+    const reader = await screen.findByRole("article", { name: "Message" });
+    await within(reader).findByRole("heading", { name: "Second" });
+    const picker =
+      await within(reader).findByLabelText<HTMLSelectElement>("Move to folder");
+    expect(picker.disabled).toBe(false);
+    fireEvent.change(picker, { target: { value: "mb_work" } });
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_3"),
+    );
   });
 });

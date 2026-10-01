@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@app/api/transport";
 import type { Flags, Mailbox, Message, ReadMessage } from "@app/api/types";
+import { Notice } from "@app/islands/app/Notice";
 import { Reader } from "@app/islands/app/Reader";
 import { mount } from "@app/test/harness";
 
@@ -372,6 +373,46 @@ describe("the reading pane", () => {
         "m_1",
         "mb_archive",
       ),
+    );
+  });
+
+  // Drawn on the press, before the server answers; put back, and said, when it refuses.
+  it("stars at once, and takes it back when the server refuses", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    let refuse: ((err: Error) => void) | undefined;
+    patchMessage.mockImplementation(
+      () => new Promise((_, reject) => (refuse = reject)),
+    );
+    open();
+    const star = await ready("Star");
+    fireEvent.click(star);
+    await waitFor(() => expect(star.getAttribute("aria-pressed")).toBe("true"));
+
+    refuse!(
+      new ApiError(502, "unreachable", "imap.example.com:993 timed out."),
+    );
+    await waitFor(() =>
+      expect(star.getAttribute("aria-pressed")).toBe("false"),
+    );
+    screen.getByText("imap.example.com:993 timed out.");
+  });
+
+  // The pane has already gone on when a move is refused, so the notice says it.
+  it("says so when a move it already drew is refused", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    moveMessage.mockRejectedValue(
+      new ApiError(502, "unreachable", "imap.example.com:993 timed out."),
+    );
+    mount(
+      <>
+        <Reader config="ec_1" mailbox={inbox} message="m_1" />
+        <Notice />
+      </>,
+    );
+    fireEvent.click(await ready("Archive"));
+    const notice = await screen.findByRole("alert");
+    within(notice).getByText(
+      "“Quarterly numbers” was not moved: imap.example.com:993 timed out.",
     );
   });
 });

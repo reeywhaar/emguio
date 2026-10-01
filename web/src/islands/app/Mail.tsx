@@ -17,6 +17,7 @@ import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
 import { MessageList } from "@app/islands/app/MessageList";
+import { countsWithPending, usePending } from "@app/islands/app/pending";
 import { Reader } from "@app/islands/app/Reader";
 import { go, paths } from "@app/islands/app/route";
 
@@ -96,10 +97,15 @@ function Folders({
   mailbox: string | null;
   message: string | null;
 }) {
-  const boxes = useQuery({
+  const listed = useQuery({
     queryKey: qk.mailboxes(config.id),
     queryFn: () => getEmailConfigsByIdMailboxes(config.id),
   });
+  // The counts as the server said, moved by the actions pressed and not yet answered.
+  const pending = usePending(config.id);
+  const boxes = {
+    data: listed.data && countsWithPending(listed.data, pending),
+  };
   const current = boxes.data
     ? mailbox
       ? boxes.data.find((mb) => mb.id === mailbox)

@@ -25,8 +25,13 @@ first, and a kept row and the folders' counts only once the server has taken it.
 Its own request rather than something reading does on the side: a GET that changes things is one
 a prefetch, or a link from anywhere, can make on somebody's behalf.
 
-The reading pane sends it once per opening, when an unread message has loaded. A message marked
-unread again stays unread while it is open; the next opening marks it read.
+The reading pane sends it once per opening, as soon as it knows the message is unread — from its
+row in the list, before the rest has arrived. A message marked unread again stays unread while it
+is open; the next opening marks it read.
+
+The pane draws who, what and when from that row too while the message is fetched, and every
+action works from then: only a message opened from a link, before its folder's list, waits for
+the server.
 
 ## Archive, Trash and spam are moves to the server's own folders
 
@@ -43,9 +48,29 @@ of that one UID, which needs `UIDPLUS`: a plain `EXPUNGE` would also remove what
 client had marked deleted, so on a server with neither, moving and deleting are refused. A star
 is `\Flagged`, set and cleared like `\Seen`.
 
-After a move the pane goes back to the folder, and the mirror is asked for a look: the window has
-a place to fill, and the counts are the server's to confirm. Gmail's keys work — `e` archive,
-`#` delete, `!` spam, `s` star, `u` read or unread — except while a field has the keys.
+Gmail's keys work — `e` archive, `#` delete, `!` spam, `s` star, `u` read or unread — except
+while a field has the keys.
+
+## Every action is drawn before the server answers, over what the server said
+
+Read, star, archive, delete, spam and move change the screen on the press — the button, the
+list's row, the folders' counts — and the request goes after. What is drawn is two things: what
+the server last said, kept as it said it, and the actions pressed and not yet answered, applied
+over it as it is drawn. Nothing is written into the first until the server has confirmed it.
+
+So a refusal has nothing to undo. The refused action stops being pending, and the screen is
+what the server said, with every action pressed after it still drawn; a pile of actions with a
+refusal at its end loses only that one. And a list read back while actions are queued — the
+event stream asks for one after each — is drawn with them still applied, rather than showing
+the messages they were pressed on as though nothing had been done.
+
+The requests go one at a time per email config, in the order pressed, so a star and its undoing
+reach the server as they were meant. A refused flag says why in the pane; a refused move, in a
+notice, since the pane has gone on by then.
+
+After a move or a delete the pane goes on to the message below it in the list, or else the one
+above, or else back to the folder. The mirror is asked for a look: the window has a place to
+fill, and the counts are the server's to confirm.
 
 ## A message is named by what the server calls it
 
@@ -179,13 +204,17 @@ second is a browser that can be old.
 The frame fills the space under the headers, edge to edge with no margin of its own, and scrolls
 itself while the headers stay above it: mail lays itself out to fill a page. A frame as tall as
 its content, left to the pane to scroll, cannot be scrolled on a phone, because Mobile Safari does
-not hand a touch on a frame to the pane around it. For the same browser its width is a minimum
-over one pixel rather than a width: Mobile Safari sizes an iframe to its content and ignores a
-width it is given, but honors a minimum.
+not hand a touch on a frame to the pane around it.
 
-Mail laid out wider than the frame — a 600px table is the norm — is zoomed out until it fits,
+The same browser widens a frame to what it holds, whatever width it is given. So the frame sits
+in a box that clips it, and the pane never scrolls sideways; and the mail is fitted to the box's
+width, measured outside the frame, rather than to the frame's own, which only says how wide the
+mail already is.
+
+Mail laid out wider than that — a 600px table is the norm — is zoomed out until it fits,
 rather than cut off or scrolled sideways, and fitted again as images arrive and the pane changes
-width. It is always on white: mail is written for a white page.
+width. Whatever is still wider, for the moment before a fit, scrolls sideways inside the frame,
+under headers that stay where they are. It is always on white: mail is written for a white page.
 
 Without `<style>` sheets a newsletter that depends on them looks plainer than it should. Allowing
 them safely means rewriting their `url()`s too, and that is not done.

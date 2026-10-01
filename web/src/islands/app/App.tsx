@@ -5,6 +5,7 @@ import { Boundary } from "@app/components/Boundary";
 import { Header } from "@app/islands/app/Header";
 import { Link } from "@app/islands/app/Link";
 import { Mail } from "@app/islands/app/Mail";
+import { Notice } from "@app/islands/app/Notice";
 import { paths, useRoute, type Route } from "@app/islands/app/route";
 import { Settings } from "@app/islands/app/Settings";
 
@@ -19,6 +20,7 @@ export function App() {
       <Boundary what="This page" key={route.page}>
         <Page route={route} />
       </Boundary>
+      <Notice />
     </div>
   );
 }

@@ -13,6 +13,15 @@ export const qk = {
   lists: (config: string) => ["mail", config, "messages"] as const,
   messages: (config: string, mailbox: string) =>
     ["mail", config, "messages", mailbox] as const,
+  /** Every message read whole from one config. */
+  readings: (config: string) => ["mail", config, "message"] as const,
   message: (config: string, mailbox: string, message: string) =>
     ["mail", config, "message", mailbox, message] as const,
+};
+
+/** Mutation keys, so what is in flight can be asked about by prefix. */
+export const mk = {
+  /** Every action on a message, in any config. */
+  actions: ["action"] as const,
+  actionsOf: (config: string) => ["action", config] as const,
 };

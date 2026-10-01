@@ -26,7 +26,7 @@ const frame = (html: string) =>
   `<!doctype html><html><head><meta charset="utf-8">` +
   `<meta http-equiv="Content-Security-Policy" content="${policy(window.location.origin)}">` +
   `<base target="_blank">` +
-  `<style>html{color-scheme:light;overflow-x:hidden;overflow-y:auto}` +
+  `<style>html{color-scheme:light;overflow:auto}` +
   `body{margin:0;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +
   `overflow-wrap:anywhere;width:fit-content;min-width:100%;box-sizing:border-box}` +
   `img{max-width:100%;height:auto}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
@@ -37,24 +37,29 @@ const frame = (html: string) =>
  */
 export function Frame({ html, images }: { html: string; images: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const shown = useRef(images);
   shown.current = images;
   const watch = useRef<ResizeObserver | null>(null);
 
   /*
-   * Fits the message to the frame's width. Mail is laid out for a fixed width — a 600px table is
+   * Fits the message to the space it has. Mail is laid out for a fixed width — a 600px table is
    * the norm — and browsers will not shrink a table below the width it states, so one wider than
-   * the frame is zoomed out until it fits, the way a phone's mail app does, rather than cut off
+   * the space is zoomed out until it fits, the way a phone's mail app does, rather than cut off
    * or scrolled sideways.
+   *
+   * The space is measured outside the frame, on the box it sits in: Mobile Safari widens a frame
+   * to what it holds whatever it is told, so the frame's own width says only how wide the mail
+   * already is.
    */
   const fit = useCallback(() => {
     const doc = ref.current?.contentDocument;
-    if (!doc?.body) return;
+    const room = box.current?.clientWidth ?? 0;
+    if (!doc?.body || room === 0) return;
     const root = doc.documentElement;
     root.style.zoom = "";
     const natural = doc.body.scrollWidth;
-    const room = root.clientWidth;
-    if (natural > room && room > 0) root.style.zoom = String(room / natural);
+    if (natural > room) root.style.zoom = String(room / natural);
   }, []);
 
   // Images arrive after the frame says it has loaded and can widen what they sit in, and the
@@ -70,7 +75,7 @@ export function Frame({ html, images }: { html: string; images: boolean }) {
     if (typeof ResizeObserver !== "undefined") {
       watch.current = new ResizeObserver(() => fit());
       watch.current.observe(doc.body);
-      watch.current.observe(ref.current!);
+      watch.current.observe(box.current!);
     }
   }, [fit]);
 
@@ -81,17 +86,21 @@ export function Frame({ html, images }: { html: string; images: boolean }) {
     if (images && doc?.body) show(doc);
   }, [images]);
 
+  // The box clips: whatever width the frame ends up, the pane never scrolls sideways.
   return (
-    <iframe
-      ref={ref}
-      title="Message"
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      srcDoc={frame(html)}
-      onLoad={loaded}
-      // A pixel wide with the pane's width as its minimum: Mobile Safari sizes an iframe to its
-      // content and ignores a width it is given, but honors a minimum.
-      className="block min-h-64 w-px min-w-full flex-1 border-0 bg-white"
-    />
+    <div
+      ref={box}
+      className="flex min-h-64 min-w-0 flex-1 flex-col overflow-hidden"
+    >
+      <iframe
+        ref={ref}
+        title="Message"
+        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+        srcDoc={frame(html)}
+        onLoad={loaded}
+        className="block w-px min-w-full flex-1 border-0 bg-white"
+      />
+    </div>
   );
 }
 
