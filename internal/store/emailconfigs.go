@@ -45,6 +45,10 @@ type EmailConfig struct {
 	Outgoing  *Server
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// SyncedAt is when its mail was last brought up to date, and SyncError why the latest try
+	// did not, or empty when it did.
+	SyncedAt  *time.Time
+	SyncError string
 }
 
 // Login is a server and the password to sign in to it.
@@ -82,17 +86,22 @@ const emailConfigColumns = `id, user_id, name, email,
   outgoing_host, outgoing_port, outgoing_tls, outgoing_username, outgoing_secret,
   created_at, updated_at`
 
+// emailConfigSelect is what a read takes: every written column, and the sync state the mirror
+// keeps beside them.
+const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error`
+
 func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error) {
 	var (
 		r                  emailConfigRow
 		oHost, oTLS, oUser sql.NullString
 		oPort              sql.NullInt64
 		created, updated   int64
+		synced             sql.NullInt64
 	)
 	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
-		&created, &updated)
+		&created, &updated, &synced, &r.SyncError)
 	if err != nil {
 		return nil, err
 	}
@@ -101,13 +110,17 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	}
 	r.CreatedAt = fromUnix(created)
 	r.UpdatedAt = fromUnix(updated)
+	if synced.Valid {
+		at := fromUnix(synced.Int64)
+		r.SyncedAt = &at
+	}
 	return &r, nil
 }
 
 // EmailConfigs lists one user's email configs, oldest first.
 func (s *Store) EmailConfigs(ctx context.Context, userID string) ([]*EmailConfig, error) {
 	rows, err := s.reader.QueryContext(ctx,
-		`SELECT `+emailConfigColumns+` FROM email_configs WHERE user_id = ? ORDER BY created_at, id`, userID)
+		`SELECT `+emailConfigSelect+` FROM email_configs WHERE user_id = ? ORDER BY created_at, id`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list email configs: %w", err)
 	}
@@ -138,7 +151,7 @@ func (s *Store) emailConfigRow(ctx context.Context, userID, id string) (*emailCo
 		return nil, Invalid("%q is not an email config id.", id)
 	}
 	r, err := scanEmailConfig(s.reader.QueryRowContext(ctx,
-		`SELECT `+emailConfigColumns+` FROM email_configs WHERE id = ? AND user_id = ?`, id, userID))
+		`SELECT `+emailConfigSelect+` FROM email_configs WHERE id = ? AND user_id = ?`, id, userID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, NotFound("There is no such email config.")
 	}
@@ -186,7 +199,13 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 		s.sealer.Seal([]byte(in.Incoming.Password), secretAAD(id, "incoming"))}
 	args = append(args, s.outgoingColumns(id, in.Outgoing)...)
 	args = append(args, unix(now), id, userID)
-	res, err := s.writer.ExecContext(ctx,
+
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("update email config: %w", err)
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx,
 		`UPDATE email_configs SET name = ?, email = ?,
 		   incoming_protocol = ?, incoming_host = ?, incoming_port = ?, incoming_tls = ?, incoming_username = ?, incoming_secret = ?,
 		   outgoing_host = ?, outgoing_port = ?, outgoing_tls = ?, outgoing_username = ?, outgoing_secret = ?,
@@ -198,7 +217,29 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, NotFound("There is no such email config.")
 	}
-	return shown(id, userID, in, r.CreatedAt, now), nil
+	// Another host or another username is another mailbox store, and what was copied from the
+	// old one is not this config's mail any more. A port or a security setting is the same one.
+	moved := in.Incoming.Host != r.Incoming.Host || in.Incoming.Username != r.Incoming.Username
+	if moved {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM mailboxes WHERE email_config_id = ?`, id); err != nil {
+			return nil, fmt.Errorf("update email config: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE email_configs SET synced_at = NULL, sync_error = '' WHERE id = ?`, id); err != nil {
+			return nil, fmt.Errorf("update email config: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("update email config: %w", err)
+	}
+	if moved {
+		s.Notify(userID)
+	}
+	out := shown(id, userID, in, r.CreatedAt, now)
+	if !moved {
+		out.SyncedAt, out.SyncError = r.SyncedAt, r.SyncError
+	}
+	return out, nil
 }
 
 // DeleteEmailConfig removes one of a user's email configs.

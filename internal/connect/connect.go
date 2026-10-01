@@ -248,8 +248,8 @@ func timedOut(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
 }
 
-// said is what a server wrote, made safe to put in a sentence: valid UTF-8, one line, and short.
-func said(text string) string {
+// Said is what a server wrote, made safe to put in a sentence: valid UTF-8, one line, and short.
+func Said(text string) string {
 	out := make([]rune, 0, len(text))
 	for _, r := range text {
 		if r == '�' || r < 0x20 || r == 0x7f {

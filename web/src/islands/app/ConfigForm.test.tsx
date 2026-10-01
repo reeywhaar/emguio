@@ -41,6 +41,8 @@ const saved: EmailConfig = {
   },
   created_at: 0,
   updated_at: 0,
+  synced_at: null,
+  sync_error: "",
 };
 
 beforeEach(() => {

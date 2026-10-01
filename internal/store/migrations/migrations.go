@@ -21,6 +21,7 @@ type Migration struct {
 var all = []Migration{
 	initialSchema,
 	emailConfigs,
+	mailboxes,
 }
 
 // exec runs a statement block as one migration.

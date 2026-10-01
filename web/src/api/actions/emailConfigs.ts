@@ -1,5 +1,11 @@
-import { request } from "@app/api/transport";
-import type { EmailConfig, EmailConfigDraft, TestResult } from "@app/api/types";
+import { query, request } from "@app/api/transport";
+import type {
+  EmailConfig,
+  EmailConfigDraft,
+  Mailbox,
+  MessagePage,
+  TestResult,
+} from "@app/api/types";
 
 /** Named mechanically from the route, so a call site and a handler find each other by grep. */
 
@@ -32,3 +38,23 @@ export const postEmailConfigsByIdTest = (id: string, body: EmailConfigDraft) =>
     method: "POST",
     body,
   });
+
+/** Asks for a look at every mailbox now. What it finds arrives on the event stream. */
+export const postEmailConfigsByIdSync = (id: string) =>
+  request<void>(`/api/email-configs/${encodeURIComponent(id)}/sync`, {
+    method: "POST",
+  });
+
+export const getEmailConfigsByIdMailboxes = (id: string) =>
+  request<{ mailboxes: Mailbox[] }>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes`,
+  ).then((it) => it.mailboxes);
+
+export const getEmailConfigsByIdMailboxesByMailboxMessages = (
+  id: string,
+  mailbox: string,
+  cursor: string,
+) =>
+  request<MessagePage>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages${query({ cursor })}`,
+  );

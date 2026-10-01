@@ -1,3 +1,6 @@
+import type { ReactNode } from "react";
+
+import { useLive } from "@app/api/live";
 import { Boundary } from "@app/components/Boundary";
 import { ConfigForm } from "@app/islands/app/ConfigForm";
 import { Header } from "@app/islands/app/Header";
@@ -8,8 +11,11 @@ import { Settings } from "@app/islands/app/Settings";
 
 export function App() {
   const route = useRoute();
+  useLive();
+  // The height of the window and no more: the mail view scrolls its own list, and every other
+  // page scrolls inside the space under the header.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-dvh flex-col">
       <Header route={route} />
       <Boundary what="This page" key={route.page}>
         <Page route={route} />
@@ -21,13 +27,25 @@ export function App() {
 function Page({ route }: { route: Route }) {
   switch (route.page) {
     case "mail":
-      return <Mail named={route.config} />;
+      return <Mail named={route.config} mailbox={route.mailbox} />;
     case "settings":
-      return <Settings />;
+      return (
+        <Scroll>
+          <Settings />
+        </Scroll>
+      );
     case "new-config":
-      return <ConfigForm />;
+      return (
+        <Scroll>
+          <ConfigForm />
+        </Scroll>
+      );
     case "edit-config":
-      return <ConfigForm id={route.id} />;
+      return (
+        <Scroll>
+          <ConfigForm id={route.id} />
+        </Scroll>
+      );
     case "missing":
       return (
         <main className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
@@ -40,4 +58,8 @@ function Page({ route }: { route: Route }) {
         </main>
       );
   }
+}
+
+function Scroll({ children }: { children: ReactNode }) {
+  return <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>;
 }

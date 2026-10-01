@@ -25,6 +25,8 @@ const (
 	Invite      = "i_"
 	Session     = "s_"
 	EmailConfig = "ec_"
+	Mailbox     = "mb_"
+	Message     = "m_"
 )
 
 const (

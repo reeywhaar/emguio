@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -42,6 +43,9 @@ type Store struct {
 	// sealer seals the passwords of email configs. They never leave this package unsealed except
 	// to be dialed with.
 	sealer *seal.Sealer
+
+	watchMu  sync.Mutex
+	watchers map[chan struct{}]string
 }
 
 const readers = 4
@@ -72,7 +76,7 @@ func Open(dir string, sealer *seal.Sealer) (*Store, error) {
 		return nil, err
 	}
 
-	s := &Store{writer: writer, reader: reader, now: time.Now, sealer: sealer}
+	s := &Store{writer: writer, reader: reader, now: time.Now, sealer: sealer, watchers: map[chan struct{}]string{}}
 	if err := migrations.Run(context.Background(), writer); err != nil {
 		s.Close()
 		return nil, err

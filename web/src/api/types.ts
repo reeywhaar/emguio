@@ -28,6 +28,10 @@ export type EmailConfig = {
   outgoing: Server | null;
   created_at: number;
   updated_at: number;
+  /** When its mail was last brought up to date, null before the first time. */
+  synced_at: number | null;
+  /** Why the latest try did not, in a sentence; empty when it did. */
+  sync_error: string;
 };
 
 /** A whole email config as the form sends it. An empty password is the one already saved. */
@@ -42,3 +46,48 @@ export type EmailConfigDraft = {
 export type Check = { ok: boolean; message: string };
 
 export type TestResult = { incoming: Check; outgoing: Check | null };
+
+/** What a mailbox is for, from the server's own flags or guessed from its name. */
+export type SpecialUse =
+  | "inbox"
+  | "drafts"
+  | "sent"
+  | "archive"
+  | "junk"
+  | "trash"
+  | "all"
+  | "flagged"
+  | "";
+
+export type Mailbox = {
+  id: string;
+  /** The server's name, and the same split into the tree it describes. */
+  name: string;
+  path: string[];
+  special_use: SpecialUse;
+  /** False for one that only holds others. */
+  selectable: boolean;
+  messages: number;
+  unseen: number;
+};
+
+export type Address = { name: string; email: string };
+
+export type Message = {
+  id: string;
+  from: Address;
+  to: Address[];
+  subject: string;
+  /** When it arrived, which is what the list is ordered by. */
+  date: number;
+  /** When the sender says it was sent, null when it says nothing. */
+  sent: number | null;
+  seen: boolean;
+  flagged: boolean;
+  answered: boolean;
+  draft: boolean;
+  has_attachments: boolean;
+  preview: string;
+};
+
+export type MessagePage = { messages: Message[]; next_cursor?: string };

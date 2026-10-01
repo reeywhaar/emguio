@@ -8,6 +8,8 @@ import { mount } from "@app/test/harness";
 const getAuthMe = vi.fn();
 const postAuthLogout = vi.fn();
 const getEmailConfigs = vi.fn();
+const getEmailConfigsByIdMailboxes = vi.fn();
+const getMessages = vi.fn();
 const leaveFor = vi.fn();
 
 vi.mock("@app/api/actions/auth", () => ({
@@ -16,6 +18,14 @@ vi.mock("@app/api/actions/auth", () => ({
 }));
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
+  getEmailConfigsByIdMailboxes: (id: string) =>
+    getEmailConfigsByIdMailboxes(id),
+  getEmailConfigsByIdMailboxesByMailboxMessages: (
+    id: string,
+    mailbox: string,
+    cursor: string,
+  ) => getMessages(id, mailbox, cursor),
+  postEmailConfigsByIdSync: vi.fn(),
 }));
 vi.mock("@app/leave", () => ({ leaveFor: (path: string) => leaveFor(path) }));
 
@@ -33,6 +43,8 @@ const config = (id: string, name: string): EmailConfig => ({
   outgoing: null,
   created_at: 0,
   updated_at: 0,
+  synced_at: null,
+  sync_error: "",
 });
 
 beforeEach(() => {
@@ -40,6 +52,19 @@ beforeEach(() => {
   window.localStorage.clear();
   getAuthMe.mockResolvedValue({ id: "u_1", username: "misha", created_at: 0 });
   getEmailConfigs.mockResolvedValue([]);
+  // Each config's INBOX is named for it, so a test can tell which one is open.
+  getEmailConfigsByIdMailboxes.mockImplementation(async (id: string) => [
+    {
+      id: `mb_${id}`,
+      name: `INBOX`,
+      path: [`Inbox of ${id}`],
+      special_use: "",
+      selectable: true,
+      messages: 0,
+      unseen: 0,
+    },
+  ]);
+  getMessages.mockResolvedValue({ messages: [] });
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -73,13 +98,13 @@ describe("the application", () => {
       config("ec_2", "Home"),
     ]);
     mount(<App />);
-    await screen.findByRole("heading", { name: "Work" });
+    await screen.findByRole("heading", { name: "Inbox of ec_1" });
 
     fireEvent.change(screen.getByLabelText("Email config"), {
       target: { value: "ec_2" },
     });
     expect(window.location.pathname).toBe("/c/ec_2");
-    await screen.findByRole("heading", { name: "Home" });
+    await screen.findByRole("heading", { name: "Inbox of ec_2" });
   });
 
   it("opens on the config last looked at", async () => {
@@ -89,6 +114,6 @@ describe("the application", () => {
     ]);
     window.localStorage.setItem("emguio.email-config", "ec_2");
     mount(<App />);
-    await screen.findByRole("heading", { name: "Home" });
+    await screen.findByRole("heading", { name: "Inbox of ec_2" });
   });
 });

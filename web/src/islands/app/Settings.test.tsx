@@ -30,6 +30,8 @@ const work: EmailConfig = {
   outgoing: null,
   created_at: 0,
   updated_at: 0,
+  synced_at: null,
+  sync_error: "",
 };
 
 beforeEach(() => getEmailConfigs.mockResolvedValue([work]));

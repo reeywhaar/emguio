@@ -55,7 +55,7 @@ func (c *Connector) CheckSMTP(ctx context.Context, s Server) error {
 func smtpFailure(s Server, stage string, err error) *Failure {
 	var refusal *smtp.SMTPError
 	if errors.As(err, &refusal) {
-		text := said(refusal.Message)
+		text := Said(refusal.Message)
 		switch stage {
 		case "starttls":
 			return fail("starttls", "%s refused STARTTLS: %s", s.addr(), text)

@@ -37,6 +37,8 @@ type Server struct {
 	// connector is the only way out to a mail server. A field so a test can trust its own
 	// certificates and reach loopback.
 	connector *connect.Connector
+	// mirror is nil in tests that do not need mail to arrive.
+	mirror Mirror
 
 	loginAll  *limiter
 	loginUser *limiter
@@ -55,7 +57,7 @@ const WriteDeadline = 2 * time.Minute
 
 // New wires the routes. Authorization is decided at registration, so a handler cannot forget
 // to check: one registered without its guard is visibly registered without it.
-func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA) *Server {
+func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror Mirror) *Server {
 	s := &Server{
 		cfg:      cfg,
 		log:      log,
@@ -65,6 +67,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA) *Serve
 		mux:      http.NewServeMux(),
 
 		connector: connect.New(cfg.AllowNetworks),
+		mirror:    mirror,
 
 		loginAll:  newLimiter(30, 2*time.Second),
 		loginUser: newLimiter(5, 20*time.Second),
@@ -89,6 +92,11 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA) *Serve
 	s.mux.Handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
 	s.mux.Handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
 	s.mux.Handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
+	s.mux.Handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
+	s.mux.Handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
+	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
+
+	s.mux.Handle("GET /api/events", s.requireSession(s.events))
 
 	// Catch-all, so a mistyped API path never falls through to the SPA and reaches a fetch as
 	// an HTML document it cannot parse.
@@ -147,7 +155,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(context.WithValue(r.Context(), ctxStart, time.Now()))
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		// Reads take no writer.
+		// Reads take no writer, and the event stream rightly runs for as long as the tab is open.
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), s.writeDeadline)
 		defer cancel()

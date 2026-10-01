@@ -59,3 +59,15 @@ export async function request<T>(
 export function messageOf(err: unknown): string {
   return err instanceof ApiError ? err.message : "Something went wrong here.";
 }
+
+/** Query strings, with empty values left out rather than sent as blanks. */
+export function query(
+  params: Record<string, string | number | undefined>,
+): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const rendered = search.toString();
+  return rendered ? `?${rendered}` : "";
+}

@@ -17,11 +17,14 @@ import (
 	"math/big"
 	"net"
 	"net/netip"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 	"github.com/emersion/go-sasl"
@@ -150,6 +153,39 @@ func Silent(t testing.TB) int {
 		}
 	}()
 	return port(ln)
+}
+
+// Admin signs in to a server IMAP started with "implicit", as its user, for a test to change
+// what is on it the way another mail client would.
+func Admin(t testing.TB, cert *Cert, port int, username, password string) *imapclient.Client {
+	t.Helper()
+	conn, err := tls.Dial("tcp", net.JoinHostPort(Host, strconv.Itoa(port)),
+		&tls.Config{RootCAs: cert.Pool, ServerName: Host})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := imapclient.New(conn, nil)
+	t.Cleanup(func() { c.Close() })
+	if err := c.Login(username, password).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// Append puts a message into a mailbox, arriving at the given time with the given flags.
+func Append(t testing.TB, c *imapclient.Client, mailbox, raw string, at time.Time, flags ...imap.Flag) {
+	t.Helper()
+	raw = strings.ReplaceAll(raw, "\n", "\r\n")
+	cmd := c.Append(mailbox, int64(len(raw)), &imap.AppendOptions{Flags: flags, Time: at})
+	if _, err := cmd.Write([]byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // ClosedPort is a port nothing listens on.

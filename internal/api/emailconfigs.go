@@ -28,6 +28,10 @@ type emailConfigJSON struct {
 	Outgoing  *serverJSON `json:"outgoing"`
 	CreatedAt int64       `json:"created_at"`
 	UpdatedAt int64       `json:"updated_at"`
+	// SyncedAt is when its mail was last brought up to date, null before the first time.
+	// SyncError is why the latest try did not, and empty when it did.
+	SyncedAt  *int64 `json:"synced_at"`
+	SyncError string `json:"sync_error"`
 }
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
@@ -38,6 +42,8 @@ func toJSON(c *store.EmailConfig) emailConfigJSON {
 		Incoming:  serverJSON(c.Incoming),
 		CreatedAt: c.CreatedAt.Unix(),
 		UpdatedAt: c.UpdatedAt.Unix(),
+		SyncedAt:  unixOrNil(c.SyncedAt),
+		SyncError: c.SyncError,
 	}
 	if c.Outgoing != nil {
 		o := serverJSON(*c.Outgoing)
@@ -116,6 +122,7 @@ func (s *Server) createEmailConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("email config created", "user", userOf(r).ID, "email_config", c.ID, "host", c.Incoming.Host)
+	s.reconcile()
 	writeJSON(w, http.StatusCreated, toJSON(c))
 }
 
@@ -129,6 +136,7 @@ func (s *Server) putEmailConfig(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.reconcile()
 	writeJSON(w, http.StatusOK, toJSON(c))
 }
 
@@ -138,6 +146,7 @@ func (s *Server) deleteEmailConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("email config deleted", "user", userOf(r).ID, "email_config", r.PathValue("id"))
+	s.reconcile()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -208,4 +217,12 @@ func (s *Server) check(ctx context.Context, id, role string, l store.Login,
 	}
 	s.log.Info("connection test failed", "email_config", id, "server", role, "host", l.Host, "class", f.Class)
 	return checkJSON{Message: f.Sentence}
+}
+
+// reconcile tells the mirror the set of configs moved, so a new one starts reading now rather
+// than at its next look.
+func (s *Server) reconcile() {
+	if s.mirror != nil {
+		s.mirror.Reconcile()
+	}
 }

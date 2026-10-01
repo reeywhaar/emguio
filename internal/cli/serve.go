@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +19,8 @@ import (
 	"emguio/internal/api"
 	"emguio/internal/app"
 	"emguio/internal/config"
+	"emguio/internal/connect"
+	"emguio/internal/mirror"
 	"emguio/internal/store"
 	"emguio/internal/sweep"
 )
@@ -82,15 +85,24 @@ func serveCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
+			// Every request is built on this one, so cancelling it ends the event streams that are
+			// waiting for something to happen. Shutdown waits for what is in flight, and a stream
+			// is in flight until the browser closes the tab.
+			streams, endStreams := context.WithCancel(context.Background())
+			defer endStreams()
+
+			reader := mirror.New(st, connect.New(cfg.AllowNetworks), log)
 			srv := &http.Server{
 				Addr:              app.ListenAddr,
-				Handler:           api.New(cfg, log, st, spa),
+				Handler:           api.New(cfg, log, st, spa, reader),
 				ReadHeaderTimeout: 10 * time.Second,
+				BaseContext:       func(net.Listener) context.Context { return streams },
 			}
 
-			// Waited on below, so the sweep is not still writing when the database closes.
+			// Waited on below, so neither is still writing when the database closes.
 			var background sync.WaitGroup
 			background.Go(func() { sweep.Run(ctx, st, log) })
+			background.Go(func() { reader.Run(ctx) })
 
 			errc := make(chan error, 1)
 			go func() {
@@ -112,6 +124,9 @@ func serveCmd() *cobra.Command {
 				shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				log.Info("shutting down")
+				// Before Shutdown rather than after: it waits for active requests, and a stream
+				// only stops being active when its context ends.
+				endStreams()
 				err := srv.Shutdown(shutdown)
 				// Before the deferred Close, or a sweep mid-pass writes into a database that is
 				// being checkpointed.
