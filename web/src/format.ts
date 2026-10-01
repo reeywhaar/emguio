@@ -42,13 +42,13 @@ export function ago(unix: number, now = new Date()): string {
   const seconds = Math.round(unix - now.getTime() / 1000);
   if (seconds > -45) return "just now";
   const words = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  for (const [unit, size] of [
+  for (const [unit, length] of [
     ["day", 86400],
     ["hour", 3600],
     ["minute", 60],
   ] as const) {
-    if (Math.abs(seconds) >= size) {
-      return words.format(Math.round(seconds / size), unit);
+    if (Math.abs(seconds) >= length) {
+      return words.format(Math.round(seconds / length), unit);
     }
   }
   return words.format(seconds, "second");

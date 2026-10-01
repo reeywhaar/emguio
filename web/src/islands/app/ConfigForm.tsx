@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -17,12 +17,12 @@ import type {
   Security,
 } from "@app/api/types";
 import { Button } from "@app/components/Button";
+import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
 import { Field, Select } from "@app/components/Field";
 import { TextField } from "@app/components/TextField";
-import { Link } from "@app/islands/app/Link";
+import { labelOf } from "@app/islands/app/emailConfig";
 import { Results } from "@app/islands/app/Results";
-import { go, paths } from "@app/islands/app/route";
 
 /** The ports each kind of server usually answers on, for each way of securing it. */
 const ports = {
@@ -120,34 +120,47 @@ function bodyOf(d: Draft): EmailConfigDraft {
   };
 }
 
-/** Adding an email config, or editing the one with id. */
-export function ConfigForm({ id }: { id?: string }) {
+/** A dialog adding an email config, or editing the one with id. */
+export function ConfigForm({
+  id,
+  onClose,
+}: {
+  id: string | null;
+  onClose: () => void;
+}) {
   const configs = useQuery({
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
-    enabled: id !== undefined,
+    enabled: id !== null,
   });
 
-  if (id === undefined) return <Form />;
+  if (id === null) return <Form onClose={onClose} />;
   if (!configs.data) {
     return (
-      <Page title="Edit email config">
+      <Dialog open wide onClose={onClose} title="Edit email config">
         <Dummy className="h-64 w-full" />
-      </Page>
+      </Dialog>
     );
   }
   const config = configs.data.find((c) => c.id === id);
   if (!config) {
     return (
-      <Page title="Edit email config">
+      <Dialog open wide onClose={onClose} title="Edit email config">
         <p className="text-sm text-muted">There is no such email config.</p>
-      </Page>
+      </Dialog>
     );
   }
-  return <Form config={config} />;
+  return <Form config={config} onClose={onClose} />;
 }
 
-function Form({ config }: { config?: EmailConfig }) {
+function Form({
+  config,
+  onClose,
+}: {
+  config?: EmailConfig;
+  onClose: () => void;
+}) {
+  const form = useId();
   const client = useQueryClient();
   const editing = config !== undefined;
   const [draft, setDraft] = useState<Draft>(() =>
@@ -163,7 +176,7 @@ function Form({ config }: { config?: EmailConfig }) {
         : postEmailConfigs(bodyOf(draft)),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: qk.emailConfigs });
-      go(paths.settings);
+      onClose();
     },
   });
   const test = useMutation({
@@ -204,8 +217,45 @@ function Form({ config }: { config?: EmailConfig }) {
   const kept = editing ? "Saved — leave empty to keep it" : undefined;
 
   return (
-    <Page title={editing ? "Edit email config" : "Add an email config"}>
-      <form className="flex flex-col gap-5" onSubmit={submit}>
+    <Dialog
+      open
+      wide
+      onClose={onClose}
+      title={editing ? `Edit ${labelOf(config)}` : "Add email config"}
+      footer={
+        <>
+          {/* Beside the buttons that caused it, whatever the body is scrolled to. */}
+          {test.data || test.error || save.error ? (
+            <div className="flex w-full flex-col gap-1">
+              {test.data ? <Results result={test.data} /> : null}
+              {test.error ? (
+                <p className="text-sm text-accent">{messageOf(test.error)}</p>
+              ) : null}
+              {save.error ? (
+                <p className="text-sm text-accent">{messageOf(save.error)}</p>
+              ) : null}
+            </div>
+          ) : null}
+          <Button
+            className="mr-auto"
+            disabled={test.isPending}
+            onClick={() => test.mutate()}
+          >
+            {test.isPending ? "Testing" : "Test connection"}
+          </Button>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            form={form}
+            variant="solid"
+            disabled={save.isPending}
+          >
+            Save
+          </Button>
+        </>
+      }
+    >
+      <form id={form} className="flex flex-col gap-5" onSubmit={submit}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Email address">
             <TextField
@@ -223,7 +273,7 @@ function Form({ config }: { config?: EmailConfig }) {
                     : { ...d.incoming, username: email },
                 }));
               }}
-              autoFocus={!editing}
+              data-autofocus={editing ? undefined : true}
             />
           </Field>
           <Field label="Name" hint="In the switcher. Empty shows the address.">
@@ -248,9 +298,6 @@ function Form({ config }: { config?: EmailConfig }) {
                 }
               >
                 <option value="imap">IMAP</option>
-                <option value="pop3" disabled>
-                  POP3 — coming later
-                </option>
               </Select>
             </Field>
             <Field label="Security">
@@ -372,33 +419,11 @@ function Form({ config }: { config?: EmailConfig }) {
               )}
             </>
           ) : (
-            <p className="text-sm text-muted">
-              Optional. Nothing is sent from emguio yet.
-            </p>
+            <p className="text-sm text-muted">Optional.</p>
           )}
         </Box>
-
-        {test.data ? <Results result={test.data} /> : null}
-        {test.error ? (
-          <p className="text-sm text-accent">{messageOf(test.error)}</p>
-        ) : null}
-        {save.error ? (
-          <p className="text-sm text-accent">{messageOf(save.error)}</p>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" variant="solid" disabled={save.isPending}>
-            Save
-          </Button>
-          <Button disabled={test.isPending} onClick={() => test.mutate()}>
-            {test.isPending ? "Testing" : "Test connection"}
-          </Button>
-          <Link href={paths.settings} className="px-2 text-sm text-muted">
-            Cancel
-          </Link>
-        </div>
       </form>
-    </Page>
+    </Dialog>
   );
 }
 
@@ -426,17 +451,5 @@ function Box({ legend, children }: { legend: string; children: ReactNode }) {
       <legend className="px-1 text-sm font-medium">{legend}</legend>
       {children}
     </fieldset>
-  );
-}
-
-function Page({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6">
-      <Link href={paths.settings} className="text-sm text-muted">
-        ← Settings
-      </Link>
-      <h1 className="text-xl font-semibold">{title}</h1>
-      {children}
-    </main>
   );
 }

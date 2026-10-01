@@ -22,14 +22,15 @@ describe("a route", () => {
       mailbox: "mb_2",
       message: null,
     });
-    expect(parse("/settings")).toEqual({ page: "settings" });
-    expect(parse("/settings/")).toEqual({ page: "settings" });
+    expect(parse("/settings")).toEqual({ page: "settings", editing: null });
+    expect(parse("/settings/")).toEqual({ page: "settings", editing: null });
     expect(parse("/settings/email-configs/new")).toEqual({
-      page: "new-config",
+      page: "settings",
+      editing: { id: null },
     });
     expect(parse("/settings/email-configs/ec_1")).toEqual({
-      page: "edit-config",
-      id: "ec_1",
+      page: "settings",
+      editing: { id: "ec_1" },
     });
   });
 
@@ -61,9 +62,12 @@ describe("a route", () => {
     expect(paths.mail()).toBe("/");
     expect(paths.mail("ec_1", "mb_2", "m_3")).toBe("/c/ec_1/mb_2/m_3");
     expect(parse(paths.editConfig("ec_1"))).toEqual({
-      page: "edit-config",
-      id: "ec_1",
+      page: "settings",
+      editing: { id: "ec_1" },
     });
-    expect(parse(paths.newConfig)).toEqual({ page: "new-config" });
+    expect(parse(paths.newConfig)).toEqual({
+      page: "settings",
+      editing: { id: null },
+    });
   });
 });

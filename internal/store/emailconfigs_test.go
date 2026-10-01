@@ -229,7 +229,7 @@ func TestADraftIsValidatedBeforeAnythingIsStored(t *testing.T) {
 	for name, mutate := range map[string]func(*EmailConfigInput){
 		"no email":         func(in *EmailConfigInput) { in.Email = "" },
 		"not an email":     func(in *EmailConfigInput) { in.Email = "misha" },
-		"pop3":             func(in *EmailConfigInput) { in.Incoming.Protocol = ProtocolPOP3 },
+		"another protocol": func(in *EmailConfigInput) { in.Incoming.Protocol = "jmap" },
 		"no protocol":      func(in *EmailConfigInput) { in.Incoming.Protocol = "" },
 		"a url as a host":  func(in *EmailConfigInput) { in.Incoming.Host = "imaps://imap.example.com" },
 		"a port in a host": func(in *EmailConfigInput) { in.Incoming.Host = "imap.example.com:993" },

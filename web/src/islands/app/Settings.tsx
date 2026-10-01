@@ -12,13 +12,18 @@ import { messageOf } from "@app/api/transport";
 import type { EmailConfig } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
+import { ConfigForm } from "@app/islands/app/ConfigForm";
 import { describe, draftOf, labelOf } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { Results } from "@app/islands/app/Results";
-import { paths } from "@app/islands/app/route";
+import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
 
-export function Settings() {
+export function Settings({
+  editing,
+}: {
+  editing: Extract<Route, { page: "settings" }>["editing"];
+}) {
   const configs = useQuery({
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
@@ -45,6 +50,13 @@ export function Settings() {
         )}
       </section>
       <Account />
+      {editing ? (
+        <ConfigForm
+          id={editing.id}
+          onClose={() => go(paths.settings)}
+          key={editing.id ?? "new"}
+        />
+      ) : null}
     </main>
   );
 }

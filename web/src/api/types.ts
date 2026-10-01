@@ -9,7 +9,7 @@ export type Me = {
 /** How a server is secured: TLS from the first byte, or upgraded with STARTTLS. */
 export type Security = "implicit" | "starttls";
 
-export type Protocol = "imap" | "pop3";
+export type Protocol = "imap";
 
 export type Server = {
   host: string;

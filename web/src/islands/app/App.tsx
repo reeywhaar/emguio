@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 
 import { useLive } from "@app/api/live";
 import { Boundary } from "@app/components/Boundary";
-import { ConfigForm } from "@app/islands/app/ConfigForm";
 import { Header } from "@app/islands/app/Header";
 import { Link } from "@app/islands/app/Link";
 import { Mail } from "@app/islands/app/Mail";
@@ -37,19 +36,7 @@ function Page({ route }: { route: Route }) {
     case "settings":
       return (
         <Scroll>
-          <Settings />
-        </Scroll>
-      );
-    case "new-config":
-      return (
-        <Scroll>
-          <ConfigForm />
-        </Scroll>
-      );
-    case "edit-config":
-      return (
-        <Scroll>
-          <ConfigForm id={route.id} />
+          <Settings editing={route.editing} />
         </Scroll>
       );
     case "missing":

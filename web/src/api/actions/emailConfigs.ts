@@ -3,6 +3,7 @@ import type {
   EmailConfig,
   EmailConfigDraft,
   Mailbox,
+  Message,
   MessagePage,
   ReadMessage,
   TestResult,
@@ -67,6 +68,17 @@ export const getEmailConfigsByIdMessagesByMessage = (
 ) =>
   request<ReadMessage>(
     `/api/email-configs/${encodeURIComponent(id)}/messages/${encodeURIComponent(message)}${query({ images: images ? 1 : undefined })}`,
+  );
+
+/** Marks a message read or unread: on the server, and here once the server has taken it. */
+export const patchEmailConfigsByIdMessagesByMessage = (
+  id: string,
+  message: string,
+  body: { seen: boolean },
+) =>
+  request<Message>(
+    `/api/email-configs/${encodeURIComponent(id)}/messages/${encodeURIComponent(message)}`,
+    { method: "PATCH", body },
   );
 
 /** Where a part of a message is downloaded from. */

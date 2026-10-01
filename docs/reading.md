@@ -17,6 +17,10 @@ it.
 A request of its own rather than something reading does on the side: a GET that changes things
 is one a prefetch, or a link from anywhere, can make on somebody's behalf.
 
+The reading pane sends it once per opening, when an unread message has loaded. A message marked
+unread again stays unread while it is open, however often it is fetched; the next opening marks
+it read.
+
 ## One worker per email config, holding one connection
 
 The mirror starts a worker for every email config and keeps it signed in. A connection that
@@ -101,9 +105,10 @@ it.
 
 On a second session of its own, so opening a message never waits behind a sync copying thousands
 of headers. That session is opened on demand and closed after five idle minutes. The message is
-fetched with `BODY.PEEK[]` — opening it here leaves it unread everywhere else — after checking
-that the mailbox's UIDVALIDITY is still the one its UID belongs to. One the server no longer has
-is a `404 gone`, and asks the mirror for a look, so it leaves the list too.
+fetched with `BODY.PEEK[]` after checking that the mailbox's UIDVALIDITY is still the one its
+UID belongs to. The fetch itself changes nothing; marking the message read is its own `PATCH`.
+One the server no longer has is a `404 gone`, and asks the mirror for a look, so it leaves the
+list too.
 
 The raw message is kept, and every later opening and every attachment come from the copy.
 

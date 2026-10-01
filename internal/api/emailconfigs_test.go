@@ -100,12 +100,12 @@ func TestAnotherUsersEmailConfigIsNotFound(t *testing.T) {
 func TestAnInvalidDraftSaysWhatIsWrong(t *testing.T) {
 	s, st := newServerStore(t, nil)
 	c := signIn(t, s, st)
-	body := strings.Replace(configBody(993, 0, "hunter2"), `"protocol":"imap"`, `"protocol":"pop3"`, 1)
+	body := strings.Replace(configBody(993, 0, "hunter2"), `"protocol":"imap"`, `"protocol":"jmap"`, 1)
 	resp := c.do("POST", "/api/email-configs", body)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %s", resp.Status)
 	}
-	if got := c.json(resp); got["code"] != CodeInvalid || !strings.Contains(got["message"].(string), "POP3") {
+	if got := c.json(resp); got["code"] != CodeInvalid || !strings.Contains(got["message"].(string), "Choose imap") {
 		t.Errorf("body = %v", got)
 	}
 }

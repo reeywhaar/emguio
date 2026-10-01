@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmailConfig } from "@app/api/types";
@@ -46,7 +46,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe("settings", () => {
   it("lists each email config with its servers", async () => {
-    mount(<Settings />);
+    mount(<Settings editing={null} />);
     await screen.findByText("Work");
     screen.getByText("misha@example.com");
     screen.getByText("IMAP · imap.example.com:993 · TLS");
@@ -55,21 +55,31 @@ describe("settings", () => {
 
   // On a phone the header has no room for it, so this is where signing out is.
   it("says who is signed in and offers a way out", async () => {
-    mount(<Settings />);
+    mount(<Settings editing={null} />);
     await screen.findByText("misha");
     screen.getByRole("button", { name: "Sign out" });
   });
 
+  // Over the list rather than in its place, and the address says which.
+  it("edits a config in a dialog over the list", async () => {
+    mount(<Settings editing={{ id: "ec_1" }} />);
+    // The dialog that waits for the list is a different one from the form's.
+    await screen.findByDisplayValue("imap.example.com");
+    const dialog = screen.getByRole("dialog");
+    within(dialog).getByRole("heading", { name: "Edit Work" });
+    screen.getByRole("heading", { name: "Work" });
+  });
+
   it("says there are none rather than showing an empty list", async () => {
     getEmailConfigs.mockResolvedValue([]);
-    mount(<Settings />);
+    mount(<Settings editing={null} />);
     await screen.findByText(/None yet/);
   });
 
   // A button that stops to ask ends in an ellipsis, and the asking names what goes.
   it("asks before deleting, and names what it deletes", async () => {
     deleteEmailConfigsById.mockResolvedValue(undefined);
-    mount(<Settings />);
+    mount(<Settings editing={null} />);
     fireEvent.click(await screen.findByRole("button", { name: "Delete…" }));
     expect(deleteEmailConfigsById).not.toHaveBeenCalled();
     screen.getByText("Delete Work?");
@@ -88,7 +98,7 @@ describe("settings", () => {
       },
       outgoing: null,
     });
-    mount(<Settings />);
+    mount(<Settings editing={null} />);
     fireEvent.click(
       await screen.findByRole("button", { name: "Test connection" }),
     );

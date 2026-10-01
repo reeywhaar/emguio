@@ -74,8 +74,8 @@ second one when a related question comes up.
 
 ```go
 // Bad — an argument about something that is not here
-// No POP3 yet. Every POP3 server we tried lacked UIDL on some messages, so we
-// postponed it until IMAP works end to end.
+// No IDLE yet. Two servers we tried dropped idle connections after a minute, so we
+// poll until that is understood.
 
 // Good — the decision in docs/, and nothing beside the code
 ```
@@ -187,8 +187,8 @@ A new prefix is added to this table in the change that introduces it.
 Ids are opaque and never parsed back. A malformed one is refused before it reaches a query, so a
 typo is a `400` rather than an empty result that looks like a `404`.
 
-**What the server calls a thing is not an id.** UIDs, UIDVALIDITY, mailbox names and POP3 UIDLs
-stay inside `internal/store` and the package that speaks the protocol. The API, URLs and the
+**What the server calls a thing is not an id.** UIDs, UIDVALIDITY and mailbox names stay
+inside `internal/store` and the package that speaks the protocol. The API, URLs and the
 interface use our own ids, so a server that renumbers or renames something changes rows rather
 than links.
 

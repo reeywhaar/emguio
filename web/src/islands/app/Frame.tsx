@@ -39,17 +39,17 @@ export function Frame({ html }: { html: string }) {
    * scrolled sideways. Then the frame takes the height of what it now holds.
    */
   const fit = useCallback(() => {
-    const frame = ref.current;
-    const doc = frame?.contentDocument;
-    if (!frame || !doc?.body) return;
+    const el = ref.current;
+    const doc = el?.contentDocument;
+    if (!el || !doc?.body) return;
     const root = doc.documentElement;
     root.style.zoom = "";
     const natural = doc.body.scrollWidth;
-    const room = frame.clientWidth;
+    const room = el.clientWidth;
     const zoom = natural > room && room > 0 ? room / natural : 1;
     if (zoom < 1) root.style.zoom = String(zoom);
     // Plus the frame's own border, which the height it is given includes.
-    const border = frame.offsetHeight - frame.clientHeight;
+    const border = el.offsetHeight - el.clientHeight;
     setHeight(Math.ceil(doc.body.getBoundingClientRect().height) + border);
   }, []);
 

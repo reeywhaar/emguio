@@ -11,9 +11,11 @@ export type Route =
       mailbox: string | null;
       message: string | null;
     }
-  | { page: "settings" }
-  | { page: "new-config" }
-  | { page: "edit-config"; id: string }
+  | {
+      page: "settings";
+      /** The email config open in a dialog over the list, with a null id for a new one. */
+      editing: { id: string | null } | null;
+    }
   | { page: "missing" };
 
 export const paths = {
@@ -41,11 +43,13 @@ export function parse(path: string): Route {
       mailbox: third ?? null,
       message: fourth ?? null,
     };
-  if (first === "settings" && parts.length === 1) return { page: "settings" };
+  if (first === "settings" && parts.length === 1)
+    return { page: "settings", editing: null };
   if (first === "settings" && second === "email-configs" && parts.length === 3)
-    return third === "new"
-      ? { page: "new-config" }
-      : { page: "edit-config", id: third! };
+    return {
+      page: "settings",
+      editing: { id: third === "new" ? null : third! },
+    };
   return { page: "missing" };
 }
 

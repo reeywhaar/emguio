@@ -2,11 +2,12 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@app/api/transport";
-import type { Mailbox, ReadMessage } from "@app/api/types";
+import type { Mailbox, Message, ReadMessage } from "@app/api/types";
 import { Reader } from "@app/islands/app/Reader";
 import { mount } from "@app/test/harness";
 
 const getMessage = vi.fn();
+const patchMessage = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigsByIdMessagesByMessage: (
@@ -14,6 +15,11 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     message: string,
     images: boolean,
   ) => getMessage(id, message, images),
+  patchEmailConfigsByIdMessagesByMessage: (
+    id: string,
+    message: string,
+    body: { seen: boolean },
+  ) => patchMessage(id, message, body),
   partURL: (id: string, message: string, index: number) =>
     `/parts/${id}/${message}/${index}`,
 }));
@@ -28,11 +34,11 @@ const inbox: Mailbox = {
   unseen: 0,
 };
 
-const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
+/** The message as a list has it, which is what marking it read returns. */
+const listed = (extra: Partial<Message> = {}): Message => ({
   id: "m_1",
   from: { name: "Alice", email: "alice@example.com" },
   to: [{ name: "", email: "misha@example.com" }],
-  cc: [{ name: "Bob", email: "bob@example.com" }],
   subject: "Quarterly numbers",
   date: 1790000000,
   sent: null,
@@ -42,6 +48,12 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   draft: false,
   has_attachments: true,
   preview: "",
+  ...extra,
+});
+
+const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
+  ...listed(),
+  cc: [{ name: "Bob", email: "bob@example.com" }],
   mailbox: "mb_inbox",
   text: "The numbers are in.",
   html: "",
@@ -61,6 +73,10 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
 
 beforeEach(() => {
   getMessage.mockResolvedValue(read());
+  patchMessage.mockImplementation(
+    async (_c: string, _m: string, body: { seen: boolean }) =>
+      listed({ seen: body.seen }),
+  );
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -125,5 +141,66 @@ describe("the reading pane", () => {
     );
     open();
     await screen.findByText("This message is no longer on the server.");
+  });
+
+  it("marks an unread message read when it opens", async () => {
+    open();
+    await waitFor(() =>
+      expect(patchMessage).toHaveBeenCalledWith("ec_1", "m_1", { seen: true }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", {
+          name: "Mark as unread",
+        }).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it("leaves a message that is read as it is", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    open();
+    await screen.findByRole("heading", { name: "Quarterly numbers" });
+    screen.getByRole("button", { name: "Mark as unread" });
+    expect(patchMessage).not.toHaveBeenCalled();
+  });
+
+  // Marked unread, it stays unread while it is open, even as the message is fetched again.
+  it("marks it unread on asking, once and for good", async () => {
+    let seen = false;
+    getMessage.mockImplementation(async () =>
+      read({ seen, html: "<p>Rich</p>", remote_images: 1 }),
+    );
+    patchMessage.mockImplementation(
+      async (_c: string, _m: string, body: { seen: boolean }) => {
+        seen = body.seen;
+        return listed({ seen });
+      },
+    );
+    open();
+    const button = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Mark as unread",
+    });
+    await waitFor(() => expect(button.disabled).toBe(false));
+    fireEvent.click(button);
+    await screen.findByRole("button", { name: "Mark as read" });
+    fireEvent.click(screen.getByRole("button", { name: "Show images" }));
+    await waitFor(() =>
+      expect(getMessage).toHaveBeenLastCalledWith("ec_1", "m_1", true),
+    );
+    await screen.findByRole("button", { name: "Mark as read" });
+    expect(patchMessage.mock.calls.map((c) => c[2])).toEqual([
+      { seen: true },
+      { seen: false },
+    ]);
+  });
+
+  it("says what the server said when it would not take it", async () => {
+    patchMessage.mockRejectedValue(
+      new ApiError(502, "unreachable", "imap.example.com:993 timed out."),
+    );
+    open();
+    await screen.findByText("imap.example.com:993 timed out.");
+    screen.getByRole("button", { name: "Mark as read" });
   });
 });

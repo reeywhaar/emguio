@@ -13,11 +13,9 @@ import (
 	"emguio/internal/ids"
 )
 
-// What an incoming server can speak, and how a server is secured. POP3 is in the schema and
-// refused here until something reads it — see docs/email-configs.md.
+// What an incoming server can speak, and how a server is secured — see docs/email-configs.md.
 const (
 	ProtocolIMAP = "imap"
-	ProtocolPOP3 = "pop3"
 
 	TLSImplicit = "implicit"
 	TLSStartTLS = "starttls"
@@ -412,8 +410,6 @@ func (in *EmailConfigInput) normalize() error {
 	}
 	switch in.Incoming.Protocol {
 	case ProtocolIMAP:
-	case ProtocolPOP3:
-		return Invalid("POP3 is not supported yet. Choose IMAP.")
 	case "":
 		return Invalid("Choose the protocol the incoming server speaks.")
 	default:

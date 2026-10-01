@@ -12,11 +12,14 @@ Every query that touches one takes the user it belongs to, and another user's id
 The interface shows one at a time, chosen in the header, and nothing joins across them. A
 unified inbox is a different product.
 
-## Incoming is IMAP, and POP3 is in the schema already
+## An incoming server names its protocol, and IMAP is the one there is
 
-`incoming_protocol` is a column, the form lists POP3, and the API refuses it with a sentence
-saying it is not supported yet. When POP3 is written, storage does not change and nothing has
-to be migrated: it is a branch in the code that reads mail, not a new shape of account.
+`incoming_protocol` is a column and `protocol` a field of the API and the form, with `imap` its
+only value. Named rather than assumed, so reading mail another way is a new value and a branch in
+the code that reads mail, not a new shape of email config and a migration.
+
+POP3 is not one of them: it is one inbox with no flags and no way to fetch part of a message, and
+folders, read state and search are what emguio reads from the server.
 
 ## A server is secured with TLS or STARTTLS, never neither
 
@@ -76,7 +79,8 @@ IMAP signs in, opens INBOX with `EXAMINE` and signs out. SMTP greets, signs in a
 sending. Each server is tested at once, and each test is bounded at fifteen seconds.
 
 A server that refuses is a `200` with `ok: false` and its reason: the test ran, and that is its
-answer. A draft that is wrong in itself — no host, POP3 — is a `400` like any other.
+answer. A draft that is wrong in itself — no host, a protocol that is not `imap` — is a `400` like any
+other.
 
 A test dials whatever it is given, so it is limited per user: a burst of ten, then one every six
 seconds. Without that, a loop of tests would make an instance somebody's port scanner.

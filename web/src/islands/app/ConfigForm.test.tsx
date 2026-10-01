@@ -11,6 +11,7 @@ const postEmailConfigs = vi.fn();
 const putEmailConfigsById = vi.fn();
 const postEmailConfigsTest = vi.fn();
 const postEmailConfigsByIdTest = vi.fn();
+const onClose = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
@@ -46,7 +47,6 @@ const saved: EmailConfig = {
 };
 
 beforeEach(() => {
-  window.history.pushState({}, "", "/settings/email-configs/new");
   getEmailConfigs.mockResolvedValue([saved]);
   postEmailConfigs.mockResolvedValue(saved);
   putEmailConfigsById.mockResolvedValue(saved);
@@ -61,14 +61,14 @@ const type = (label: string, value: string) =>
   fireEvent.change(field(label), { target: { value } });
 
 describe("adding an email config", () => {
-  it("sends the whole draft and goes back to settings", async () => {
-    mount(<ConfigForm />);
+  it("sends the whole draft and closes", async () => {
+    mount(<ConfigForm id={null} onClose={onClose} />);
     type("Email address", "misha@example.com");
     type("Host", "imap.example.com");
     type("Password", "hunter2");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(window.location.pathname).toBe("/settings"));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(postEmailConfigs).toHaveBeenCalledWith({
       name: "",
       email: "misha@example.com",
@@ -86,7 +86,7 @@ describe("adding an email config", () => {
   });
 
   it("stops the username following the address once it is typed", () => {
-    mount(<ConfigForm />);
+    mount(<ConfigForm id={null} onClose={onClose} />);
     type("Email address", "misha@example.com");
     type("Username", "misha");
     type("Email address", "robin@example.com");
@@ -95,7 +95,7 @@ describe("adding an email config", () => {
 
   // A port still at the usual one is the usual one for the setting, not a choice somebody made.
   it("moves a usual port with the security setting and leaves a typed one", () => {
-    mount(<ConfigForm />);
+    mount(<ConfigForm id={null} onClose={onClose} />);
     type("Security", "starttls");
     expect(field("Port").value).toBe("143");
 
@@ -104,16 +104,8 @@ describe("adding an email config", () => {
     expect(field("Port").value).toBe("1143");
   });
 
-  it("offers POP3 as coming later rather than as a choice", () => {
-    mount(<ConfigForm />);
-    const pop3 = screen.getByRole<HTMLOptionElement>("option", {
-      name: /POP3/,
-    });
-    expect(pop3.disabled).toBe(true);
-  });
-
   it("sends an outgoing server that shares the sign-in with no username of its own", async () => {
-    mount(<ConfigForm />);
+    mount(<ConfigForm id={null} onClose={onClose} />);
     type("Email address", "misha@example.com");
     type("Password", "hunter2");
     fireEvent.click(screen.getByLabelText("Send mail through an SMTP server"));
@@ -136,10 +128,27 @@ describe("adding an email config", () => {
     postEmailConfigs.mockRejectedValue(
       new ApiError(400, "invalid", "The incoming server needs a host."),
     );
-    mount(<ConfigForm />);
+    mount(<ConfigForm id={null} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("The incoming server needs a host.");
-    expect(window.location.pathname).toBe("/settings/email-configs/new");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("is a dialog that can be left without saving", () => {
+    mount(<ConfigForm id={null} onClose={onClose} />);
+    screen.getByRole("dialog");
+    screen.getByRole("heading", { name: "Add email config" });
+    type("Email address", "misha@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(postEmailConfigs).not.toHaveBeenCalled();
+  });
+
+  it("starts in the address field", () => {
+    mount(<ConfigForm id={null} onClose={onClose} />);
+    expect(document.activeElement).toBe(field("Email address"));
   });
 
   it("shows what each server said to a test", async () => {
@@ -150,7 +159,7 @@ describe("adding an email config", () => {
         message: "smtp.example.com:465 refused the username or password.",
       },
     });
-    mount(<ConfigForm />);
+    mount(<ConfigForm id={null} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText("Incoming: signed in.");
     screen.getByText(
@@ -162,8 +171,9 @@ describe("adding an email config", () => {
 describe("editing an email config", () => {
   // The form never has the saved password, so empty is how it says "the one I saved".
   it("leaves the saved passwords out", async () => {
-    mount(<ConfigForm id="ec_1" />);
+    mount(<ConfigForm id="ec_1" onClose={onClose} />);
     await screen.findByDisplayValue("imap.example.com");
+    screen.getByRole("heading", { name: "Edit Work" });
     type("Name", "Personal");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -186,7 +196,7 @@ describe("editing an email config", () => {
       incoming: { ok: true, message: "" },
       outgoing: null,
     });
-    mount(<ConfigForm id="ec_1" />);
+    mount(<ConfigForm id="ec_1" onClose={onClose} />);
     await screen.findByDisplayValue("imap.example.com");
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText("Incoming: signed in.");
@@ -195,7 +205,7 @@ describe("editing an email config", () => {
   });
 
   it("says so when there is no such config", async () => {
-    mount(<ConfigForm id="ec_gone" />);
+    mount(<ConfigForm id="ec_gone" onClose={onClose} />);
     await screen.findByText("There is no such email config.");
   });
 });

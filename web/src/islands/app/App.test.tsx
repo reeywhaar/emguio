@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmailConfig } from "@app/api/types";
@@ -88,7 +88,8 @@ describe("the application", () => {
       await screen.findByRole("link", { name: "Add an email config" }),
     );
     expect(window.location.pathname).toBe("/settings/email-configs/new");
-    await screen.findByRole("heading", { name: "Add an email config" });
+    const dialog = await screen.findByRole("dialog");
+    within(dialog).getByRole("heading", { name: "Add email config" });
   });
 
   // One config at a time, chosen in the header, and the address says which.

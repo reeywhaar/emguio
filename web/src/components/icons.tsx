@@ -43,3 +43,17 @@ export function Refresh({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
+export function Cross({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      {...box}
+      width={18}
+      height={18}
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="m4 4 8 8M12 4l-8 8" />
+    </svg>
+  );
+}
