@@ -39,8 +39,13 @@ type world struct {
 
 func newWorld(t *testing.T, password string) *world {
 	t.Helper()
+	return newWorldWith(t, password, connecttest.Modern)
+}
+
+func newWorldWith(t *testing.T, password string, caps imap.CapSet) *world {
+	t.Helper()
 	cert := connecttest.NewCert(t)
-	port := connecttest.IMAP(t, cert, connect.Implicit, "misha", "hunter2")
+	port := connecttest.IMAPWith(t, cert, connect.Implicit, "misha", "hunter2", caps)
 
 	sealer, _ := seal.New(bytes.Repeat([]byte{7}, seal.KeySize))
 	st, err := store.Open(t.TempDir(), sealer)
@@ -695,14 +700,14 @@ func TestMarkingAMessageReadSetsTheServersFlag(t *testing.T) {
 		return *st.NumUnseen
 	}
 
-	flags, moved, err := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 1, true)
+	flags, moved, err := w.mirror.SetFlag(ctx, w.target, "INBOX", inbox.UIDValidity, 1, Seen, true)
 	if err != nil || !moved || !flags.Seen {
 		t.Fatalf("marking read = %+v, %v, %v", flags, moved, err)
 	}
 	if n := unseen(); n != 0 {
 		t.Errorf("unseen on the server after marking read = %d", n)
 	}
-	if _, moved, _ := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 1, true); moved {
+	if _, moved, _ := w.mirror.SetFlag(ctx, w.target, "INBOX", inbox.UIDValidity, 1, Seen, true); moved {
 		t.Error("marking a read message read again said it moved")
 	}
 
@@ -710,13 +715,88 @@ func TestMarkingAMessageReadSetsTheServersFlag(t *testing.T) {
 	if _, err := w.mirror.Read(ctx, w.target, "INBOX", inbox.UIDValidity, 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, moved, err := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 1, false); err != nil || !moved {
+	if _, moved, err := w.mirror.SetFlag(ctx, w.target, "INBOX", inbox.UIDValidity, 1, Seen, false); err != nil || !moved {
 		t.Fatalf("marking unread = %v, %v", moved, err)
 	}
 	if n := unseen(); n != 1 {
 		t.Errorf("unseen on the server after marking unread = %d", n)
 	}
-	if _, _, err := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 9, true); !errors.Is(err, ErrGone) {
+	if _, _, err := w.mirror.SetFlag(ctx, w.target, "INBOX", inbox.UIDValidity, 9, Seen, true); !errors.Is(err, ErrGone) {
 		t.Errorf("a UID the server does not have = %v, want gone", err)
+	}
+}
+
+func TestAStarIsSetOnTheServer(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "Star me")
+	w.sync()
+	inbox := w.mailbox("INBOX")
+	flags, moved, err := w.mirror.SetFlag(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1, Flagged, true)
+	if err != nil || !moved || !flags.Flagged || flags.Seen {
+		t.Fatalf("star = %+v, %v, %v", flags, moved, err)
+	}
+	w.sync()
+	if !w.window()[0].Flags.Flagged {
+		t.Error("the star is not on the server")
+	}
+}
+
+func TestAMessageIsMovedAndDeletedOnTheServer(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Archive")
+	w.deliver("INBOX", 1, "alice@example.com", "Keep")
+	w.deliver("INBOX", 2, "alice@example.com", "Archive me")
+	w.deliver("INBOX", 3, "alice@example.com", "Delete me", imap.FlagSeen)
+	w.sync()
+	inbox := w.mailbox("INBOX")
+	ctx := context.Background()
+
+	flags, err := w.mirror.Move(ctx, w.target, "INBOX", inbox.UIDValidity, 2, "Archive")
+	if err != nil || flags.Seen {
+		t.Fatalf("move = %+v, %v", flags, err)
+	}
+	if flags, err := w.mirror.Delete(ctx, w.target, "INBOX", inbox.UIDValidity, 3); err != nil || !flags.Seen {
+		t.Fatalf("delete = %+v, %v", flags, err)
+	}
+	w.sync()
+	if got := subjects(w.window()); got != "Keep" {
+		t.Errorf("INBOX keeps %q", got)
+	}
+	archived, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 10)
+	if err != nil || headers(archived.Headers) != "Archive me" {
+		t.Errorf("Archive = %v, %v", archived, err)
+	}
+	if _, err := w.mirror.Move(ctx, w.target, "INBOX", inbox.UIDValidity, 2, "Archive"); !errors.Is(err, ErrGone) {
+		t.Errorf("moving it again = %v, want gone", err)
+	}
+	// A folder the server does not have is its refusal, in a sentence.
+	var f *connect.Failure
+	if _, err := w.mirror.Move(ctx, w.target, "INBOX", inbox.UIDValidity, 1, "Nowhere"); !errors.As(err, &f) {
+		t.Errorf("a folder that is not there = %v", err)
+	}
+	// And the session goes on.
+	if _, err := w.mirror.Read(ctx, w.target, "INBOX", inbox.UIDValidity, 1); err != nil {
+		t.Errorf("after a refusal: %v", err)
+	}
+}
+
+// Without MOVE or UIDPLUS, removing one message means an EXPUNGE that removes whatever else
+// another client marked deleted too, so neither is tried.
+func TestWithoutMoveOrUIDPlusNothingIsRemoved(t *testing.T) {
+	w := newWorldWith(t, "hunter2", connecttest.Bare)
+	w.create("Archive")
+	w.deliver("INBOX", 1, "alice@example.com", "Stay")
+	w.sync()
+	inbox := w.mailbox("INBOX")
+	ctx := context.Background()
+	if _, err := w.mirror.Move(ctx, w.target, "INBOX", inbox.UIDValidity, 1, "Archive"); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("move = %v, want unsupported", err)
+	}
+	if _, err := w.mirror.Delete(ctx, w.target, "INBOX", inbox.UIDValidity, 1); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("delete = %v, want unsupported", err)
+	}
+	w.sync()
+	if got := subjects(w.window()); got != "Stay" {
+		t.Errorf("INBOX keeps %q", got)
 	}
 }

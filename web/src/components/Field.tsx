@@ -1,6 +1,6 @@
 import type { ReactNode, SelectHTMLAttributes } from "react";
 
-import { fieldLook } from "@app/components/TextField";
+import { fieldLook, fieldSizes } from "@app/components/TextField";
 
 /** A control and the label that names it, which is also what a click on the words focuses. */
 export function Field({
@@ -28,8 +28,16 @@ export function Field({
 
 /** The platform's own select, dressed as a field. */
 export function Select({
+  size = "field",
   className = "",
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={`${fieldLook} ${className}`} {...props} />;
+}: Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & {
+  size?: keyof typeof fieldSizes;
+}) {
+  return (
+    <select
+      className={`${fieldLook} ${fieldSizes[size]} ${className}`}
+      {...props}
+    />
+  );
 }

@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
+
 	"emguio/internal/connect"
 	"emguio/internal/ids"
 	"emguio/internal/message"
@@ -118,7 +120,8 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 type flagsBody struct {
-	Seen *bool `json:"seen"`
+	Seen    *bool `json:"seen"`
+	Flagged *bool `json:"flagged"`
 }
 
 type flagsJSON struct {
@@ -129,9 +132,9 @@ type flagsJSON struct {
 	Draft    bool   `json:"draft"`
 }
 
-// patchMessage changes a message's flags: for now, whether it is read. The server is told first,
-// and what is kept only once the server has taken it, so the two never disagree about which is
-// right.
+// patchMessage changes a message's flags: whether it is read, and whether it is starred. The
+// server is told first, and what is kept only once the server has taken it, so the two never
+// disagree about which is right.
 //
 // Its own request rather than something reading does on the side: a GET that changes things is
 // one a prefetch, or a link from anywhere, can make on somebody's behalf.
@@ -140,8 +143,8 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if body.Seen == nil {
-		refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to change: seen is the one flag this sets.")
+	if body.Seen == nil && body.Flagged == nil {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to change: seen, flagged, or both.")
 		return
 	}
 	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
@@ -149,20 +152,105 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := userOf(r)
-	flags, moved, err := s.mirror.SetSeen(r.Context(), targetOf(u, c), mb.Name, uidValidity, uid, *body.Seen)
-	if !s.serverError(w, r, c.ID, err, gone) {
-		return
-	}
-	if err := s.store.SetSeen(r.Context(), mb.ID, uid, flags.Seen, moved); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if moved {
-		s.store.Notify(u.ID)
+	var flags store.Flags
+	for _, change := range []struct {
+		flag imap.Flag
+		on   *bool
+	}{{mirror.Seen, body.Seen}, {mirror.Flagged, body.Flagged}} {
+		if change.on == nil {
+			continue
+		}
+		now, moved, err := s.mirror.SetFlag(r.Context(), targetOf(u, c), mb.Name, uidValidity, uid, change.flag, *change.on)
+		if !s.serverError(w, r, c.ID, err, gone) {
+			return
+		}
+		step := 0
+		if moved && change.flag == mirror.Seen {
+			step = 1
+			if *change.on {
+				step = -1
+			}
+		}
+		if err := s.store.SetMessageFlags(r.Context(), mb.ID, uid, now, step); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if moved {
+			s.store.Notify(u.ID)
+		}
+		flags = now
 	}
 	writeJSON(w, http.StatusOK, flagsJSON{
 		ID: ids.Message(uidValidity, uid), Seen: flags.Seen, Flagged: flags.Flagged, Answered: flags.Answered, Draft: flags.Draft,
 	})
+}
+
+type moveBody struct {
+	// To is the mailbox's id.
+	To string `json:"to"`
+}
+
+// moveMessage moves a message to another of the config's mailboxes: archiving, deleting to
+// Trash, marking as spam and taking it out of spam are each a move, to the mailbox the server
+// says is for it.
+func (s *Server) moveMessage(w http.ResponseWriter, r *http.Request) {
+	var body moveBody
+	if !decode(w, r, &body) {
+		return
+	}
+	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
+	if !ok {
+		return
+	}
+	u := userOf(r)
+	to, err := s.store.Mailbox(r.Context(), u.ID, c.ID, body.To)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if to.ID == mb.ID || !to.Selectable {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "Choose another folder to move it to.")
+		return
+	}
+	flags, err := s.mirror.Move(r.Context(), targetOf(u, c), mb.Name, uidValidity, uid, to.Name)
+	if errors.Is(err, mirror.ErrUnsupported) {
+		refuse(w, http.StatusConflict, CodeConflict, "This mail server cannot move one message without touching others: it has neither MOVE nor UIDPLUS.")
+		return
+	}
+	if !s.serverError(w, r, c.ID, err, gone) {
+		return
+	}
+	s.moved(w, r, c.ID, mb.ID, to.ID, uid, flags)
+}
+
+// deleteMessage removes a message from the server for good. Deleting to Trash is a move; this is
+// what is done in Trash, or where there is none.
+func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
+	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
+	if !ok {
+		return
+	}
+	flags, err := s.mirror.Delete(r.Context(), targetOf(userOf(r), c), mb.Name, uidValidity, uid)
+	if errors.Is(err, mirror.ErrUnsupported) {
+		refuse(w, http.StatusConflict, CodeConflict, "This mail server cannot delete one message for good without touching others: it has no UIDPLUS.")
+		return
+	}
+	if !s.serverError(w, r, c.ID, err, gone) {
+		return
+	}
+	s.moved(w, r, c.ID, mb.ID, "", uid, flags)
+}
+
+// moved records a message gone from a mailbox, says so to the user's tabs, and asks the mirror
+// for a look: the window has a place to fill, and the counts are the server's to confirm.
+func (s *Server) moved(w http.ResponseWriter, r *http.Request, configID, from, to string, uid uint32, flags store.Flags) {
+	if err := s.store.MessageMoved(r.Context(), from, to, uid, flags.Seen); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.store.Notify(userOf(r).ID)
+	s.mirror.Refresh(configID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // serverError writes the refusal for what the mail server said, and reports whether there was

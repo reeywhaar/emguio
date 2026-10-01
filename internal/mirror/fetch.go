@@ -12,6 +12,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 
+	"emguio/internal/connect"
 	"emguio/internal/message"
 	"emguio/internal/store"
 )
@@ -59,7 +60,7 @@ func (m *Mirror) fetcherFor(t store.SyncTarget) *fetcher {
 
 // use runs one request on the config's reading session. The request bounds it: when ctx ends
 // first, the session is closed under it. A session that failed is not trusted with the next
-// request; one that said a message is gone is fine.
+// request; one whose server answered — gone, refused, cannot — is fine.
 func (m *Mirror) use(ctx context.Context, t store.SyncTarget, do func(f *fetcher) error) error {
 	f := m.fetcherFor(t)
 	f.mu.Lock()
@@ -71,7 +72,8 @@ func (m *Mirror) use(ctx context.Context, t store.SyncTarget, do func(f *fetcher
 	stop := context.AfterFunc(ctx, func() { client.Close() })
 	defer stop()
 	err := do(f)
-	if err != nil && !errors.Is(err, ErrGone) {
+	var no *connect.Failure
+	if err != nil && !errors.Is(err, ErrGone) && !errors.Is(err, ErrUnsupported) && !errors.As(err, &no) {
 		f.close()
 	}
 	return err
@@ -314,10 +316,31 @@ func (m *Mirror) Part(ctx context.Context, t store.SyncTarget, mailbox string, u
 	return head, body, err
 }
 
-// SetSeen marks one message read or unread on the server: the one flag emguio writes, because
-// opening a message here is reading it. It says the flags the message has now, and whether
-// this changed them.
-func (m *Mirror) SetSeen(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, seen bool) (store.Flags, bool, error) {
+// Flags emguio sets on the server: read, and starred.
+const (
+	Seen    = imap.FlagSeen
+	Flagged = imap.FlagFlagged
+)
+
+// ErrUnsupported is an action the server cannot do to one message without touching others.
+var ErrUnsupported = errors.New("mirror: unsupported")
+
+// exists asks whether a message is still there, and its flags: a STORE, MOVE or EXPUNGE naming
+// a UID the server no longer has succeeds and does nothing.
+func (f *fetcher) exists(uid uint32) (store.Flags, error) {
+	msgs, err := f.session.client.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{UID: true, Flags: true}).Collect()
+	if err != nil {
+		return store.Flags{}, err
+	}
+	if len(msgs) == 0 {
+		return store.Flags{}, ErrGone
+	}
+	return flagsOf(msgs[0].Flags), nil
+}
+
+// SetFlag sets or clears one flag of a message on the server, Seen or Flagged, and says the
+// flags it has now and whether this changed them.
+func (m *Mirror) SetFlag(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, flag imap.Flag, on bool) (store.Flags, bool, error) {
 	var (
 		flags store.Flags
 		moved bool
@@ -326,31 +349,87 @@ func (m *Mirror) SetSeen(ctx context.Context, t store.SyncTarget, mailbox string
 		if err := f.openAt(mailbox, uidValidity, true); err != nil {
 			return err
 		}
-		// Asked first, because a STORE on a UID the server no longer has succeeds and changes
-		// nothing.
-		set := imap.UIDSetNum(imap.UID(uid))
-		msgs, err := f.session.client.Fetch(set, &imap.FetchOptions{UID: true, Flags: true}).Collect()
-		if err != nil {
+		var err error
+		if flags, err = f.exists(uid); err != nil {
 			return err
 		}
-		if len(msgs) == 0 {
-			return ErrGone
+		has := &flags.Seen
+		if flag == Flagged {
+			has = &flags.Flagged
 		}
-		flags = flagsOf(msgs[0].Flags)
-		if flags.Seen == seen {
+		if *has == on {
 			return nil
 		}
 		op := imap.StoreFlagsAdd
-		if !seen {
+		if !on {
 			op = imap.StoreFlagsDel
 		}
-		if err := f.session.client.Store(set, &imap.StoreFlags{Op: op, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close(); err != nil {
-			return err
+		set := imap.UIDSetNum(imap.UID(uid))
+		if err := f.session.client.Store(set, &imap.StoreFlags{Op: op, Silent: true, Flags: []imap.Flag{flag}}, nil).Close(); err != nil {
+			return refused(err)
 		}
-		flags.Seen, moved = seen, true
+		*has, moved = on, true
 		return nil
 	})
 	return flags, moved, err
+}
+
+// Move moves a message to another mailbox, and says the flags it had.
+//
+// With MOVE where the server has it. Without, COPY, \Deleted and an EXPUNGE of that one UID,
+// which needs UIDPLUS: a plain EXPUNGE would also remove whatever another client had marked
+// deleted, and on a server with neither the move is refused.
+func (m *Mirror) Move(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, to string) (store.Flags, error) {
+	var flags store.Flags
+	err := m.use(ctx, t, func(f *fetcher) error {
+		if err := f.openAt(mailbox, uidValidity, true); err != nil {
+			return err
+		}
+		var err error
+		if flags, err = f.exists(uid); err != nil {
+			return err
+		}
+		if caps := f.session.client.Caps(); !caps.Has(imap.CapMove) && !caps.Has(imap.CapUIDPlus) {
+			return ErrUnsupported
+		}
+		_, err = f.session.client.Move(imap.UIDSetNum(imap.UID(uid)), to).Wait()
+		return refused(err)
+	})
+	return flags, err
+}
+
+// Delete removes a message from the server for good: \Deleted, and an EXPUNGE of that one UID.
+// It needs UIDPLUS, for the reason Move does, and says the flags the message had.
+func (m *Mirror) Delete(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (store.Flags, error) {
+	var flags store.Flags
+	err := m.use(ctx, t, func(f *fetcher) error {
+		if err := f.openAt(mailbox, uidValidity, true); err != nil {
+			return err
+		}
+		var err error
+		if flags, err = f.exists(uid); err != nil {
+			return err
+		}
+		if !f.session.client.Caps().Has(imap.CapUIDPlus) {
+			return ErrUnsupported
+		}
+		set := imap.UIDSetNum(imap.UID(uid))
+		if err := f.session.client.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+			return refused(err)
+		}
+		return refused(f.session.client.UIDExpunge(set).Close())
+	})
+	return flags, err
+}
+
+// refused is a server's NO to an action, as the sentence a person is shown; a request the server
+// refused is not a session gone wrong.
+func refused(err error) error {
+	var no *imap.Error
+	if errors.As(err, &no) {
+		return &connect.Failure{Class: "refused", Sentence: "The server refused: " + connect.Said(no.Text)}
+	}
+	return err
 }
 
 // ready opens the session if there is none, or the one there was has closed.

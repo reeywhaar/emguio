@@ -8,6 +8,9 @@ import { mount } from "@app/test/harness";
 
 const getMessage = vi.fn();
 const patchMessage = vi.fn();
+const getMailboxes = vi.fn();
+const moveMessage = vi.fn();
+const deleteMessage = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
@@ -21,9 +24,35 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     message: string,
     body: { seen: boolean },
   ) => patchMessage(id, mailbox, message, body),
+  getEmailConfigsByIdMailboxes: (id: string) => getMailboxes(id),
+  postEmailConfigsByIdMailboxesByMailboxMessagesByMessageMove: (
+    id: string,
+    mailbox: string,
+    message: string,
+    to: string,
+  ) => moveMessage(id, mailbox, message, to),
+  deleteEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
+    id: string,
+    mailbox: string,
+    message: string,
+  ) => deleteMessage(id, mailbox, message),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
+
+const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({
+  id,
+  name: id,
+  path: [id],
+  special_use,
+  selectable: true,
+  messages: 1,
+  unseen: 0,
+});
+const archive = box("mb_archive", "archive");
+const trash = box("mb_trash", "trash");
+const junk = box("mb_junk", "junk");
+const work = box("mb_work", "");
 
 const inbox: Mailbox = {
   id: "mb_inbox",
@@ -88,16 +117,36 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
 });
 
 beforeEach(() => {
+  window.history.pushState({}, "", "/c/ec_1/mb_inbox/m_1");
+  getMailboxes.mockResolvedValue([inbox, archive, trash, junk, work]);
+  moveMessage.mockResolvedValue(undefined);
+  deleteMessage.mockResolvedValue(undefined);
   getMessage.mockResolvedValue(read());
+  // The server's flags, changed as it is asked to and sent back whole.
+  const now = { seen: false, flagged: false };
   patchMessage.mockImplementation(
-    async (_c: string, _mb: string, _m: string, body: { seen: boolean }) =>
-      flags(body.seen),
+    async (
+      _c: string,
+      _mb: string,
+      _m: string,
+      body: { seen?: boolean; flagged?: boolean },
+    ) => {
+      Object.assign(now, body);
+      return { ...flags(now.seen), flagged: now.flagged };
+    },
   );
 });
 afterEach(() => vi.clearAllMocks());
 
-const open = () =>
-  mount(<Reader config="ec_1" mailbox={inbox} message="m_1" />);
+const open = (mailbox = inbox) =>
+  mount(<Reader config="ec_1" mailbox={mailbox} message="m_1" />);
+
+/** A button, once the message and the folders it can go to have arrived. */
+const ready = async (name: string) => {
+  const button = await screen.findByRole<HTMLButtonElement>("button", { name });
+  await waitFor(() => expect(button.disabled).toBe(false));
+  return button;
+};
 
 describe("the reading pane", () => {
   it("says who, to whom, and what", async () => {
@@ -214,5 +263,115 @@ describe("the reading pane", () => {
     open();
     await screen.findByText("imap.example.com:993 timed out.");
     screen.getByRole("button", { name: "Mark as read" });
+  });
+
+  // Archive, Trash and spam are each a move, to the folder the server says is for it; then the
+  // message has left this folder, and so has the pane.
+  it("archives to the server's archive and goes back to the list", async () => {
+    open();
+    fireEvent.click(await ready("Archive"));
+    await waitFor(() =>
+      expect(moveMessage).toHaveBeenCalledWith(
+        "ec_1",
+        "mb_inbox",
+        "m_1",
+        "mb_archive",
+      ),
+    );
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/c/ec_1/mb_inbox"),
+    );
+  });
+
+  it("deletes to Trash, and offers spam", async () => {
+    open();
+    fireEvent.click(await ready("Delete"));
+    await waitFor(() =>
+      expect(moveMessage).toHaveBeenCalledWith(
+        "ec_1",
+        "mb_inbox",
+        "m_1",
+        "mb_trash",
+      ),
+    );
+    screen.getByRole("button", { name: "Spam" });
+    expect(deleteMessage).not.toHaveBeenCalled();
+  });
+
+  // In Trash there is nowhere further to put it, and that cannot be taken back.
+  it("in Trash, deletes for good only after asking", async () => {
+    open(trash);
+    fireEvent.click(await ready("Delete forever…"));
+    const dialog = await screen.findByRole("dialog");
+    expect(deleteMessage).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Delete forever" }),
+    );
+    await waitFor(() =>
+      expect(deleteMessage).toHaveBeenCalledWith("ec_1", "mb_trash", "m_1"),
+    );
+  });
+
+  it("in Junk, takes it back to the inbox rather than to spam", async () => {
+    open(junk);
+    fireEvent.click(await ready("Not spam"));
+    await waitFor(() =>
+      expect(moveMessage).toHaveBeenCalledWith(
+        "ec_1",
+        "mb_junk",
+        "m_1",
+        "mb_inbox",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Spam" })).toBeNull();
+  });
+
+  it("stars it on the server", async () => {
+    open();
+    const star = await ready("Star");
+    expect(star.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(star);
+    await waitFor(() =>
+      expect(patchMessage).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "m_1", {
+        flagged: true,
+      }),
+    );
+    await waitFor(() => expect(star.getAttribute("aria-pressed")).toBe("true"));
+  });
+
+  it("moves it to any other folder", async () => {
+    open();
+    await ready("Archive");
+    const select = screen.getByLabelText<HTMLSelectElement>("Move to folder");
+    expect(
+      [...select.options].map((o) => o.value).filter(Boolean),
+    ).not.toContain("mb_inbox");
+    fireEvent.change(select, { target: { value: "mb_work" } });
+    await waitFor(() =>
+      expect(moveMessage).toHaveBeenCalledWith(
+        "ec_1",
+        "mb_inbox",
+        "m_1",
+        "mb_work",
+      ),
+    );
+  });
+
+  // Gmail's keys, and not while a field has them.
+  it("answers Gmail's keys", async () => {
+    open();
+    await ready("Archive");
+    const select = screen.getByLabelText("Move to folder");
+    fireEvent.keyDown(select, { key: "e" });
+    expect(moveMessage).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.body, { key: "e" });
+    await waitFor(() =>
+      expect(moveMessage).toHaveBeenCalledWith(
+        "ec_1",
+        "mb_inbox",
+        "m_1",
+        "mb_archive",
+      ),
+    );
   });
 });

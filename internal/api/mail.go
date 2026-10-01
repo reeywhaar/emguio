@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
+
 	"emguio/internal/ids"
 	"emguio/internal/mirror"
 	"emguio/internal/store"
@@ -25,9 +27,13 @@ type Mirror interface {
 	Read(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Opened, error)
 	// Part is one part of a message, its MIME header and its body, or mirror.ErrGone.
 	Part(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, section []int) ([]byte, []byte, error)
-	// SetSeen marks one message read or unread on the server, and says its flags now and
-	// whether they moved.
-	SetSeen(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, seen bool) (store.Flags, bool, error)
+	// SetFlag sets or clears mirror.Seen or mirror.Flagged on the server, and says the flags
+	// now and whether they moved.
+	SetFlag(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, flag imap.Flag, on bool) (store.Flags, bool, error)
+	// Move moves a message to another mailbox, and says the flags it had.
+	Move(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, to string) (store.Flags, error)
+	// Delete removes a message for good, and says the flags it had.
+	Delete(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (store.Flags, error)
 }
 
 // targetOf is an email config as the mirror is asked about it.

@@ -1,24 +1,24 @@
-import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import {
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
   partURL,
-  patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
-import type { Address, Mailbox, Part, ReadMessage } from "@app/api/types";
+import type { Address, Mailbox, Part } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Paperclip } from "@app/components/icons";
 import { full, size } from "@app/format";
+import { Actions } from "@app/islands/app/Actions";
 import { Frame } from "@app/islands/app/Frame";
 import { Link } from "@app/islands/app/Link";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { paths } from "@app/islands/app/route";
 
-/** One message, whole. Opening it marks it read, here and on the server. */
+/** One message, and what can be done to it. Opening it marks it read, here and on the server. */
 export function Reader({
   config,
   mailbox,
@@ -41,7 +41,6 @@ export function Reader({
       ),
   });
   const m = read.data;
-  const seen = useSeen(config, mailbox.id, message, m);
 
   return (
     <article
@@ -49,27 +48,20 @@ export function Reader({
       className="relative flex min-w-0 flex-1 flex-col overflow-y-auto bg-bg"
     >
       <div className="flex flex-col gap-2 border-b border-line px-4 py-4 sm:px-6">
-        <div className="flex items-center gap-2">
-          <Link
-            href={paths.mail(config, mailbox.id)}
-            className="text-sm text-muted lg:hidden"
-          >
-            ← {labelOfMailbox(mailbox)}
-          </Link>
-          <span className="flex-1" />
-          <Button
-            size="bar"
-            disabled={!m || seen.pending}
-            onClick={() => seen.set(!seen.value)}
-          >
-            {seen.value ? "Mark as unread" : "Mark as read"}
-          </Button>
-        </div>
-        {seen.error ? (
-          <p role="alert" className="text-sm text-accent">
-            {messageOf(seen.error)}
-          </p>
-        ) : null}
+        <Actions
+          config={config}
+          mailbox={mailbox}
+          message={message}
+          m={m}
+          back={
+            <Link
+              href={paths.mail(config, mailbox.id)}
+              className="text-sm text-muted lg:hidden"
+            >
+              ← {labelOfMailbox(mailbox)}
+            </Link>
+          }
+        />
         {read.error ? (
           <p className="text-sm text-accent">{messageOf(read.error)}</p>
         ) : !m ? (
@@ -137,55 +129,6 @@ export function Reader({
       ) : null}
     </article>
   );
-}
-
-/**
- * Whether the open message is read, and a way to change it. Opening an unread message marks it
- * read once; see docs/reading.md.
- */
-function useSeen(
-  config: string,
-  mailbox: string,
-  message: string,
-  m: ReadMessage | undefined,
-) {
-  const client = useQueryClient();
-  const flag = useMutation({
-    mutationFn: (seen: boolean) =>
-      patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage(
-        config,
-        mailbox,
-        message,
-        { seen },
-      ),
-    onSuccess: (updated) => {
-      client.setQueryData<ReadMessage>(
-        qk.message(config, mailbox, message),
-        (old) => old && { ...old, ...updated },
-      );
-      // The list's dot and the folder's count. The event stream says so too, but only while it
-      // is up.
-      client.invalidateQueries({ queryKey: qk.lists(config) });
-      client.invalidateQueries({ queryKey: qk.mailboxes(config) });
-    },
-  });
-
-  const { mutate } = flag;
-  const marked = useRef(false);
-  const unread = m !== undefined && !m.seen;
-  useEffect(() => {
-    if (!unread || marked.current) return;
-    marked.current = true;
-    mutate(true);
-  }, [unread, mutate]);
-
-  return {
-    // What it is about to be while the server is asked, so the button does not flicker.
-    value: flag.isPending ? flag.variables : (m?.seen ?? true),
-    pending: flag.isPending,
-    error: flag.error,
-    set: mutate,
-  };
 }
 
 function People({ label, people }: { label: string; people: Address[] }) {

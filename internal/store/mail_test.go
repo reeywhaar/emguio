@@ -155,13 +155,33 @@ func TestMarkingReadMovesTheRowAndTheCount(t *testing.T) {
 	ctx := context.Background()
 	st.SetMailboxStatus(ctx, mb.ID, MailboxStatus{UIDValidity: 1, Messages: 40, Unseen: 5})
 
-	st.SetSeen(ctx, mb.ID, 1, true, true)
-	st.SetSeen(ctx, mb.ID, 39, true, true)
-	st.SetSeen(ctx, mb.ID, 38, true, false)
+	st.SetMessageFlags(ctx, mb.ID, 1, Flags{Seen: true, Flagged: true}, -1)
+	st.SetMessageFlags(ctx, mb.ID, 39, Flags{Seen: true}, -1)
+	st.SetMessageFlags(ctx, mb.ID, 38, Flags{Seen: true}, 0)
 	boxes, _ := st.MirrorMailboxes(ctx, cfg.ID)
 	window, _ := st.Window(ctx, mb)
-	if !window[0].Flags.Seen || boxes[0].Unseen != 3 {
-		t.Errorf("seen = %v, unseen = %d", window[0].Flags.Seen, boxes[0].Unseen)
+	if f := window[0].Flags; !f.Seen || !f.Flagged || boxes[0].Unseen != 3 {
+		t.Errorf("flags = %+v, unseen = %d", f, boxes[0].Unseen)
+	}
+}
+
+func TestAMovedMessageLeavesTheWindowAndMovesTheCounts(t *testing.T) {
+	st, _, cfg, inbox := mailWorld(t, 2)
+	ctx := context.Background()
+	st.PutMailboxes(ctx, cfg.ID, []Listed{
+		{Name: "INBOX", SpecialUse: UseInbox, Selectable: true},
+		{Name: "Trash", SpecialUse: UseTrash, Selectable: true},
+	})
+	boxes, _ := st.MirrorMailboxes(ctx, cfg.ID)
+	trash := boxes[1]
+	st.SetMailboxStatus(ctx, inbox.ID, MailboxStatus{UIDValidity: 1, Messages: 2, Unseen: 2})
+
+	st.MessageMoved(ctx, inbox.ID, trash.ID, 2, false)
+	st.MessageMoved(ctx, inbox.ID, "", 1, true)
+	boxes, _ = st.MirrorMailboxes(ctx, cfg.ID)
+	window, _ := st.Window(ctx, inbox)
+	if len(window) != 0 || boxes[0].Messages != 0 || boxes[0].Unseen != 1 || boxes[1].Messages != 1 || boxes[1].Unseen != 1 {
+		t.Errorf("window %d, inbox %+v, trash %+v", len(window), boxes[0], boxes[1])
 	}
 }
 

@@ -17,17 +17,35 @@ The window is a constant, not a setting.
 Whether a message is read lives on the server, and emguio follows it: reading a message here
 marks it read there, as any mail client does, and marking it unread clears the flag there.
 
-Everything else only reads. A sync opens mailboxes with `EXAMINE` and fetches headers and
-bodies with `BODY.PEEK`, so a sync never changes a flag. The one write is `\Seen`, set or
-cleared with `STORE` on the reading session, through `PATCH …/messages/{id}` with
-`{"seen": true|false}`. The server is told first, and a kept row and the folder's count only
-once the server has taken it.
+A sync only reads. It opens mailboxes with `EXAMINE` and fetches headers and bodies with
+`BODY.PEEK`, so a sync never changes a flag. What is written is what somebody asks for, on the
+reading session: a flag through `PATCH …/messages/{id}`, a move, a delete. The server is told
+first, and a kept row and the folders' counts only once the server has taken it.
 
-A request of its own rather than something reading does on the side: a GET that changes things
-is one a prefetch, or a link from anywhere, can make on somebody's behalf.
+Its own request rather than something reading does on the side: a GET that changes things is one
+a prefetch, or a link from anywhere, can make on somebody's behalf.
 
 The reading pane sends it once per opening, when an unread message has loaded. A message marked
 unread again stays unread while it is open; the next opening marks it read.
+
+## Archive, Trash and spam are moves to the server's own folders
+
+Each is `POST …/messages/{id}/move` to the folder the server's `SPECIAL-USE` — or its name —
+says is for it: Archive, or Gmail's All Mail where there is none, which on Gmail is what
+archiving is; Trash; Junk, and from Junk back to INBOX. An action whose folder the server does
+not have, or that the message is already in, is not offered. Any other folder is a move too.
+
+Deleting moves to Trash. In Trash, or on a server with none, it is `DELETE …/messages/{id}`,
+for good, and asked about first.
+
+A move is `MOVE` where the server has it. Without it, it is `COPY`, `\Deleted` and an `EXPUNGE`
+of that one UID, which needs `UIDPLUS`: a plain `EXPUNGE` would also remove whatever another
+client had marked deleted, so on a server with neither, moving and deleting are refused. A star
+is `\Flagged`, set and cleared like `\Seen`.
+
+After a move the pane goes back to the folder, and the mirror is asked for a look: the window has
+a place to fill, and the counts are the server's to confirm. Gmail's keys work — `e` archive,
+`#` delete, `!` spam, `s` star, `u` read or unread — except while a field has the keys.
 
 ## A message is named by what the server calls it
 

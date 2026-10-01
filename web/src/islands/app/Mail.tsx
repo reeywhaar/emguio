@@ -142,7 +142,8 @@ function Folders({
           {boxes.data && boxes.data.length > 0 ? (
             <Select
               aria-label="Folder"
-              className="min-h-8 min-w-0 flex-1 py-1 md:hidden"
+              size="bar"
+              className="min-w-0 flex-1 md:hidden"
               value={current?.id ?? ""}
               onChange={(e) => go(paths.mail(config.id, e.target.value))}
             >

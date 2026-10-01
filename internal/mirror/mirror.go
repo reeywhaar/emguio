@@ -2,8 +2,8 @@
 // newest messages — in step with its server, one worker per config holding one IMAP session.
 // Everything else is read from the server when somebody asks for it, on a second session.
 //
-// Only \Seen is ever written, when somebody reads or unreads a message. Everything else opens
-// mailboxes with EXAMINE and fetches with BODY.PEEK. See docs/reading.md.
+// Only what somebody asks for is ever written: a message read or starred, moved, or deleted.
+// Everything else opens mailboxes with EXAMINE and fetches with BODY.PEEK. See docs/reading.md.
 package mirror
 
 import (

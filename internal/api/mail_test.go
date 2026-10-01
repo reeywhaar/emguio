@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
+
 	"emguio/internal/message"
 	"emguio/internal/mirror"
 	"emguio/internal/store"
@@ -30,10 +32,13 @@ type fakeMirror struct {
 	fetched int
 	// parts are its parts by section, a MIME header and a body each.
 	parts map[string][2]string
-	// flags are the message's on the server, and seen each change of them it was told to make.
-	flags store.Flags
-	seen  []bool
-	err   error
+	// flags are the message's on the server, and seen and flagged each change of them it was
+	// told to make; moves are where it was moved, "" for deleted.
+	flags   store.Flags
+	seen    []bool
+	flagged []bool
+	moves   []string
+	err     error
 }
 
 func (f *fakeMirror) Reconcile() { f.mu.Lock(); f.reconciled++; f.mu.Unlock() }
@@ -74,18 +79,40 @@ func (f *fakeMirror) Part(_ context.Context, _ store.SyncTarget, _ string, _, _ 
 	p := f.parts[strings.Join(at, ".")]
 	return []byte(p[0]), []byte(p[1]), nil
 }
-func (f *fakeMirror) SetSeen(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, seen bool) (store.Flags, bool, error) {
+func (f *fakeMirror) SetFlag(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, flag imap.Flag, on bool) (store.Flags, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
 		return store.Flags{}, false, f.err
 	}
-	if f.flags.Seen == seen {
+	has, told := &f.flags.Seen, &f.seen
+	if flag == mirror.Flagged {
+		has, told = &f.flags.Flagged, &f.flagged
+	}
+	if *has == on {
 		return f.flags, false, nil
 	}
-	f.flags.Seen = seen
-	f.seen = append(f.seen, seen)
+	*has = on
+	*told = append(*told, on)
 	return f.flags, true, nil
+}
+func (f *fakeMirror) Move(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, to string) (store.Flags, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return store.Flags{}, f.err
+	}
+	f.moves = append(f.moves, to)
+	return f.flags, nil
+}
+func (f *fakeMirror) Delete(context.Context, store.SyncTarget, string, uint32, uint32) (store.Flags, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return store.Flags{}, f.err
+	}
+	f.moves = append(f.moves, "")
+	return f.flags, nil
 }
 
 // withMail is a signed-in user with one email config whose INBOX keeps n messages under

@@ -78,9 +78,22 @@ func NewCert(t testing.TB) *Cert {
 	}
 }
 
+// What an IMAP server here offers: Modern what any current server does, MOVE and UIDPLUS among
+// it, and Bare only IMAP4rev1, for what has to be refused without them.
+var (
+	Modern = imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapMove: {}, imap.CapUIDPlus: {}}
+	Bare   = imap.CapSet{imap.CapIMAP4rev1: {}}
+)
+
 // IMAP serves username and password with an empty INBOX, secured as mode says: "implicit",
-// "starttls", or "" for none at all. It returns the port.
+// "starttls", or "" for none at all, and offering what Modern does. It returns the port.
 func IMAP(t testing.TB, cert *Cert, mode, username, password string) int {
+	t.Helper()
+	return IMAPWith(t, cert, mode, username, password, Modern)
+}
+
+// IMAPWith is IMAP offering caps.
+func IMAPWith(t testing.TB, cert *Cert, mode, username, password string, caps imap.CapSet) int {
 	t.Helper()
 	mem := imapmemserver.New()
 	user := imapmemserver.NewUser(username, password)
@@ -93,7 +106,7 @@ func IMAP(t testing.TB, cert *Cert, mode, username, password string) int {
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
 			return mem.NewSession(), nil, nil
 		},
-		Caps:         imap.CapSet{imap.CapIMAP4rev1: {}},
+		Caps:         caps,
 		Logger:       log.New(io.Discard, "", 0),
 		InsecureAuth: mode == "",
 	}

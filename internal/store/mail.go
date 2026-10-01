@@ -520,27 +520,53 @@ func (s *Store) SetPreview(ctx context.Context, mailboxID string, uid uint32, pr
 	return n > 0, nil
 }
 
-// SetSeen records that the server now holds a message read or unread: on its row, when it is
-// kept, and in its mailbox's unseen count when the server's flag moved, so the sidebar agrees
-// before the next look confirms it.
-func (s *Store) SetSeen(ctx context.Context, mailboxID string, uid uint32, seen, moved bool) error {
+// SetMessageFlags records the flags the server now holds for a message: on its row, when it is
+// kept, and in its mailbox's unseen count by unseenStep, so the sidebar agrees before the next
+// look confirms it.
+func (s *Store) SetMessageFlags(ctx context.Context, mailboxID string, uid uint32, f Flags, unseenStep int) error {
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("set seen: %w", err)
+		return fmt.Errorf("set message flags: %w", err)
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE messages SET seen = ? WHERE mailbox_id = ? AND uid = ?`, seen, mailboxID, uid); err != nil {
-		return fmt.Errorf("set seen: %w", err)
+		`UPDATE messages SET seen = ?, flagged = ?, answered = ?, draft = ? WHERE mailbox_id = ? AND uid = ?`,
+		f.Seen, f.Flagged, f.Answered, f.Draft, mailboxID, uid); err != nil {
+		return fmt.Errorf("set message flags: %w", err)
 	}
-	if moved {
-		step := -1
-		if !seen {
-			step = 1
-		}
+	if unseenStep != 0 {
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE mailboxes SET unseen = max(0, unseen + ?) WHERE id = ?`, step, mailboxID); err != nil {
-			return fmt.Errorf("set seen: %w", err)
+			`UPDATE mailboxes SET unseen = max(0, unseen + ?) WHERE id = ?`, unseenStep, mailboxID); err != nil {
+			return fmt.Errorf("set message flags: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// MessageMoved records that a message left a mailbox for another, or for nowhere when to is
+// empty: its row goes, and both mailboxes' counts move, so the sidebar agrees before the next
+// look confirms it.
+func (s *Store) MessageMoved(ctx context.Context, from, to string, uid uint32, seen bool) error {
+	unseen := 1
+	if seen {
+		unseen = 0
+	}
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("message moved: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE mailbox_id = ? AND uid = ?`, from, uid); err != nil {
+		return fmt.Errorf("message moved: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE mailboxes SET messages = max(0, messages - 1), unseen = max(0, unseen - ?) WHERE id = ?`, unseen, from); err != nil {
+		return fmt.Errorf("message moved: %w", err)
+	}
+	if to != "" {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE mailboxes SET messages = messages + 1, unseen = unseen + ? WHERE id = ?`, unseen, to); err != nil {
+			return fmt.Errorf("message moved: %w", err)
 		}
 	}
 	return tx.Commit()

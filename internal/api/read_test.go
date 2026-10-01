@@ -329,7 +329,64 @@ func TestAFlagChangeSaysWhatToChange(t *testing.T) {
 	if resp := c.do("PATCH", path, `{}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("an empty change = %s", resp.Status)
 	}
-	if resp := c.do("PATCH", path, `{"flagged":true}`); resp.StatusCode != http.StatusBadRequest {
+	if resp := c.do("PATCH", path, `{"answered":true}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a flag this does not set = %s", resp.Status)
+	}
+}
+
+// A star is a flag on the server like read is, and the kept row follows it.
+func TestStarringTellsTheServerAndThenTheList(t *testing.T) {
+	_, c, fake, cfg, path := reading(t)
+	resp := c.do("PATCH", path, `{"flagged":true}`)
+	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["flagged"] != true || got["seen"] != false {
+		t.Fatalf("star = %s %v", resp.Status, got)
+	}
+	if len(fake.flagged) != 1 || len(fake.seen) != 0 {
+		t.Errorf("told flagged %v, seen %v", fake.flagged, fake.seen)
+	}
+	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	inbox := boxes[0].(map[string]any)["id"].(string)
+	msg := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))["messages"].([]any)[0].(map[string]any)
+	if msg["flagged"] != true || boxes[0].(map[string]any)["unseen"] != float64(1) {
+		t.Errorf("row = %v, unseen = %v", msg, boxes[0].(map[string]any)["unseen"])
+	}
+}
+
+// Archive, Trash, spam and back are each a move, to the mailbox the server says is for it.
+func TestMovingTellsTheServerAndLeavesTheList(t *testing.T) {
+	_, c, fake, cfg, path := reading(t)
+	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	inbox := boxes[0].(map[string]any)["id"].(string)
+	work := boxes[1].(map[string]any)["id"].(string)
+
+	for _, bad := range []string{`{"to":"` + inbox + `"}`, `{"to":"INBOX"}`, `{}`} {
+		if resp := c.do("POST", path+"/move", bad); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("move %s = %s", bad, resp.Status)
+		}
+	}
+	if resp := c.do("POST", path+"/move", `{"to":"`+work+`"}`); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("move = %s %v", resp.Status, c.json(resp))
+	}
+	if len(fake.moves) != 1 || fake.moves[0] != "Work" || len(fake.refreshed) != 1 {
+		t.Errorf("moved to %v, refreshed %v", fake.moves, fake.refreshed)
+	}
+	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))
+	boxes = c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	if n := len(page["messages"].([]any)); n != 0 || boxes[0].(map[string]any)["unseen"] != float64(0) || boxes[1].(map[string]any)["unseen"] != float64(1) {
+		t.Errorf("after the move: %d kept, inbox %v, work %v", n, boxes[0], boxes[1])
+	}
+}
+
+func TestDeletingForGoodTellsTheServer(t *testing.T) {
+	_, c, fake, _, path := reading(t)
+	if resp := c.do("DELETE", path, ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete = %s", resp.Status)
+	}
+	if len(fake.moves) != 1 || fake.moves[0] != "" {
+		t.Errorf("moves = %v", fake.moves)
+	}
+	fake.err = mirror.ErrUnsupported
+	if resp := c.do("DELETE", path, ""); resp.StatusCode != http.StatusConflict {
+		t.Errorf("a server that cannot = %s", resp.Status)
 	}
 }
