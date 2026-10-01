@@ -65,7 +65,9 @@ export function Reader({
   return (
     <article
       aria-label="Message"
-      className="relative flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-bg"
+      // HTML scrolls in its frame and the pane holds still around it, one scroll on the screen;
+      // a plain message has no frame, and the pane is its scroll.
+      className={`relative flex min-w-0 flex-1 flex-col overflow-x-hidden bg-bg ${m?.html ? "overflow-y-hidden" : "overflow-y-auto"}`}
     >
       <div className="flex shrink-0 flex-col gap-2 border-b border-line px-4 py-4">
         <Actions

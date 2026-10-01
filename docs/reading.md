@@ -202,7 +202,9 @@ alone stops a script; both are kept because the first is code that can have a bu
 second is a browser that can be old.
 
 The frame fills the space under the headers, edge to edge with no margin of its own, and scrolls
-itself while the headers stay above it: mail lays itself out to fill a page. A frame as tall as
+itself while the headers stay above it: mail lays itself out to fill a page. Around HTML the pane
+does not scroll, and the application is pinned to the window rather than as tall as it, so there
+is one scroll on the screen; a plain message, which has no frame, scrolls the pane instead. A frame as tall as
 its content, left to the pane to scroll, cannot be scrolled on a phone, because Mobile Safari does
 not hand a touch on a frame to the pane around it.
 

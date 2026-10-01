@@ -12,10 +12,12 @@ import { Settings } from "@app/islands/app/Settings";
 export function App() {
   const route = useRoute();
   useLive();
-  // The height of the window and no more: the mail view scrolls its own list, and every other
-  // page scrolls inside the space under the header. The window itself never scrolls.
+  // Pinned to the window rather than as tall as it: the mail view scrolls its own list, and every
+  // other page scrolls inside the space under the header, so the window itself has nothing to
+  // scroll. A height of 100dvh can round a pixel or two past the screen in Mobile Safari, and
+  // the window then scrolls by that much.
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden">
+    <div className="fixed inset-0 flex flex-col overflow-hidden">
       <Header route={route} />
       <Boundary what="This page" key={route.page}>
         <Page route={route} />
