@@ -44,3 +44,18 @@ func TestValidRefusesTheWrongShape(t *testing.T) {
 		}
 	}
 }
+
+func TestAMessageIdIsReadBackAsItWasWritten(t *testing.T) {
+	id := Message(1700000000, 4521)
+	if id != "1700000000-4521" {
+		t.Errorf("id = %q", id)
+	}
+	if v, u, ok := ParseMessage(id); !ok || v != 1700000000 || u != 4521 {
+		t.Errorf("parsed %d-%d %v", v, u, ok)
+	}
+	for _, bad := range []string{"", "4521", "1.2", "1-0", "0-1", "01-2", "1-02", "1-2-3", "a-b", "1-4294967296", "+1-2", "1- 2", "-1-2"} {
+		if _, _, ok := ParseMessage(bad); ok {
+			t.Errorf("%q parsed", bad)
+		}
+	}
+}

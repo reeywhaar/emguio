@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { qk } from "@app/api/keys";
+import type { Mailbox } from "@app/api/types";
 
 /**
  * Keeps an open tab in step with the mail arriving underneath it.
@@ -18,8 +19,11 @@ export function useLive() {
     if (typeof EventSource === "undefined") return;
     const source = new EventSource("/api/events");
     const refresh = () => {
-      client.invalidateQueries({ queryKey: qk.mail });
       client.invalidateQueries({ queryKey: qk.emailConfigs });
+      client.invalidateQueries({
+        queryKey: qk.mail,
+        predicate: ({ queryKey }) => kept(client, queryKey),
+      });
     };
     source.addEventListener("changed", refresh);
     // A reconnection means the stream was down, and whatever happened meanwhile was not said.
@@ -27,4 +31,20 @@ export function useLive() {
     source.addEventListener("open", refresh);
     return () => source.close();
   }, [client]);
+}
+
+/**
+ * Whether a query reads what the server keeps, which is what the stream announces: each
+ * config's mailboxes, and INBOX's list. Every other list and every message is fetched from the
+ * mail server, and asking again on each change would be a trip there every time.
+ */
+export function kept(client: QueryClient, key: readonly unknown[]): boolean {
+  const [, config, kind, mailbox] = key;
+  if (kind === "mailboxes") return true;
+  if (kind !== "messages" || typeof config !== "string") return false;
+  return (
+    client
+      .getQueryData<Mailbox[]>(qk.mailboxes(config))
+      ?.some((mb) => mb.id === mailbox && mb.special_use === "inbox") ?? false
+  );
 }

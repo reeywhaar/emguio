@@ -3,12 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -102,10 +100,17 @@ type Header struct {
 	Preview string
 }
 
-// Message is a stored message, named by its own id.
+// Message is a message of a mailbox, as a list shows it.
 type Message struct {
-	ID string
 	Header
+	// UIDValidity is its mailbox's, which with the UID names it: see ID.
+	UIDValidity uint32
+}
+
+// ID is what the API calls the message: the server's own name for it, since most messages have
+// no row here to name them by.
+func (m *Message) ID() string {
+	return ids.Message(m.UIDValidity, m.UID)
 }
 
 // SyncTarget is an email config as the mirror sees it: whose it is, and when it last changed.
@@ -309,7 +314,7 @@ func (s *Store) ResetMailbox(ctx context.Context, mailboxID string, uidValidity 
 	return tx.Commit()
 }
 
-// MessageFlags is every stored message of a mailbox, by UID, with the flags last copied.
+// MessageFlags is every kept message of a mailbox, by UID, with the flags last copied.
 func (s *Store) MessageFlags(ctx context.Context, mailboxID string) (map[uint32]Flags, error) {
 	rows, err := s.reader.QueryContext(ctx,
 		`SELECT uid, seen, flagged, answered, draft FROM messages WHERE mailbox_id = ?`, mailboxID)
@@ -331,8 +336,8 @@ func (s *Store) MessageFlags(ctx context.Context, mailboxID string) (map[uint32]
 	return out, rows.Err()
 }
 
-// PutMessages stores new messages, in one transaction. One already stored under a UID only has
-// its flags updated: a UID names one message for as long as the UIDVALIDITY lasts.
+// PutMessages keeps messages, in one transaction. One already kept under a UID only has its
+// flags updated: a UID names one message for as long as the UIDVALIDITY lasts.
 func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Header) error {
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
@@ -340,16 +345,15 @@ func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Hea
 	}
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx,
-		`INSERT INTO messages (id, mailbox_id, uid, internal_date, date, size, seen, flagged, answered, draft,
+		`INSERT INTO messages (mailbox_id, uid, internal_date, date, size, seen, flagged, answered, draft,
 		   subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (mailbox_id, uid) DO UPDATE SET
 		   seen = excluded.seen, flagged = excluded.flagged, answered = excluded.answered, draft = excluded.draft`)
 	if err != nil {
 		return fmt.Errorf("put messages: %w", err)
 	}
 	defer stmt.Close()
-	now := s.Now()
 	for _, h := range headers {
 		var date any
 		if h.Date != nil {
@@ -358,7 +362,7 @@ func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Hea
 		to, _ := json.Marshal(nonNil(h.To))
 		cc, _ := json.Marshal(nonNil(h.Cc))
 		if _, err := stmt.ExecContext(ctx,
-			ids.New(ids.Message, now.UnixMilli()), mailboxID, h.UID, unix(h.InternalDate), date, h.Size,
+			mailboxID, h.UID, unix(h.InternalDate), date, h.Size,
 			h.Flags.Seen, h.Flags.Flagged, h.Flags.Answered, h.Flags.Draft,
 			h.Subject, h.From.Name, h.From.Email, string(to), string(cc), h.MessageID, h.InReplyTo, h.HasAttachments, h.Preview); err != nil {
 			return fmt.Errorf("put messages: %w", err)
@@ -394,7 +398,7 @@ func (s *Store) SetFlags(ctx context.Context, mailboxID string, flags map[uint32
 	return tx.Commit()
 }
 
-// DeleteMessages drops the messages the server no longer has.
+// DeleteMessages drops kept messages: gone from the server, or out of the window.
 func (s *Store) DeleteMessages(ctx context.Context, mailboxID string, uids []uint32) error {
 	if len(uids) == 0 {
 		return nil
@@ -412,72 +416,29 @@ func (s *Store) DeleteMessages(ctx context.Context, mailboxID string, uids []uin
 	return tx.Commit()
 }
 
-// MessagePage is a run of a mailbox's messages, newest first, and where the next one starts.
-type MessagePage struct {
-	Messages []*Message
-	// Next is empty when this run reached the oldest message.
-	Next string
-}
-
-// PageMax bounds a run, whatever was asked for.
-const PageMax = 200
-
-// Messages lists a run of one of a user's mailboxes, newest to arrive first, starting after
-// cursor — empty for the newest.
-//
-// A cursor is a position rather than an offset, so mail arriving between two pages does not
-// shift the second by however many came in.
-func (s *Store) Messages(ctx context.Context, userID, configID, mailboxID, cursor string, limit int) (*MessagePage, error) {
-	if _, err := s.emailConfigRow(ctx, userID, configID); err != nil {
-		return nil, err
-	}
-	if !ids.Valid(ids.Mailbox, mailboxID) {
-		return nil, Invalid("%q is not a mailbox id.", mailboxID)
-	}
-	var n int
-	if err := s.reader.QueryRowContext(ctx,
-		`SELECT count(*) FROM mailboxes WHERE id = ? AND email_config_id = ?`, mailboxID, configID).Scan(&n); err != nil {
-		return nil, fmt.Errorf("messages: %w", err)
-	}
-	if n == 0 {
-		return nil, NotFound("There is no such mailbox.")
-	}
-	if limit <= 0 || limit > PageMax {
-		limit = PageMax
-	}
-
-	query := `SELECT id, uid, internal_date, date, size, seen, flagged, answered, draft,
-	            subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview
-	          FROM messages WHERE mailbox_id = ?`
-	args := []any{mailboxID}
-	if cursor != "" {
-		at, uid, err := parseCursor(cursor)
-		if err != nil {
-			return nil, err
-		}
-		query += ` AND (internal_date < ? OR (internal_date = ? AND uid < ?))`
-		args = append(args, at, at, uid)
-	}
-	query += ` ORDER BY internal_date DESC, uid DESC LIMIT ?`
-	args = append(args, limit+1)
-
-	rows, err := s.reader.QueryContext(ctx, query, args...)
+// Window is the messages kept of a mailbox, newest to arrive first: INBOX's newest, which a
+// list opens on without asking the server.
+func (s *Store) Window(ctx context.Context, mb *Mailbox) ([]*Message, error) {
+	rows, err := s.reader.QueryContext(ctx,
+		`SELECT uid, internal_date, date, size, seen, flagged, answered, draft,
+		        subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview
+		   FROM messages WHERE mailbox_id = ? ORDER BY uid DESC`, mb.ID)
 	if err != nil {
-		return nil, fmt.Errorf("messages: %w", err)
+		return nil, fmt.Errorf("window: %w", err)
 	}
 	defer rows.Close()
-	page := &MessagePage{Messages: []*Message{}}
+	out := []*Message{}
 	for rows.Next() {
 		var (
-			m        Message
+			m        = Message{UIDValidity: mb.UIDValidity}
 			internal int64
 			date     sql.NullInt64
 			to, cc   string
 		)
-		if err := rows.Scan(&m.ID, &m.UID, &internal, &date, &m.Size,
+		if err := rows.Scan(&m.UID, &internal, &date, &m.Size,
 			&m.Flags.Seen, &m.Flags.Flagged, &m.Flags.Answered, &m.Flags.Draft,
 			&m.Subject, &m.From.Name, &m.From.Email, &to, &cc, &m.MessageID, &m.InReplyTo, &m.HasAttachments, &m.Preview); err != nil {
-			return nil, fmt.Errorf("messages: %w", err)
+			return nil, fmt.Errorf("window: %w", err)
 		}
 		m.InternalDate = fromUnix(internal)
 		if date.Valid {
@@ -486,39 +447,28 @@ func (s *Store) Messages(ctx context.Context, userID, configID, mailboxID, curso
 		}
 		json.Unmarshal([]byte(to), &m.To)
 		json.Unmarshal([]byte(cc), &m.Cc)
-		page.Messages = append(page.Messages, &m)
+		out = append(out, &m)
 	}
-	if err := rows.Err(); err != nil {
+	return out, rows.Err()
+}
+
+// Mailbox is one of a user's email configs' mailboxes.
+func (s *Store) Mailbox(ctx context.Context, userID, configID, mailboxID string) (*Mailbox, error) {
+	if _, err := s.emailConfigRow(ctx, userID, configID); err != nil {
 		return nil, err
 	}
-	if len(page.Messages) > limit {
-		page.Messages = page.Messages[:limit]
-		last := page.Messages[limit-1]
-		page.Next = makeCursor(unix(last.InternalDate), last.UID)
+	if !ids.Valid(ids.Mailbox, mailboxID) {
+		return nil, Invalid("%q is not a mailbox id.", mailboxID)
 	}
-	return page, nil
-}
-
-func makeCursor(at int64, uid uint32) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d.%d", at, uid)))
-}
-
-func parseCursor(cursor string) (int64, uint32, error) {
-	bad := Invalid("That cursor is not one this gave out. Start the list again.")
-	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	m, err := scanMailbox(s.reader.QueryRowContext(ctx,
+		`SELECT `+mailboxColumns+` FROM mailboxes WHERE id = ? AND email_config_id = ?`, mailboxID, configID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, NotFound("There is no such mailbox.")
+	}
 	if err != nil {
-		return 0, 0, bad
+		return nil, fmt.Errorf("mailbox: %w", err)
 	}
-	at, uid, ok := strings.Cut(string(raw), ".")
-	if !ok {
-		return 0, 0, bad
-	}
-	a, err1 := strconv.ParseInt(at, 10, 64)
-	u, err2 := strconv.ParseUint(uid, 10, 32)
-	if err1 != nil || err2 != nil {
-		return 0, 0, bad
-	}
-	return a, uint32(u), nil
+	return m, nil
 }
 
 // useOrder is where each special use sits in a sidebar; anything else comes after, by name.
@@ -558,119 +508,40 @@ func SortMailboxes(list []*Mailbox) {
 	})
 }
 
-// Opened is a message somebody asked to read: the message, and where it is on the server.
-type Opened struct {
-	Message
-	MailboxID   string
-	MailboxName string
-	SpecialUse  string
-	UIDValidity uint32
-}
-
-// OpenMessage finds one of a user's messages under one of their email configs.
-func (s *Store) OpenMessage(ctx context.Context, userID, configID, messageID string) (*Opened, error) {
-	if _, err := s.emailConfigRow(ctx, userID, configID); err != nil {
-		return nil, err
-	}
-	if !ids.Valid(ids.Message, messageID) {
-		return nil, Invalid("%q is not a message id.", messageID)
-	}
-	var (
-		o        Opened
-		internal int64
-		date     sql.NullInt64
-		to, cc   string
-	)
-	err := s.reader.QueryRowContext(ctx,
-		`SELECT m.id, m.uid, m.internal_date, m.date, m.size, m.seen, m.flagged, m.answered, m.draft,
-		        m.subject, m.from_name, m.from_email, m.to_json, m.cc_json, m.message_id, m.in_reply_to,
-		        m.has_attachments, m.preview, b.id, b.name, b.special_use, b.uidvalidity
-		   FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id
-		  WHERE m.id = ? AND b.email_config_id = ?`, messageID, configID).
-		Scan(&o.ID, &o.UID, &internal, &date, &o.Size,
-			&o.Flags.Seen, &o.Flags.Flagged, &o.Flags.Answered, &o.Flags.Draft,
-			&o.Subject, &o.From.Name, &o.From.Email, &to, &cc, &o.MessageID, &o.InReplyTo,
-			&o.HasAttachments, &o.Preview, &o.MailboxID, &o.MailboxName, &o.SpecialUse, &o.UIDValidity)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, NotFound("There is no such message.")
-	}
+// SetPreview replaces a kept message's preview, when reading it whole gives a better one than
+// the sync's first bytes did. It reports whether there was one to replace.
+func (s *Store) SetPreview(ctx context.Context, mailboxID string, uid uint32, preview string) (bool, error) {
+	res, err := s.writer.ExecContext(ctx,
+		`UPDATE messages SET preview = ? WHERE mailbox_id = ? AND uid = ? AND preview <> ?`, preview, mailboxID, uid, preview)
 	if err != nil {
-		return nil, fmt.Errorf("open message: %w", err)
+		return false, fmt.Errorf("set preview: %w", err)
 	}
-	o.InternalDate = fromUnix(internal)
-	if date.Valid {
-		d := fromUnix(date.Int64)
-		o.Date = &d
-	}
-	json.Unmarshal([]byte(to), &o.To)
-	json.Unmarshal([]byte(cc), &o.Cc)
-	return &o, nil
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
-// Body is a message as the server sent it, when it has been kept.
-func (s *Store) Body(ctx context.Context, messageID string) ([]byte, bool, error) {
-	var raw []byte
-	err := s.reader.QueryRowContext(ctx, `SELECT raw FROM message_bodies WHERE message_id = ?`, messageID).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("body: %w", err)
-	}
-	return raw, true, nil
-}
-
-// PutBody keeps a message as the server sent it, with the preview it gives the list.
-func (s *Store) PutBody(ctx context.Context, messageID string, raw []byte, preview string) error {
-	tx, err := s.writer.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("put body: %w", err)
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO message_bodies (message_id, raw, fetched_at) VALUES (?, ?, ?)
-		 ON CONFLICT (message_id) DO UPDATE SET raw = excluded.raw, fetched_at = excluded.fetched_at`,
-		messageID, raw, unix(s.Now())); err != nil {
-		return fmt.Errorf("put body: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE messages SET preview = ? WHERE id = ?`, preview, messageID); err != nil {
-		return fmt.Errorf("put body: %w", err)
-	}
-	return tx.Commit()
-}
-
-// SetPreview replaces a message's preview, when reading it gives a better one than it has.
-func (s *Store) SetPreview(ctx context.Context, messageID, preview string) error {
-	_, err := s.writer.ExecContext(ctx, `UPDATE messages SET preview = ? WHERE id = ?`, preview, messageID)
-	if err != nil {
-		return fmt.Errorf("set preview: %w", err)
-	}
-	return nil
-}
-
-// SetSeen records that the server now holds a message read or unread, and moves its mailbox's
-// unseen count with it, so the sidebar agrees before the next look confirms it.
-func (s *Store) SetSeen(ctx context.Context, messageID string, seen bool) error {
+// SetSeen records that the server now holds a message read or unread: on its row, when it is
+// kept, and in its mailbox's unseen count when the server's flag moved, so the sidebar agrees
+// before the next look confirms it.
+func (s *Store) SetSeen(ctx context.Context, mailboxID string, uid uint32, seen, moved bool) error {
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("set seen: %w", err)
 	}
 	defer tx.Rollback()
-	res, err := tx.ExecContext(ctx, `UPDATE messages SET seen = ? WHERE id = ? AND seen <> ?`, seen, messageID, seen)
-	if err != nil {
-		return fmt.Errorf("set seen: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return tx.Commit()
-	}
-	step := -1
-	if !seen {
-		step = 1
-	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE mailboxes SET unseen = max(0, unseen + ?)
-		  WHERE id = (SELECT mailbox_id FROM messages WHERE id = ?)`, step, messageID); err != nil {
+		`UPDATE messages SET seen = ? WHERE mailbox_id = ? AND uid = ?`, seen, mailboxID, uid); err != nil {
 		return fmt.Errorf("set seen: %w", err)
+	}
+	if moved {
+		step := -1
+		if !seen {
+			step = 1
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE mailboxes SET unseen = max(0, unseen + ?) WHERE id = ?`, step, mailboxID); err != nil {
+			return fmt.Errorf("set seen: %w", err)
+		}
 	}
 	return tx.Commit()
 }

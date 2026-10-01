@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 
 	"emguio/internal/config"
+	"emguio/internal/ids"
 	"emguio/internal/seal"
 	"emguio/internal/store"
 )
@@ -178,6 +179,8 @@ func TestARouteWithNoFileGetsItsShell(t *testing.T) {
 		"/settings":   "app",
 		"/invite/abc": "login",
 		"/index.html": "app",
+		// A message, by what its server calls it: a link to it is a route, not a file.
+		"/c/" + ids.New(ids.EmailConfig, 1) + "/" + ids.New(ids.Mailbox, 1) + "/" + ids.Message(1700000000, 4521): "app",
 	} {
 		resp := c.do("GET", path, "")
 		body, _ := io.ReadAll(resp.Body)

@@ -179,18 +179,23 @@ Three kinds, and the rule that decides between them:
 
 | kind | shape | used by |
 | --- | --- | --- |
-| ULID | prefix plus 26 Crockford characters over 16 bytes | `u_` user, `i_` invite, `ec_` email config, `mb_` mailbox, `m_` message |
+| ULID | prefix plus 26 Crockford characters over 16 bytes | `u_` user, `i_` invite, `ec_` email config, `mb_` mailbox |
 | derived | hash of the thing it names | tokens |
+| the server's | `{uidvalidity}-{uid}`, under its mailbox's id | messages |
 
 A new prefix is added to this table in the change that introduces it.
 
 Ids are opaque and never parsed back. A malformed one is refused before it reaches a query, so a
 typo is a `400` rather than an empty result that looks like a `404`.
 
-**What the server calls a thing is not an id.** UIDs, UIDVALIDITY and mailbox names stay
-inside `internal/store` and the package that speaks the protocol. The API, URLs and the
-interface use our own ids, so a server that renumbers or renames something changes rows rather
-than links.
+**What the server calls a thing is not an id**, except a message's. Mailbox names stay inside
+`internal/store` and the package that speaks the protocol, and the API, URLs and the interface
+use our own ids, so a server that renames a mailbox changes a row rather than links.
+
+A message is the exception because most messages have no row to name them by: only INBOX's
+newest are kept. Its id is its mailbox's UIDVALIDITY and its UID, which IMAP allows only as
+positive 32-bit numbers, and which a renumbering server changes — so an old link is `gone`,
+never another message. See [reading.md](reading.md).
 
 ## Migrations
 

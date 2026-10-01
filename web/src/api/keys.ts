@@ -13,9 +13,6 @@ export const qk = {
   lists: (config: string) => ["mail", config, "messages"] as const,
   messages: (config: string, mailbox: string) =>
     ["mail", config, "messages", mailbox] as const,
-  /** One message, with its images and without. */
-  reading: (config: string, message: string) =>
-    ["mail", config, "message", message] as const,
-  message: (config: string, message: string, images: boolean) =>
-    ["mail", config, "message", message, images] as const,
+  message: (config: string, mailbox: string, message: string) =>
+    ["mail", config, "message", mailbox, message] as const,
 };

@@ -2,32 +2,23 @@ package message
 
 import (
 	"encoding/base64"
-	"fmt"
 	"strings"
 	"testing"
 )
 
-// mail is a message with \n line ends, turned into the \r\n a server sends.
+// mail is MIME with \n line ends, turned into the \r\n a server sends.
 func mail(s string) []byte { return []byte(strings.ReplaceAll(s, "\n", "\r\n")) }
 
-func htmlMail(body string) []byte {
-	return mail("From: a@example.com\nSubject: hi\nMIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n" + body + "\n")
+// htmlOnly is a message whose one text is HTML.
+func htmlOnly(body string) Structure {
+	return Structure{HTML: &Text{Body: []byte(body), Charset: "utf-8"}}
 }
 
-var parts = Options{PartURL: func(i int) string { return fmt.Sprintf("/part/%d", i) }}
-
-func parse(t *testing.T, raw []byte, opts Options) *Read {
-	t.Helper()
-	r, err := Parse(raw, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
-}
+var parts = Options{PartURL: func(at string) string { return "/part/" + at }}
 
 // The frame runs no script either, but the sanitizer is the first wall and must stand on its own.
 func TestNothingThatRunsSurvives(t *testing.T) {
-	r := parse(t, htmlMail(`<p onclick="steal()">Hi</p>
+	r := Show(htmlOnly(`<p onclick="steal()">Hi</p>
 <script>steal()</script>
 <a href="javascript:steal()">click</a>
 <img src="x" onerror="steal()">
@@ -49,7 +40,7 @@ func TestNothingThatRunsSurvives(t *testing.T) {
 
 // A style that names a URL is a request to somewhere, made without asking.
 func TestNoStyleCanLoadAnything(t *testing.T) {
-	r := parse(t, htmlMail(`<div style="background-image: url(https://track.example/p.gif); color: red">a</div>
+	r := Show(htmlOnly(`<div style="background-image: url(https://track.example/p.gif); color: red">a</div>
 <style>body { background: url(https://track.example/q.gif) }</style>
 <table background="https://track.example/t.gif"><tr><td>b</td></tr></table>
 <link rel="stylesheet" href="https://track.example/s.css">`), parts)
@@ -63,64 +54,48 @@ func TestNoStyleCanLoadAnything(t *testing.T) {
 }
 
 func TestLinksOpenElsewhereAndSayNothingAboutWhereFrom(t *testing.T) {
-	r := parse(t, htmlMail(`<a href="https://example.com/page">x</a>`), parts)
+	r := Show(htmlOnly(`<a href="https://example.com/page">x</a>`), parts)
 	if !strings.Contains(r.HTML, `target="_blank"`) || !strings.Contains(r.HTML, "noreferrer") {
 		t.Errorf("link = %s", r.HTML)
 	}
 }
 
-// Remote images tell the sender the message was opened, and from where.
-func TestRemoteImagesAreBlockedUnlessAskedFor(t *testing.T) {
-	raw := htmlMail(`<img src="https://track.example/pixel.gif" alt="logo"><img src="http://cdn.example/b.png">`)
+// Remote images tell the sender the message was opened, and from where. Each holds its place
+// with a blank image, and carries the proxy's address for the pane to swap in when asked.
+func TestRemoteImagesWaitToBeAskedFor(t *testing.T) {
+	raw := htmlOnly(`<img src="https://track.example/pixel.gif" alt="logo"><img src="http://cdn.example/b.png" data-src="https://evil.example/x.gif">`)
 
-	blocked := parse(t, raw, parts)
-	if blocked.Remote != 2 || strings.Contains(blocked.HTML, "example/") {
-		t.Errorf("blocked: remote = %d\n%s", blocked.Remote, blocked.HTML)
+	r := Show(raw, Options{Proxy: func(u string) string { return "/proxy?u=" + u }})
+	if r.Remote != 2 || strings.Contains(r.HTML, `src="http`) || strings.Contains(r.HTML, "evil.example") {
+		t.Errorf("remote = %d\n%s", r.Remote, r.HTML)
 	}
-	if strings.Count(blocked.HTML, `src="data:image/gif`) != 2 {
-		t.Errorf("a blocked image does not hold its place with a blank one:\n%s", blocked.HTML)
+	if strings.Count(r.HTML, `src="data:image/gif`) != 2 {
+		t.Errorf("a waiting image does not hold its place with a blank one:\n%s", r.HTML)
 	}
-	if !strings.Contains(blocked.HTML, `alt="logo"`) {
-		t.Errorf("the blocked image lost its alt text:\n%s", blocked.HTML)
+	if !strings.Contains(r.HTML, `data-src="/proxy?u=https://track.example/pixel.gif"`) ||
+		!strings.Contains(r.HTML, `data-src="/proxy?u=http://cdn.example/b.png"`) {
+		t.Errorf("the proxy's addresses are not there to swap in:\n%s", r.HTML)
+	}
+	if !strings.Contains(r.HTML, `alt="logo"`) {
+		t.Errorf("the image lost its alt text:\n%s", r.HTML)
 	}
 
-	proxied := parse(t, raw, Options{Proxy: func(u string) string { return "/proxy?u=" + u }})
-	if !strings.Contains(proxied.HTML, `src="/proxy?u=https://track.example/pixel.gif"`) {
-		t.Errorf("proxied:\n%s", proxied.HTML)
+	blocked := Show(raw, parts)
+	if blocked.Remote != 2 || strings.Contains(blocked.HTML, "data-src") {
+		t.Errorf("without a proxy: remote = %d\n%s", blocked.Remote, blocked.HTML)
 	}
 }
 
 func TestACarriedImageIsShownInPlaceAndNotListed(t *testing.T) {
-	png := base64.StdEncoding.EncodeToString([]byte("\x89PNG fake"))
-	raw := mail(`From: a@example.com
-Subject: logo
-MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary=outer
-
---outer
-Content-Type: multipart/related; boundary=inner
-
---inner
-Content-Type: text/html; charset=utf-8
-
-<p>Hi <img src="cid:logo@example"></p>
---inner
-Content-Type: image/png
-Content-ID: <logo@example>
-Content-Disposition: inline; filename=logo.png
-Content-Transfer-Encoding: base64
-
-` + png + `
---inner--
---outer
-Content-Type: application/pdf
-Content-Disposition: attachment; filename="report.pdf"
-Content-Transfer-Encoding: base64
-
-JVBERi0=
---outer--
-`)
-	r := parse(t, raw, parts)
+	r := Show(Structure{
+		HTML: &Text{Body: []byte(`<p>Hi <img src="cid:logo@example"></p>`)},
+		Leaves: []Leaf{
+			{Section: "1.2", Type: "image/png", ContentID: "<logo@example>", Disposition: "inline",
+				DispositionParams: map[string]string{"filename": "logo.png"}, Encoding: "base64", Size: 78},
+			{Section: "2", Type: "application/pdf", Disposition: "attachment",
+				DispositionParams: map[string]string{"filename": "report.pdf"}, Encoding: "base64", Size: 7800},
+		},
+	}, parts)
 
 	var logo, report *Part
 	for i := range r.Parts {
@@ -134,43 +109,71 @@ JVBERi0=
 	if logo == nil || report == nil {
 		t.Fatalf("parts = %+v", r.Parts)
 	}
-	if !strings.Contains(r.HTML, fmt.Sprintf(`src="/part/%d"`, logo.Index)) {
+	if !strings.Contains(r.HTML, `src="/part/1.2"`) {
 		t.Errorf("the cid image does not point at its part:\n%s", r.HTML)
 	}
 	if logo.Listed || !report.Listed {
 		t.Errorf("listed: logo %v, report %v", logo.Listed, report.Listed)
 	}
-	if report.Type != "application/pdf" || report.Size != 5 {
+	// What the server holds is base64; what somebody downloads is about three quarters of it.
+	if report.Type != "application/pdf" || report.Size != 5700 || report.Section != "2" {
 		t.Errorf("report = %+v", report)
 	}
+}
 
-	part, content, err := PartOf(raw, report.Index)
-	if err != nil || part.Name != "report.pdf" || string(content) != "%PDF-" {
-		t.Errorf("PartOf = %+v, %q, %v", part, content, err)
+// A sender's filename arrives as they wrote it, however they wrote it.
+func TestAPartIsNamedAsItsSenderNamedIt(t *testing.T) {
+	for want, l := range map[string]Leaf{
+		"report.pdf": {DispositionParams: map[string]string{"filename": "report.pdf"}},
+		"Отчёт.pdf":  {DispositionParams: map[string]string{"filename*": "utf-8''%D0%9E%D1%82%D1%87%D1%91%D1%82.pdf"}},
+		"Отчёт за 2026.pdf": {DispositionParams: map[string]string{
+			"filename*0*": "utf-8''%D0%9E%D1%82%D1%87%D1%91%D1%82",
+			"filename*1":  " за 2026",
+			"filename*2*": ".pdf",
+		}},
+		"scan.jpg":      {Params: map[string]string{"name": "scan.jpg"}},
+		"part-3":        {Section: "3"},
+		"message-2.eml": {Section: "2", Type: "message/rfc822"},
+	} {
+		if got := leafName(l); got != want {
+			t.Errorf("%+v named %q, want %q", l, got, want)
+		}
+	}
+}
+
+// A part fetched alone is its MIME header and its body as the server sends them.
+func TestAPartFetchedAloneIsDecoded(t *testing.T) {
+	head := mail("Content-Type: application/pdf\nContent-Disposition: attachment; filename=\"report.pdf\"\nContent-Transfer-Encoding: base64\n\n")
+	part, content, err := DecodePart(head, mail("JVBERi0=\n"), "2")
+	if err != nil || part.Name != "report.pdf" || part.Type != "application/pdf" || string(content) != "%PDF-" {
+		t.Errorf("DecodePart = %+v, %q, %v", part, content, err)
+	}
+	if part, _, _ := DecodePart(mail("Content-Type: image/png\n\n"), []byte("x"), "1.3"); part.Name != "part-1.3" {
+		t.Errorf("an unnamed part = %q", part.Name)
 	}
 }
 
 func TestABodyIsReadInItsCharset(t *testing.T) {
-	// "Привет" in koi8-r, quoted-printable.
-	raw := mail("From: a@example.com\nSubject: s\nMIME-Version: 1.0\nContent-Type: text/plain; charset=koi8-r\nContent-Transfer-Encoding: quoted-printable\n\n=F0=D2=C9=D7=C5=D4\n")
-	if r := parse(t, raw, parts); strings.TrimSpace(r.Text) != "Привет" {
-		t.Errorf("text = %q", r.Text)
+	r := Show(Structure{Plain: &Text{Body: []byte("0J/RgNC40LLQtdGCDQo="), Encoding: "base64", Charset: "utf-8"}}, parts)
+	if strings.TrimSpace(r.Text) != "Привет" || r.Preview != "Привет" {
+		t.Errorf("text = %q, preview = %q", r.Text, r.Preview)
+	}
+	// Not every sender writes UTF-8 yet: GB2312 is common in Chinese mail.
+	r = Show(Structure{Plain: &Text{Body: []byte{0xC4, 0xE3, 0xBA, 0xC3}, Charset: "gb2312"}}, parts)
+	if r.Text != "你好" {
+		t.Errorf("gb2312 = %q", r.Text)
 	}
 }
 
-func TestAnHTMLOnlyMessageStillHasText(t *testing.T) {
-	r := parse(t, htmlMail(`<h1>News</h1><p>Hello <b>there</b></p>`), parts)
-	if !strings.Contains(r.Text, "Hello") || r.HTML == "" {
-		t.Errorf("text = %q, html = %q", r.Text, r.HTML)
-	}
-	// The text made from HTML marks a heading with asterisks; a preview has none of that.
-	if r.Preview != "News Hello there" {
-		t.Errorf("preview = %q", r.Preview)
+func TestAnHTMLOnlyMessageIsPreviewedFromItsWords(t *testing.T) {
+	r := Show(htmlOnly(`<h1>News</h1><p>Hello <b>there</b></p>`), parts)
+	if r.HTML == "" || r.Preview != "News Hello there" {
+		t.Errorf("html = %q, preview = %q", r.HTML, r.Preview)
 	}
 }
 
 func TestAPlainMessageHasNoHTML(t *testing.T) {
-	r := parse(t, mail("From: a@example.com\nSubject: s\n\nJust text.\n"), parts)
+	r := Show(Structure{Plain: &Text{Body: []byte("Just text.\r\n")}}, parts)
 	if r.HTML != "" || strings.TrimSpace(r.Text) != "Just text." {
 		t.Errorf("text = %q, html = %q", r.Text, r.HTML)
 	}
@@ -195,8 +198,8 @@ func TestASectionPreviewReadsWhatWasCutOff(t *testing.T) {
 	if got := SectionPreview([]byte("caf=C3=A9 au la=\r\nit, cut =C3"), "quoted-printable", "utf-8", false); !strings.HasPrefix(got, "café au lait, cut") {
 		t.Errorf("quoted-printable = %q", got)
 	}
-	if got := SectionPreview([]byte{0xF0, 0xD2, 0xC9, 0xD7, 0xC5, 0xD4}, "8bit", "koi8-r", false); got != "Привет" {
-		t.Errorf("koi8-r = %q", got)
+	if got := SectionPreview([]byte{0xC4, 0xE3, 0xBA, 0xC3}, "8bit", "gb2312", false); got != "你好" {
+		t.Errorf("gb2312 = %q", got)
 	}
 	if got := SectionPreview([]byte(`<html><head><title>T</title><style>p{color:red}</style></head><body><p>Hi&nbsp;<b>you</b></p><p>there</p><a hr`), "7bit", "", true); got != "Hi you there" {
 		t.Errorf("html = %q", got)

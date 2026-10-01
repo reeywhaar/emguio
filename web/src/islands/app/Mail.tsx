@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   getEmailConfigs,
@@ -294,8 +294,13 @@ function FolderLink({
 
 /** When the mail was last brought up to date, and a way to ask for it now. */
 function SyncState({ config }: { config: EmailConfig }) {
+  const client = useQueryClient();
   const sync = useMutation({
     mutationFn: () => postEmailConfigsByIdSync(config.id),
+    // A folder other than INBOX is listed from the server, and the event stream says nothing
+    // about it: asking for new mail asks for it again.
+    onSuccess: () =>
+      client.invalidateQueries({ queryKey: qk.lists(config.id) }),
   });
   return (
     <div className="flex shrink-0 items-center gap-2">

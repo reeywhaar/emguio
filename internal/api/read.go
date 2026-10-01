@@ -12,21 +12,24 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"emguio/internal/connect"
+	"emguio/internal/ids"
 	"emguio/internal/message"
 	"emguio/internal/mirror"
 	"emguio/internal/store"
 )
 
 type partJSON struct {
-	Index int    `json:"index"`
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Size  int    `json:"size"`
+	// Section is where the server holds it, and what it is fetched by.
+	Section string `json:"section"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Size    int    `json:"size"`
 	// Listed is false for an image the HTML shows in place.
 	Listed bool `json:"listed"`
 }
@@ -39,59 +42,73 @@ type readJSON struct {
 	// HTML is sanitized, and empty for a message with none. It is still a stranger's, and the
 	// page shows it only in a sandboxed frame.
 	HTML string `json:"html"`
-	// RemoteImages is how many images the HTML asks for from elsewhere: blocked, unless the
-	// request said images=1, when they come through the proxy.
+	// RemoteImages is how many images the HTML asks for from elsewhere. Each is a blank image
+	// until somebody asks, with the proxy's address for it in data-src.
 	RemoteImages int        `json:"remote_images"`
 	Parts        []partJSON `json:"parts"`
 }
 
-// readMessage is one message, whole, for the reading pane. The first opening fetches it from the
-// server; after that it comes from the store.
+// messageAt is the message a request names, and its mailbox and email config. It writes the
+// refusal itself and reports false when there is nothing to go on with.
+func (s *Server) messageAt(w http.ResponseWriter, r *http.Request) (*store.EmailConfig, *store.Mailbox, uint32, uint32, bool) {
+	uidValidity, uid, ok := ids.ParseMessage(r.PathValue("message"))
+	if !ok {
+		refuse(w, http.StatusBadRequest, CodeInvalid, fmt.Sprintf("%q is not a message id.", r.PathValue("message")))
+		return nil, nil, 0, 0, false
+	}
+	c, mb, ok := s.mailboxOf(w, r)
+	if !ok {
+		return nil, nil, 0, 0, false
+	}
+	if s.mirror == nil {
+		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+		return nil, nil, 0, 0, false
+	}
+	return c, mb, uidValidity, uid, true
+}
+
+// gone is what a message the server no longer has says.
+const gone = "This message is no longer on the server. It leaves the list at the next look."
+
+// readMessage is one message for the reading pane, without its attachments: fetched from the
+// server every time it is opened, and kept nowhere.
 func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
-	configID, messageID := r.PathValue("id"), r.PathValue("message")
-	opened, raw, ok := s.openBody(w, r, configID, messageID)
+	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
 	if !ok {
 		return
 	}
-	opts := message.Options{
-		PartURL: func(i int) string {
-			return fmt.Sprintf("/api/email-configs/%s/messages/%s/parts/%d", configID, messageID, i)
+	opened, err := s.mirror.Read(r.Context(), targetOf(userOf(r), c), mb.Name, uidValidity, uid)
+	if !s.serverError(w, r, c.ID, err, gone) {
+		return
+	}
+	id := ids.Message(uidValidity, uid)
+	read := message.Show(opened.Structure, message.Options{
+		PartURL: func(at string) string {
+			return fmt.Sprintf("/api/email-configs/%s/mailboxes/%s/messages/%s/parts/%s", c.ID, mb.ID, id, at)
 		},
-	}
-	if r.URL.Query().Get("images") == "1" {
-		opts.Proxy = s.proxyURL
-	}
-	read, err := message.Parse(raw, opts)
-	if errors.Is(err, message.ErrUnreadable) {
-		refuse(w, http.StatusUnprocessableEntity, CodeUnreadable, "This message is not in a form that can be read.")
-		return
-	}
-	if err != nil {
-		s.fail(w, r, err)
-		return
+		Proxy: s.proxyURL,
+	})
+
+	// Whatever the list showed, read from the first bytes at sync, the whole message says better.
+	if changed, err := s.store.SetPreview(r.Context(), mb.ID, uid, read.Preview); err != nil {
+		s.log.Warn("could not store a preview", "mailbox", mb.ID, "message", id, "err", err)
+	} else if changed {
+		s.store.Notify(userOf(r).ID)
 	}
 
-	// Whatever the list showed before — read from the first bytes at sync, or by an older build —
-	// the whole message says it better.
-	if read.Preview != opened.Preview {
-		if err := s.store.SetPreview(r.Context(), opened.ID, read.Preview); err != nil {
-			s.log.Warn("could not store a preview", "message", opened.ID, "err", err)
-		} else {
-			s.store.Notify(userOf(r).ID)
-		}
-	}
-
+	m := &store.Message{Header: opened.Header, UIDValidity: uidValidity}
+	m.Preview = read.Preview
 	out := readJSON{
-		messageJSON:  messageOut(&opened.Message),
-		Cc:           nonNil(opened.Cc),
-		Mailbox:      opened.MailboxID,
+		messageJSON:  messageOut(m),
+		Cc:           nonNil(m.Cc),
+		Mailbox:      mb.ID,
 		Text:         read.Text,
 		HTML:         read.HTML,
 		RemoteImages: read.Remote,
 		Parts:        []partJSON{},
 	}
 	for _, p := range read.Parts {
-		out.Parts = append(out.Parts, partJSON{Index: p.Index, Name: p.Name, Type: p.Type, Size: p.Size, Listed: p.Listed})
+		out.Parts = append(out.Parts, partJSON{Section: p.Section, Name: p.Name, Type: p.Type, Size: p.Size, Listed: p.Listed})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -100,8 +117,16 @@ type flagsBody struct {
 	Seen *bool `json:"seen"`
 }
 
+type flagsJSON struct {
+	ID       string `json:"id"`
+	Seen     bool   `json:"seen"`
+	Flagged  bool   `json:"flagged"`
+	Answered bool   `json:"answered"`
+	Draft    bool   `json:"draft"`
+}
+
 // patchMessage changes a message's flags: for now, whether it is read. The server is told first,
-// and the store only once the server has taken it, so the two never disagree about which is
+// and what is kept only once the server has taken it, so the two never disagree about which is
 // right.
 //
 // Its own request rather than something reading does on the side: a GET that changes things is
@@ -115,48 +140,38 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to change: seen is the one flag this sets.")
 		return
 	}
+	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
+	if !ok {
+		return
+	}
 	u := userOf(r)
-	config, err := s.store.EmailConfig(r.Context(), u.ID, r.PathValue("id"))
-	if err != nil {
+	flags, moved, err := s.mirror.SetSeen(r.Context(), targetOf(u, c), mb.Name, uidValidity, uid, *body.Seen)
+	if !s.serverError(w, r, c.ID, err, gone) {
+		return
+	}
+	if err := s.store.SetSeen(r.Context(), mb.ID, uid, flags.Seen, moved); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	opened, err := s.store.OpenMessage(r.Context(), u.ID, config.ID, r.PathValue("message"))
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if opened.Flags.Seen != *body.Seen {
-		if s.mirror == nil {
-			refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
-			return
-		}
-		target := store.SyncTarget{ID: config.ID, UserID: u.ID, UpdatedAt: config.UpdatedAt}
-		err := s.mirror.SetSeen(r.Context(), target, opened.MailboxName, opened.UIDValidity, opened.UID, *body.Seen)
-		if !s.serverError(w, r, config.ID, err) {
-			return
-		}
-		if err := s.store.SetSeen(r.Context(), opened.ID, *body.Seen); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		opened.Flags.Seen = *body.Seen
+	if moved {
 		s.store.Notify(u.ID)
 	}
-	writeJSON(w, http.StatusOK, messageOut(&opened.Message))
+	writeJSON(w, http.StatusOK, flagsJSON{
+		ID: ids.Message(uidValidity, uid), Seen: flags.Seen, Flagged: flags.Flagged, Answered: flags.Answered, Draft: flags.Draft,
+	})
 }
 
 // serverError writes the refusal for what the mail server said, and reports whether there was
-// nothing to refuse.
-func (s *Server) serverError(w http.ResponseWriter, r *http.Request, configID string, err error) bool {
+// nothing to refuse. goneSentence is what a thing the server no longer has says.
+func (s *Server) serverError(w http.ResponseWriter, r *http.Request, configID string, err error, goneSentence string) bool {
 	var f *connect.Failure
 	switch {
 	case err == nil:
 		return true
 	case errors.Is(err, mirror.ErrGone):
-		// The list is behind the server; a look now brings it up to date.
+		// What is kept is behind the server; a look now brings it up to date.
 		s.mirror.Refresh(configID)
-		refuse(w, http.StatusNotFound, CodeGone, "This message is no longer on the server. It leaves the list at the next look.")
+		refuse(w, http.StatusNotFound, CodeGone, goneSentence)
 	case errors.As(err, &f):
 		refuse(w, http.StatusBadGateway, CodeUnreachable, f.Sentence)
 	default:
@@ -171,23 +186,42 @@ var inline = map[string]bool{
 	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true, "image/avif": true,
 }
 
-// readPart is one part of a message: an attachment to download, or an image the HTML shows.
+// sectionPattern is an IMAP section number: "2", "1.3", nested no deeper than any real message.
+var sectionPattern = regexp.MustCompile(`^[1-9][0-9]{0,3}(\.[1-9][0-9]{0,3}){0,15}$`)
+
+// readPart is one part of a message, fetched alone: an attachment to download, or an image the
+// HTML shows.
 //
 // Whatever it is, it is served so that it cannot act as a page of this origin: nosniff, a
-// sandbox CSP, and anything that is not a plain image as a download.
+// sandbox CSP, and anything that is not a plain image as a download. And as immutable: a UID
+// under one UIDVALIDITY names one message for good, and a message never changes.
 func (s *Server) readPart(w http.ResponseWriter, r *http.Request) {
-	index, err := strconv.Atoi(r.PathValue("index"))
-	if err != nil || index < 0 {
-		refuse(w, http.StatusBadRequest, CodeInvalid, "A part is named by its number.")
+	at := r.PathValue("section")
+	if !sectionPattern.MatchString(at) {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "A part is named by its section, like 2 or 1.3.")
 		return
 	}
-	_, raw, ok := s.openBody(w, r, r.PathValue("id"), r.PathValue("message"))
+	var section []int
+	for _, n := range strings.Split(at, ".") {
+		i, _ := strconv.Atoi(n)
+		section = append(section, i)
+	}
+	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
 	if !ok {
 		return
 	}
-	part, content, err := message.PartOf(raw, index)
-	if err != nil {
+	head, body, err := s.mirror.Part(r.Context(), targetOf(userOf(r), c), mb.Name, uidValidity, uid, section)
+	if !s.serverError(w, r, c.ID, err, gone) {
+		return
+	}
+	// A server answers a section a message does not have with nothing at all.
+	if len(head) == 0 && len(body) == 0 {
 		refuse(w, http.StatusNotFound, CodeNotFound, "This message has no such part.")
+		return
+	}
+	part, content, err := message.DecodePart(head, body, at)
+	if err != nil {
+		refuse(w, http.StatusUnprocessableEntity, CodeUnreadable, "This part is not in a form that can be read.")
 		return
 	}
 
@@ -200,52 +234,8 @@ func (s *Server) readPart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	w.Write(content)
-}
-
-// openBody finds a user's message and its raw bytes, fetching them from the server the first
-// time. It writes the refusal itself and reports false when there is nothing to go on with.
-func (s *Server) openBody(w http.ResponseWriter, r *http.Request, configID, messageID string) (*store.Opened, []byte, bool) {
-	u := userOf(r)
-	config, err := s.store.EmailConfig(r.Context(), u.ID, configID)
-	if err != nil {
-		s.fail(w, r, err)
-		return nil, nil, false
-	}
-	opened, err := s.store.OpenMessage(r.Context(), u.ID, configID, messageID)
-	if err != nil {
-		s.fail(w, r, err)
-		return nil, nil, false
-	}
-	raw, kept, err := s.store.Body(r.Context(), opened.ID)
-	if err != nil {
-		s.fail(w, r, err)
-		return nil, nil, false
-	}
-	if kept {
-		return opened, raw, true
-	}
-	if s.mirror == nil {
-		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "Messages cannot be fetched right now.")
-		return nil, nil, false
-	}
-
-	target := store.SyncTarget{ID: config.ID, UserID: u.ID, UpdatedAt: config.UpdatedAt}
-	raw, err = s.mirror.Raw(r.Context(), target, opened.MailboxName, opened.UIDValidity, opened.UID)
-	if !s.serverError(w, r, config.ID, err) {
-		return nil, nil, false
-	}
-
-	preview := ""
-	if read, err := message.Parse(raw, message.Options{}); err == nil {
-		preview = read.Preview
-	}
-	if err := s.store.PutBody(r.Context(), opened.ID, raw, preview); err != nil {
-		s.fail(w, r, err)
-		return nil, nil, false
-	}
-	return opened, raw, true
 }
 
 // imageMax bounds what the proxy relays: an image in a message, not a download.
@@ -352,6 +342,7 @@ func (s *Server) proxyImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", kind)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	// The address is signed and names one image; the browser keeps it rather than asking again.
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	w.Write(body)
 }

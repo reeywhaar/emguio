@@ -21,13 +21,13 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     cursor: string,
   ) => getMessages(id, mailbox, cursor),
   postEmailConfigsByIdSync: (id: string) => postEmailConfigsByIdSync(id),
-  getEmailConfigsByIdMessagesByMessage: (
+  getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
+    mailbox: string,
     message: string,
-    images: boolean,
-  ) => getMessage(id, message, images),
-  partURL: (id: string, message: string, index: number) =>
-    `/parts/${id}/${message}/${index}`,
+  ) => getMessage(id, mailbox, message),
+  partURL: (id: string, mailbox: string, message: string, section: string) =>
+    `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
 
 const work: EmailConfig = {

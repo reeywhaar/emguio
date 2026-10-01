@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-  getEmailConfigsByIdMessagesByMessage,
+  getEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
   partURL,
-  patchEmailConfigsByIdMessagesByMessage,
+  patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
-import type { Address, Mailbox, ReadMessage } from "@app/api/types";
+import type { Address, Mailbox, Part, ReadMessage } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Paperclip } from "@app/components/icons";
@@ -29,18 +29,19 @@ export function Reader({
   message: string;
 }) {
   // Remote images are a request the sender sees, so they wait to be asked for, each message
-  // afresh.
+  // afresh. Asking swaps them in where they stand, without fetching the message again.
   const [images, setImages] = useState(false);
   const read = useQuery({
-    queryKey: qk.message(config, message, images),
+    queryKey: qk.message(config, mailbox.id, message),
     queryFn: () =>
-      getEmailConfigsByIdMessagesByMessage(config, message, images),
-    // What was shown stays while the version with images arrives, rather than the pane going
-    // blank between the two.
-    placeholderData: (previous) => previous,
+      getEmailConfigsByIdMailboxesByMailboxMessagesByMessage(
+        config,
+        mailbox.id,
+        message,
+      ),
   });
   const m = read.data;
-  const seen = useSeen(config, message, m);
+  const seen = useSeen(config, mailbox.id, message, m);
 
   return (
     <article
@@ -105,7 +106,12 @@ export function Reader({
 
       {m ? (
         <>
-          <Attachments config={config} message={m.id} parts={m.parts} />
+          <Attachments
+            config={config}
+            mailbox={mailbox.id}
+            message={m.id}
+            parts={m.parts}
+          />
           {m.remote_images > 0 && !images ? (
             <div className="flex flex-wrap items-center gap-3 border-b border-line bg-fill px-4 py-2 text-sm sm:px-6">
               <span className="text-muted">
@@ -120,7 +126,7 @@ export function Reader({
           ) : null}
           <div className="px-4 py-4 sm:px-6">
             {m.html ? (
-              <Frame html={m.html} />
+              <Frame html={m.html} images={images} />
             ) : (
               <pre className="font-sans text-sm whitespace-pre-wrap break-words">
                 {m.text}
@@ -137,14 +143,24 @@ export function Reader({
  * Whether the open message is read, and a way to change it. Opening an unread message marks it
  * read once; see docs/reading.md.
  */
-function useSeen(config: string, message: string, m: ReadMessage | undefined) {
+function useSeen(
+  config: string,
+  mailbox: string,
+  message: string,
+  m: ReadMessage | undefined,
+) {
   const client = useQueryClient();
   const flag = useMutation({
     mutationFn: (seen: boolean) =>
-      patchEmailConfigsByIdMessagesByMessage(config, message, { seen }),
+      patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage(
+        config,
+        mailbox,
+        message,
+        { seen },
+      ),
     onSuccess: (updated) => {
-      client.setQueriesData<ReadMessage>(
-        { queryKey: qk.reading(config, message) },
+      client.setQueryData<ReadMessage>(
+        qk.message(config, mailbox, message),
         (old) => old && { ...old, ...updated },
       );
       // The list's dot and the folder's count. The event stream says so too, but only while it
@@ -189,12 +205,14 @@ function People({ label, people }: { label: string; people: Address[] }) {
 
 function Attachments({
   config,
+  mailbox,
   message,
   parts,
 }: {
   config: string;
+  mailbox: string;
   message: string;
-  parts: { index: number; name: string; size: number; listed: boolean }[];
+  parts: Part[];
 }) {
   const listed = parts.filter((p) => p.listed);
   if (listed.length === 0) return null;
@@ -204,9 +222,9 @@ function Attachments({
       className="flex flex-wrap gap-2 border-b border-line px-4 py-3 sm:px-6"
     >
       {listed.map((p) => (
-        <li key={p.index}>
+        <li key={p.section}>
           <a
-            href={partURL(config, message, p.index)}
+            href={partURL(config, mailbox, message, p.section)}
             download={p.name}
             className="inline-flex items-center gap-1.5 rounded-md border border-line bg-bg px-2.5 py-1 text-sm hover:bg-fill"
           >

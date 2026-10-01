@@ -8,45 +8,28 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 
 	"emguio/internal/connect"
 	"emguio/internal/connect/connecttest"
+	"emguio/internal/message"
 	"emguio/internal/mirror"
 )
 
 var pixel = base64.StdEncoding.EncodeToString([]byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;"))
 
-var rich = strings.ReplaceAll(`From: Alice <alice@example.com>
-To: misha@example.com
-Subject: Message A
-MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary=outer
-
---outer
-Content-Type: multipart/related; boundary=inner
-
---inner
-Content-Type: text/html; charset=utf-8
-
-<p onclick="x()">Hi <img src="cid:logo@x"> <img src="https://track.example/p.gif"></p>
---inner
-Content-Type: image/gif
-Content-ID: <logo@x>
-Content-Disposition: inline; filename=logo.gif
-Content-Transfer-Encoding: base64
-
-`+pixel+`
---inner--
---outer
-Content-Type: text/html
-Content-Disposition: attachment; filename="page.html"
-
-<script>alert(1)</script>
---outer--
-`, "\n", "\r\n")
+// rich is a message as its server describes it: HTML with a handler, a carried image and a
+// remote one, and an HTML file attached.
+var rich = message.Structure{
+	HTML: &message.Text{Body: []byte(`<p onclick="x()">Hi <img src="cid:logo@x"> <img src="https://track.example/p.gif"></p>`), Charset: "utf-8"},
+	Leaves: []message.Leaf{
+		{Section: "1.2", Type: "image/gif", ContentID: "<logo@x>", Disposition: "inline",
+			DispositionParams: map[string]string{"filename": "logo.gif"}, Encoding: "base64", Size: 78},
+		{Section: "2", Type: "text/html", Disposition: "attachment",
+			DispositionParams: map[string]string{"filename": "page.html"}, Size: 25},
+	},
+}
 
 type readView struct {
 	Subject      string `json:"subject"`
@@ -54,78 +37,72 @@ type readView struct {
 	HTML         string `json:"html"`
 	RemoteImages int    `json:"remote_images"`
 	Parts        []struct {
-		Index  int    `json:"index"`
-		Name   string `json:"name"`
-		Type   string `json:"type"`
-		Listed bool   `json:"listed"`
+		Section string `json:"section"`
+		Name    string `json:"name"`
+		Type    string `json:"type"`
+		Listed  bool   `json:"listed"`
 	} `json:"parts"`
 }
 
+// reading is a user with one message on the server, the rich one, kept in INBOX's window, and
+// the path it is read at.
 func reading(t *testing.T) (*Server, *client, *fakeMirror, string, string) {
 	t.Helper()
 	s, _, c, cfg, inbox := withMail(t, 1)
-	fake := &fakeMirror{raw: []byte(rich)}
+	fake := &fakeMirror{opened: rich, parts: map[string][2]string{
+		"1.2": {"Content-Type: image/gif\r\nContent-ID: <logo@x>\r\nContent-Disposition: inline; filename=logo.gif\r\nContent-Transfer-Encoding: base64\r\n\r\n", pixel},
+		"2":   {"Content-Type: text/html\r\nContent-Disposition: attachment; filename=\"page.html\"\r\n\r\n", "<script>alert(1)</script>"},
+	}}
 	s.mirror = fake
 	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))
 	id := page["messages"].([]any)[0].(map[string]any)["id"].(string)
-	return s, c, fake, cfg, id
+	return s, c, fake, cfg, "/api/email-configs/" + cfg + "/mailboxes/" + inbox + "/messages/" + id
 }
 
-func TestAMessageIsFetchedOnceAndThenReadFromTheStore(t *testing.T) {
-	_, c, fake, cfg, id := reading(t)
+// Nothing of a message is kept: every opening asks the server.
+func TestAMessageIsReadFromTheServerEveryTime(t *testing.T) {
+	_, c, fake, _, path := reading(t)
 	for range 2 {
-		resp := c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id, "")
+		resp := c.do("GET", path, "")
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("read = %s %v", resp.Status, c.json(resp))
 		}
 	}
-	if fake.fetched != 1 {
-		t.Errorf("fetched %d times, want once", fake.fetched)
+	if fake.fetched != 2 {
+		t.Errorf("fetched %d times, want every time", fake.fetched)
 	}
 }
 
 func TestAReadMessageIsSafeAndItsImagesPointHere(t *testing.T) {
-	_, c, _, cfg, id := reading(t)
+	_, c, _, _, path := reading(t)
 	var got readView
-	json.NewDecoder(c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id, "").Body).Decode(&got)
+	json.NewDecoder(c.do("GET", path, "").Body).Decode(&got)
 
-	if strings.Contains(got.HTML, "onclick") || strings.Contains(got.HTML, "track.example") {
+	if strings.Contains(got.HTML, "onclick") || strings.Contains(got.HTML, "track.example") || strings.Contains(got.HTML, `src="https`) {
 		t.Errorf("html = %s", got.HTML)
 	}
-	if got.RemoteImages != 1 {
-		t.Errorf("remote images = %d", got.RemoteImages)
+	if got.RemoteImages != 1 || !strings.Contains(got.HTML, `data-src="/api/proxy?`) {
+		t.Errorf("remote images = %d, html = %s", got.RemoteImages, got.HTML)
 	}
-	if !strings.Contains(got.HTML, `src="/api/email-configs/`+cfg+`/messages/`+id+`/parts/`) {
+	if !strings.Contains(got.HTML, `src="`+path+`/parts/1.2"`) {
 		t.Errorf("the carried image does not point at its part: %s", got.HTML)
 	}
 	var listed []string
 	for _, p := range got.Parts {
 		if p.Listed {
-			listed = append(listed, p.Name)
+			listed = append(listed, p.Name+"@"+p.Section)
 		}
 	}
-	if strings.Join(listed, ",") != "page.html" {
+	if strings.Join(listed, ",") != "page.html@2" {
 		t.Errorf("listed parts = %v", listed)
-	}
-
-	var shown readView
-	json.NewDecoder(c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id+"?images=1", "").Body).Decode(&shown)
-	if !strings.Contains(shown.HTML, `src="/api/proxy?`) {
-		t.Errorf("asked for images, html = %s", shown.HTML)
 	}
 }
 
 // An attachment is the sender's file, and it must not become a page of this origin.
 func TestAPartCannotActAsAPageHere(t *testing.T) {
-	_, c, _, cfg, id := reading(t)
-	var got readView
-	json.NewDecoder(c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id, "").Body).Decode(&got)
-	byName := map[string]int{}
-	for _, p := range got.Parts {
-		byName[p.Name] = p.Index
-	}
+	_, c, _, _, path := reading(t)
 
-	page := c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id+"/parts/"+strconv.Itoa(byName["page.html"]), "")
+	page := c.do("GET", path+"/parts/2", "")
 	if page.Header.Get("Content-Type") != "application/octet-stream" ||
 		!strings.HasPrefix(page.Header.Get("Content-Disposition"), "attachment") ||
 		page.Header.Get("X-Content-Type-Options") != "nosniff" ||
@@ -133,19 +110,30 @@ func TestAPartCannotActAsAPageHere(t *testing.T) {
 		t.Errorf("an HTML attachment was served as %v", page.Header)
 	}
 
-	logo := c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id+"/parts/"+strconv.Itoa(byName["logo.gif"]), "")
-	if logo.Header.Get("Content-Type") != "image/gif" || !strings.HasPrefix(logo.Header.Get("Content-Disposition"), "inline") {
+	logo := c.do("GET", path+"/parts/1.2", "")
+	body, _ := io.ReadAll(logo.Body)
+	if logo.Header.Get("Content-Type") != "image/gif" || !strings.HasPrefix(logo.Header.Get("Content-Disposition"), "inline") ||
+		!strings.HasPrefix(string(body), "GIF89a") {
 		t.Errorf("an image was served as %v", logo.Header)
 	}
+	// A UID names one message for good, so its parts are the browser's to keep.
+	if !strings.Contains(logo.Header.Get("Cache-Control"), "immutable") {
+		t.Errorf("cache = %q", logo.Header.Get("Cache-Control"))
+	}
 
-	if resp := c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id+"/parts/99", ""); resp.StatusCode != http.StatusNotFound {
+	if resp := c.do("GET", path+"/parts/9", ""); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("a part that is not there = %s", resp.Status)
+	}
+	for _, bad := range []string{"0", "1..2", "x", "1.0"} {
+		if resp := c.do("GET", path+"/parts/"+bad, ""); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("section %q = %s", bad, resp.Status)
+		}
 	}
 }
 
 func TestReadingStoresAPreviewForTheList(t *testing.T) {
-	_, c, _, cfg, id := reading(t)
-	c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id, "")
+	_, c, _, cfg, path := reading(t)
+	c.do("GET", path, "")
 	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
 	inbox := boxes[0].(map[string]any)["id"].(string)
 	msg := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))["messages"].([]any)[0].(map[string]any)
@@ -155,9 +143,9 @@ func TestReadingStoresAPreviewForTheList(t *testing.T) {
 }
 
 func TestAMessageGoneFromTheServerSaysSoAndAsksForALook(t *testing.T) {
-	_, c, fake, cfg, id := reading(t)
+	_, c, fake, _, path := reading(t)
 	fake.err = mirror.ErrGone
-	resp := c.do("GET", "/api/email-configs/"+cfg+"/messages/"+id, "")
+	resp := c.do("GET", path, "")
 	if resp.StatusCode != http.StatusNotFound || c.json(resp)["code"] != CodeGone {
 		t.Fatalf("gone = %s", resp.Status)
 	}
@@ -167,13 +155,29 @@ func TestAMessageGoneFromTheServerSaysSoAndAsksForALook(t *testing.T) {
 }
 
 func TestAnotherUsersMessageIsNotFound(t *testing.T) {
-	s, _, _, cfg, id := reading(t)
+	s, _, fake, _, path := reading(t)
 	robin := newClient(t, s)
 	user(t, s.store, "robin", "a good password")
 	robin.do("POST", "/api/auth/login", `{"username":"robin","password":"a good password"}`)
-	for _, path := range []string{"/api/email-configs/" + cfg + "/messages/" + id, "/api/email-configs/" + cfg + "/messages/" + id + "/parts/0"} {
-		if resp := robin.do("GET", path, ""); resp.StatusCode != http.StatusNotFound {
-			t.Errorf("%s by another user = %s", path, resp.Status)
+	for _, p := range []string{path, path + "/parts/2"} {
+		if resp := robin.do("GET", p, ""); resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s by another user = %s", p, resp.Status)
+		}
+	}
+	if resp := robin.do("PATCH", path, `{"seen":true}`); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("marking another user's message = %s", resp.Status)
+	}
+	if fake.fetched != 0 || len(fake.seen) != 0 {
+		t.Error("the server was asked on another user's behalf")
+	}
+}
+
+func TestAMessageIdIsTheServersNumbers(t *testing.T) {
+	_, c, _, _, path := reading(t)
+	base := path[:strings.LastIndex(path, "/")]
+	for _, bad := range []string{"m_1", "1", "7-0", "7.1", "x-y"} {
+		if resp := c.do("GET", base+"/"+bad, ""); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%q = %s", bad, resp.Status)
 		}
 	}
 }
@@ -210,6 +214,9 @@ func TestTheProxyRelaysAnImageItSigned(t *testing.T) {
 	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Error("the relayed image can be sniffed into something else")
 	}
+	if !strings.Contains(resp.Header.Get("Cache-Control"), "immutable") {
+		t.Errorf("cache = %q", resp.Header.Get("Cache-Control"))
+	}
 
 	if resp := c.do("GET", s.proxyURL(srv.URL+"/page"), ""); resp.StatusCode != http.StatusUnsupportedMediaType {
 		t.Errorf("a page through the proxy = %s, want refused", resp.Status)
@@ -244,12 +251,11 @@ func TestTheProxyNeverReachesInside(t *testing.T) {
 }
 
 func TestMarkingReadTellsTheServerAndThenTheList(t *testing.T) {
-	_, c, fake, cfg, id := reading(t)
-	path := "/api/email-configs/" + cfg + "/messages/" + id
+	_, c, fake, cfg, path := reading(t)
 
 	resp := c.do("PATCH", path, `{"seen":true}`)
-	if resp.StatusCode != http.StatusOK || c.json(resp)["seen"] != true {
-		t.Fatalf("mark read = %s", resp.Status)
+	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["seen"] != true || got["id"] != "7-1" {
+		t.Fatalf("mark read = %s %v", resp.Status, got)
 	}
 	if len(fake.seen) != 1 || !fake.seen[0] {
 		t.Fatalf("the server was told %v", fake.seen)
@@ -258,19 +264,25 @@ func TestMarkingReadTellsTheServerAndThenTheList(t *testing.T) {
 	if unseen := boxes[0].(map[string]any)["unseen"]; unseen != float64(0) {
 		t.Errorf("INBOX unseen after reading = %v", unseen)
 	}
+	inbox := boxes[0].(map[string]any)["id"].(string)
+	msg := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))["messages"].([]any)[0].(map[string]any)
+	if msg["seen"] != true {
+		t.Error("the kept row still says unread")
+	}
 
-	// Already read: nothing to tell the server.
+	// Already read on the server: the count does not move again.
 	c.do("PATCH", path, `{"seen":true}`)
-	if len(fake.seen) != 1 {
-		t.Errorf("told the server again: %v", fake.seen)
+	boxes = c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	if unseen := boxes[0].(map[string]any)["unseen"]; unseen != float64(0) || len(fake.seen) != 1 {
+		t.Errorf("unseen = %v, told %v", unseen, fake.seen)
 	}
 }
 
 // The server first: a flag it did not take must not show as taken.
 func TestAFlagTheServerRefusedIsNotRecorded(t *testing.T) {
-	_, c, fake, cfg, id := reading(t)
+	_, c, fake, cfg, path := reading(t)
 	fake.err = &connect.Failure{Class: "network", Sentence: "imap.example.com:993 closed the connection."}
-	resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{"seen":true}`)
+	resp := c.do("PATCH", path, `{"seen":true}`)
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status = %s", resp.Status)
 	}
@@ -282,17 +294,17 @@ func TestAFlagTheServerRefusedIsNotRecorded(t *testing.T) {
 	}
 
 	fake.err = mirror.ErrGone
-	if resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{"seen":true}`); resp.StatusCode != http.StatusNotFound {
+	if resp := c.do("PATCH", path, `{"seen":true}`); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("gone = %s", resp.Status)
 	}
 }
 
 func TestAFlagChangeSaysWhatToChange(t *testing.T) {
-	_, c, _, cfg, id := reading(t)
-	if resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{}`); resp.StatusCode != http.StatusBadRequest {
+	_, c, _, _, path := reading(t)
+	if resp := c.do("PATCH", path, `{}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("an empty change = %s", resp.Status)
 	}
-	if resp := c.do("PATCH", "/api/email-configs/"+cfg+"/messages/"+id, `{"flagged":true}`); resp.StatusCode != http.StatusBadRequest {
+	if resp := c.do("PATCH", path, `{"flagged":true}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a flag this does not set = %s", resp.Status)
 	}
 }

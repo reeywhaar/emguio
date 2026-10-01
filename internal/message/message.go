@@ -1,5 +1,6 @@
-// Package message turns a raw message into what a reading pane shows: its text, its HTML made
-// safe, and its parts. It fetches nothing; what it is given is all there is.
+// Package message turns a message into what a reading pane shows: its text, its HTML made safe,
+// and its parts. It fetches nothing; it is given the message as its server describes it, and the
+// bytes of its text.
 //
 // HTML from a message is written by a stranger. It is sanitized here, and the browser still
 // shows it only in a sandboxed frame — see docs/reading.md.
@@ -19,9 +20,41 @@ import (
 	"golang.org/x/net/html"
 )
 
+// Structure is a message as its server describes it, without the bytes of anything but its
+// text: what a reading pane is made from, so opening a message never waits for its attachments.
+type Structure struct {
+	// Plain and HTML are its text, nil when it has none of that kind.
+	Plain, HTML *Text
+	// Leaves are every other part that is not a container: attachments, carried images.
+	Leaves []Leaf
+}
+
+// Text is a text part's bytes as the server sends them.
+type Text struct {
+	Body     []byte
+	Encoding string
+	Charset  string
+}
+
+// Leaf is a part as the server describes it.
+type Leaf struct {
+	// Section is where the server holds it, as IMAP numbers parts: "2", "1.3".
+	Section     string
+	Type        string
+	Params      map[string]string
+	Disposition string
+	// DispositionParams are the Content-Disposition's, where a filename usually is.
+	DispositionParams map[string]string
+	ContentID         string
+	Encoding          string
+	// Size is what the server holds, in its transfer encoding.
+	Size int
+}
+
 // Part is one part of a message that is not its text: an attachment, or an image the HTML shows.
 type Part struct {
-	Index     int
+	// Section is where the server holds it, and what it is fetched by, alone.
+	Section   string
 	Name      string
 	Type      string
 	Size      int
@@ -45,114 +78,104 @@ type Read struct {
 
 // Options say where the HTML's images come from.
 type Options struct {
-	// PartURL is where the reading pane fetches part i, for an image the message carries.
-	PartURL func(i int) string
-	// Proxy is where it fetches a remote image through; nil blocks every one.
+	// PartURL is where the reading pane fetches the part at section, for an image the message
+	// carries.
+	PartURL func(section string) string
+	// Proxy is where it fetches a remote image through, once somebody asks for them.
 	Proxy func(remote string) string
 }
 
-// ErrUnreadable is a message enmime could make nothing of.
+// ErrUnreadable is a part enmime could make nothing of.
 var ErrUnreadable = errors.New("message: unreadable")
 
-// Parse reads a raw message.
-func Parse(raw []byte, opts Options) (*Read, error) {
-	env, parts, err := read(raw)
-	if err != nil {
-		return nil, err
+// Show makes a message ready to read.
+func Show(st Structure, opts Options) *Read {
+	out := &Read{}
+	var rich string
+	if st.Plain != nil {
+		out.Text = clean(decodeText(st.Plain.Body, st.Plain.Encoding, st.Plain.Charset))
 	}
-	out := &Read{Text: clean(env.Text)}
-	// A message with no plain text of its own has text made from its HTML, which marks headings
-	// and the like with asterisks. Its preview is read from the HTML's words instead.
-	if env.HTML != "" && !hasPlain(env.Root) {
-		out.Preview = Preview(clean(htmlText(env.HTML)))
-	} else {
+	if st.HTML != nil {
+		rich = decodeText(st.HTML.Body, st.HTML.Encoding, st.HTML.Charset)
+	}
+	if out.Text != "" || rich == "" {
 		out.Preview = Preview(out.Text)
+	} else {
+		out.Preview = Preview(clean(htmlText(rich)))
 	}
 
-	cids := map[string]int{}
-	for i, p := range parts {
-		if p.ContentID != "" {
-			cids[p.ContentID] = i
+	cids := map[string]string{}
+	for _, l := range st.Leaves {
+		if cid := strings.Trim(l.ContentID, "<> "); cid != "" {
+			cids[cid] = l.Section
 		}
 	}
-	if env.HTML != "" {
-		out.HTML, out.Remote = rewrite(policy.Sanitize(env.HTML), opts, cids)
+	if rich != "" {
+		out.HTML, out.Remote = rewrite(policy.Sanitize(rich), opts, cids)
 	}
-	shown := map[int]bool{}
-	for cid, i := range cids {
-		if out.HTML != "" && strings.Contains(env.HTML, "cid:"+cid) {
-			shown[i] = true
+	shown := map[string]bool{}
+	for cid, at := range cids {
+		if out.HTML != "" && strings.Contains(rich, "cid:"+cid) {
+			shown[at] = true
 		}
 	}
-	for i, p := range parts {
+	for _, l := range st.Leaves {
 		out.Parts = append(out.Parts, Part{
-			Index:     i,
-			Name:      partName(p, i),
-			Type:      strings.ToLower(p.ContentType),
-			Size:      len(p.Content),
-			ContentID: p.ContentID,
-			Listed:    !shown[i],
+			Section:   l.Section,
+			Name:      leafName(l),
+			Type:      strings.ToLower(l.Type),
+			Size:      decodedSize(l),
+			ContentID: strings.Trim(l.ContentID, "<> "),
+			Listed:    !shown[l.Section],
 		})
 	}
-	return out, nil
+	return out
 }
 
-// PartOf is part i of a raw message and its bytes, numbered as Parse numbers them.
-func PartOf(raw []byte, i int) (*Part, []byte, error) {
-	_, parts, err := read(raw)
+// leafName is what a part is called: its filename, or the name its type gives it, or where it is.
+func leafName(l Leaf) string {
+	if name := clean(Param(l.DispositionParams, "filename")); name != "" {
+		return name
+	}
+	if name := clean(Param(l.Params, "name")); name != "" {
+		return name
+	}
+	if strings.EqualFold(l.Type, "message/rfc822") {
+		return "message-" + l.Section + ".eml"
+	}
+	return "part-" + l.Section
+}
+
+// decodedSize is about how large a part is once its transfer encoding is undone: base64 carries
+// 57 bytes on every line of 78.
+func decodedSize(l Leaf) int {
+	if strings.EqualFold(l.Encoding, "base64") {
+		return l.Size * 57 / 78
+	}
+	return l.Size
+}
+
+// DecodePart is one part fetched alone — its MIME header and its body, as the server sends
+// them — decoded.
+func DecodePart(header, body []byte, at string) (*Part, []byte, error) {
+	p, err := enmime.ReadParts(bytes.NewReader(append(append([]byte(nil), header...), body...)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %v", ErrUnreadable, err)
 	}
-	if i < 0 || i >= len(parts) {
-		return nil, nil, fmt.Errorf("message: no part %d", i)
-	}
-	p := parts[i]
 	return &Part{
-		Index:     i,
-		Name:      partName(p, i),
+		Section:   at,
+		Name:      partName(p, at),
 		Type:      strings.ToLower(p.ContentType),
 		Size:      len(p.Content),
 		ContentID: p.ContentID,
 	}, p.Content, nil
 }
 
-// read parses, and numbers the parts that are not text: attachments, then inline parts, then the
-// rest that are not containers. The same message is always numbered the same way.
-func read(raw []byte) (*enmime.Envelope, []*enmime.Part, error) {
-	env, err := enmime.ReadEnvelope(bytes.NewReader(raw))
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", ErrUnreadable, err)
-	}
-	var parts []*enmime.Part
-	for _, group := range [][]*enmime.Part{env.Attachments, env.Inlines, env.OtherParts} {
-		for _, p := range group {
-			if strings.HasPrefix(strings.ToLower(p.ContentType), "multipart/") {
-				continue
-			}
-			parts = append(parts, p)
-		}
-	}
-	return env, parts, nil
-}
-
-// hasPlain reports whether a message carries text/plain of its own, outside its attachments.
-func hasPlain(p *enmime.Part) bool {
-	for ; p != nil; p = p.NextSibling {
-		if strings.EqualFold(p.ContentType, "text/plain") && !strings.EqualFold(p.Disposition, "attachment") {
-			return true
-		}
-		if hasPlain(p.FirstChild) {
-			return true
-		}
-	}
-	return false
-}
-
-func partName(p *enmime.Part, i int) string {
+func partName(p *enmime.Part, at string) string {
 	if name := clean(p.FileName); name != "" {
 		return name
 	}
-	return fmt.Sprintf("part-%d", i+1)
+	return "part-" + at
 }
 
 // policy is what HTML from a message may keep: text formatting, tables and the presentational
@@ -186,8 +209,9 @@ var policy = func() *bluemonday.Policy {
 }()
 
 // rewrite points the sanitized HTML's images where the reading pane can fetch them: a carried
-// image at its part, a remote one at the proxy or nowhere. It reports how many were remote.
-func rewrite(in string, opts Options, cids map[string]int) (string, int) {
+// image at its part, and a remote one at a blank image, with the proxy's address for it in
+// data-src for the pane to swap in when somebody asks. It reports how many were remote.
+func rewrite(in string, opts Options, cids map[string]string) (string, int) {
 	z := html.NewTokenizer(strings.NewReader(in))
 	var out strings.Builder
 	remote := 0
@@ -211,16 +235,22 @@ func rewrite(in string, opts Options, cids map[string]int) (string, int) {
 		}
 		var attrs []html.Attribute
 		for _, a := range t.Attr {
+			if a.Key == "data-src" {
+				continue
+			}
 			if a.Key != "src" {
 				attrs = append(attrs, a)
 				continue
 			}
-			src, counted := imageSource(a.Val, opts, cids)
-			if counted {
+			src, later, far := imageSource(a.Val, opts, cids)
+			if far {
 				remote++
 			}
 			if src != "" {
 				attrs = append(attrs, html.Attribute{Key: "src", Val: src})
+			}
+			if later != "" {
+				attrs = append(attrs, html.Attribute{Key: "data-src", Val: later})
 			}
 		}
 		t.Attr = attrs
@@ -228,32 +258,32 @@ func rewrite(in string, opts Options, cids map[string]int) (string, int) {
 	}
 }
 
-// imageSource is where an image is fetched from now, empty for nowhere, and whether it was a
-// remote one.
-func imageSource(src string, opts Options, cids map[string]int) (string, bool) {
+// imageSource is where an image is fetched from now, empty for nowhere; for a remote one, where
+// it is fetched from once somebody asks.
+func imageSource(src string, opts Options, cids map[string]string) (now, later string, remote bool) {
 	u, err := url.Parse(strings.TrimSpace(src))
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "data":
-		return src, false
+		return src, "", false
 	case "cid":
 		cid, err := url.PathUnescape(u.Opaque)
 		if err != nil {
-			return "", false
+			return "", "", false
 		}
-		if i, ok := cids[strings.Trim(cid, "<>")]; ok && opts.PartURL != nil {
-			return opts.PartURL(i), false
+		if at, ok := cids[strings.Trim(cid, "<>")]; ok && opts.PartURL != nil {
+			return opts.PartURL(at), "", false
 		}
-		return "", false
+		return "", "", false
 	case "http", "https":
 		if opts.Proxy != nil {
-			return opts.Proxy(u.String()), true
+			return blank, opts.Proxy(u.String()), true
 		}
-		return blank, true
+		return blank, "", true
 	}
-	return "", false
+	return "", "", false
 }
 
 // blank stands where a remote image is held back: an image that draws nothing, so the layout the

@@ -6,48 +6,90 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"emguio/internal/message"
+	"emguio/internal/mirror"
 	"emguio/internal/store"
 )
 
-// fakeMirror records what it was asked.
+// fakeMirror is a mail server's answers, and a record of what it was asked.
 type fakeMirror struct {
 	mu         sync.Mutex
 	reconciled int
 	refreshed  []string
-	// raw and err are what a fetch gets, and fetched how many there were.
-	raw     []byte
-	err     error
+	// listing is what a list from the server gets, and listed the cursor of each one asked for.
+	listing *mirror.Listing
+	listed  []uint32
+	// opened is the message on the server, and fetched how many times it was asked for.
+	opened  message.Structure
 	fetched int
-	// seen is every flag the server was told to set.
-	seen []bool
+	// parts are its parts by section, a MIME header and a body each.
+	parts map[string][2]string
+	// flags are the message's on the server, and seen each change of them it was told to make.
+	flags store.Flags
+	seen  []bool
+	err   error
 }
 
 func (f *fakeMirror) Reconcile() { f.mu.Lock(); f.reconciled++; f.mu.Unlock() }
-func (f *fakeMirror) SetSeen(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, seen bool) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.seen = append(f.seen, seen)
-	return f.err
-}
-func (f *fakeMirror) Raw(context.Context, store.SyncTarget, string, uint32, uint32) ([]byte, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.fetched++
-	return f.raw, f.err
-}
 func (f *fakeMirror) Refresh(id string) {
 	f.mu.Lock()
 	f.refreshed = append(f.refreshed, id)
 	f.mu.Unlock()
 }
+func (f *fakeMirror) List(_ context.Context, _ store.SyncTarget, _ string, _, before uint32, _ int) (*mirror.Listing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listed = append(f.listed, before)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.listing, nil
+}
+func (f *fakeMirror) Read(_ context.Context, _ store.SyncTarget, _ string, _, uid uint32) (*mirror.Opened, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fetched++
+	if f.err != nil {
+		return nil, f.err
+	}
+	h := store.Header{UID: uid, Flags: f.flags, Subject: "Message A", From: store.Address{Name: "Alice", Email: "alice@example.com"}}
+	return &mirror.Opened{Header: h, Structure: f.opened}, nil
+}
+func (f *fakeMirror) Part(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, section []int) ([]byte, []byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, nil, f.err
+	}
+	var at []string
+	for _, n := range section {
+		at = append(at, strconv.Itoa(n))
+	}
+	p := f.parts[strings.Join(at, ".")]
+	return []byte(p[0]), []byte(p[1]), nil
+}
+func (f *fakeMirror) SetSeen(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, seen bool) (store.Flags, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return store.Flags{}, false, f.err
+	}
+	if f.flags.Seen == seen {
+		return f.flags, false, nil
+	}
+	f.flags.Seen = seen
+	f.seen = append(f.seen, seen)
+	return f.flags, true, nil
+}
 
-// withMail is a signed-in user with one email config whose INBOX holds n messages, as the
-// mirror would have left it.
+// withMail is a signed-in user with one email config whose INBOX keeps n messages under
+// UIDVALIDITY 7, as the mirror would have left it.
 func withMail(t *testing.T, n int) (*Server, *store.Store, *client, string, string) {
 	t.Helper()
 	s, st := newServerStore(t, nil)
@@ -71,6 +113,7 @@ func withMail(t *testing.T, n int) (*Server, *store.Store, *client, string, stri
 		})
 	}
 	st.PutMessages(ctx, boxes[0].ID, headers)
+	st.SetMailboxStatus(ctx, boxes[0].ID, store.MailboxStatus{UIDValidity: 7, UIDNext: uint32(n + 1), Messages: uint32(n), Unseen: uint32(n)})
 	return s, st, c, made.ID, boxes[0].ID
 }
 
@@ -91,27 +134,82 @@ func TestMailboxesAreListedInSidebarOrder(t *testing.T) {
 	}
 }
 
-func TestMessagesPageWithACursor(t *testing.T) {
-	_, _, c, cfg, inbox := withMail(t, 3)
+func subjectsOf(page map[string]any) string {
+	var out []string
+	for _, m := range page["messages"].([]any) {
+		out = append(out, m.(map[string]any)["subject"].(string))
+	}
+	return strings.Join(out, ",")
+}
+
+// INBOX opens on what is kept of it, without asking the server; the rest is the server's.
+func TestINBOXOpensOnTheWindowAndGoesOnFromTheServer(t *testing.T) {
+	s, st, c, cfg, inbox := withMail(t, 3)
+	fake := &fakeMirror{listing: &mirror.Listing{UIDValidity: 7, Headers: []store.Header{{UID: 0x1, Subject: "Older"}}}}
+	s.mirror = fake
 	base := "/api/email-configs/" + cfg + "/mailboxes/" + inbox + "/messages"
-	first := c.json(c.do("GET", base+"?limit=2", ""))
-	msgs := first["messages"].([]any)
-	if len(msgs) != 2 || msgs[0].(map[string]any)["subject"] != "Message C" {
-		t.Fatalf("first page = %v", first)
+
+	first := c.json(c.do("GET", base, ""))
+	if got := subjectsOf(first); got != "Message C,Message B,Message A" {
+		t.Fatalf("first page = %q", got)
 	}
-	cursor, _ := first["next_cursor"].(string)
-	if cursor == "" {
-		t.Fatal("no cursor with more to come")
+	if id := first["messages"].([]any)[0].(map[string]any)["id"]; id != "7-3" {
+		t.Errorf("id = %v", id)
 	}
-	second := c.json(c.do("GET", base+"?limit=2&cursor="+cursor, ""))
-	if msgs := second["messages"].([]any); len(msgs) != 1 || msgs[0].(map[string]any)["subject"] != "Message A" {
-		t.Errorf("second page = %v", second)
+	if _, more := first["next_cursor"]; more || len(fake.listed) != 0 {
+		t.Errorf("all of INBOX is kept, yet next = %v and the server was asked %v", first["next_cursor"], fake.listed)
+	}
+
+	// More on the server than is kept: the next run starts below the oldest kept.
+	st.SetMailboxStatus(context.Background(), inbox, store.MailboxStatus{UIDValidity: 7, Messages: 40})
+	first = c.json(c.do("GET", base, ""))
+	if first["next_cursor"] != "7-1" {
+		t.Fatalf("next = %v", first["next_cursor"])
+	}
+	second := c.json(c.do("GET", base+"?cursor=7-1", ""))
+	if got := subjectsOf(second); got != "Older" || len(fake.listed) != 1 || fake.listed[0] != 1 {
+		t.Errorf("second page = %q, asked from %v", got, fake.listed)
 	}
 	if _, more := second["next_cursor"]; more {
-		t.Error("the last page offers another")
+		t.Error("the last run offers another")
 	}
-	if resp := c.do("GET", base+"?limit=9999", ""); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("a limit past the maximum = %s", resp.Status)
+
+	for _, bad := range []string{"?limit=9999", "?cursor=nonsense", "?cursor=7-0"} {
+		if resp := c.do("GET", base+bad, ""); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s = %s", bad, resp.Status)
+		}
+	}
+}
+
+func TestAnotherMailboxIsListedFromTheServer(t *testing.T) {
+	s, _, c, cfg, _ := withMail(t, 1)
+	fake := &fakeMirror{listing: &mirror.Listing{UIDValidity: 9, Headers: []store.Header{{UID: 5, Subject: "Contract"}, {UID: 2, Subject: "Brief"}}, More: true}}
+	s.mirror = fake
+	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	work := boxes[1].(map[string]any)["id"].(string)
+
+	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+work+"/messages", ""))
+	if got := subjectsOf(page); got != "Contract,Brief" || page["next_cursor"] != "9-2" || fake.listed[0] != 0 {
+		t.Errorf("page = %q next %v asked %v", got, page["next_cursor"], fake.listed)
+	}
+
+	// Renumbered since the list was opened: start again, and the sidebar is looked at.
+	fake.err = mirror.ErrGone
+	resp := c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+work+"/messages?cursor=9-2", "")
+	if resp.StatusCode != http.StatusNotFound || c.json(resp)["code"] != CodeGone || len(fake.refreshed) != 1 {
+		t.Errorf("renumbered = %s, refreshed %v", resp.Status, fake.refreshed)
+	}
+}
+
+// Before the first look has filled the window, INBOX too is the server's.
+func TestINBOXBeforeTheFirstLookIsTheServers(t *testing.T) {
+	s, st, c, cfg, inbox := withMail(t, 0)
+	st.ResetMailbox(context.Background(), inbox, 7)
+	fake := &fakeMirror{listing: &mirror.Listing{UIDValidity: 7, Headers: []store.Header{{UID: 1, Subject: "Hello"}}}}
+	s.mirror = fake
+	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))
+	if got := subjectsOf(page); got != "Hello" {
+		t.Errorf("page = %q", got)
 	}
 }
 

@@ -18,6 +18,16 @@ import (
 //
 // Cut off is the normal case, so every decoder here takes what it can and stops quietly.
 func SectionPreview(content []byte, encoding, declared string, isHTML bool) string {
+	text := decodeText(content, encoding, declared)
+	if isHTML {
+		text = htmlText(text)
+	}
+	return Preview(clean(text))
+}
+
+// decodeText is a text part's bytes as text: its transfer encoding undone and its charset read.
+// Lenient, because what it is given can stop partway through a line.
+func decodeText(content []byte, encoding, declared string) string {
 	var decoded []byte
 	switch strings.ToLower(encoding) {
 	case "base64":
@@ -37,18 +47,23 @@ func SectionPreview(content []byte, encoding, declared string, isHTML bool) stri
 		decoded = content
 	}
 
-	text := string(decoded)
-	if declared != "" && !strings.EqualFold(declared, "utf-8") && !strings.EqualFold(declared, "us-ascii") {
-		if r, err := charset.Reader(declared, bytes.NewReader(decoded)); err == nil {
-			if b, err := io.ReadAll(r); err == nil || len(b) > 0 {
-				text = string(b)
-			}
-		}
+	return inCharset(decoded, declared)
+}
+
+// inCharset is bytes in a declared charset as UTF-8, or as they are when the charset is unknown.
+func inCharset(b []byte, declared string) string {
+	if declared == "" || strings.EqualFold(declared, "utf-8") || strings.EqualFold(declared, "us-ascii") {
+		return string(b)
 	}
-	if isHTML {
-		text = htmlText(text)
+	r, err := charset.Reader(declared, bytes.NewReader(b))
+	if err != nil {
+		return string(b)
 	}
-	return Preview(clean(text))
+	out, err := io.ReadAll(r)
+	if err != nil && len(out) == 0 {
+		return string(b)
+	}
+	return string(out)
 }
 
 // unfinishedTag is a tag the fetch cut in half, which would otherwise be read as text.

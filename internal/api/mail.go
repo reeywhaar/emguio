@@ -7,20 +7,49 @@ import (
 	"strconv"
 	"time"
 
+	"emguio/internal/ids"
+	"emguio/internal/mirror"
 	"emguio/internal/store"
 )
 
-// Mirror is what the API asks of the sync: to look again now, and to fetch one message. An
-// interface so tests run without one.
+// Mirror is what the API asks of the sync: to look again now, and whatever is not kept. An
+// interface so tests run without a mail server.
 type Mirror interface {
 	// Reconcile re-reads the set of email configs, after one is added, changed or removed.
 	Reconcile()
 	// Refresh looks at every mailbox of one email config now.
 	Refresh(id string)
-	// Raw is one message as the server holds it, or mirror.ErrGone.
-	Raw(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) ([]byte, error)
-	// SetSeen marks one message read or unread on the server, or says mirror.ErrGone.
-	SetSeen(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, seen bool) error
+	// List is a run of a mailbox's messages from the server, newest first.
+	List(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, before uint32, limit int) (*mirror.Listing, error)
+	// Read is one message as the server holds it, or mirror.ErrGone.
+	Read(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Opened, error)
+	// Part is one part of a message, its MIME header and its body, or mirror.ErrGone.
+	Part(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, section []int) ([]byte, []byte, error)
+	// SetSeen marks one message read or unread on the server, and says its flags now and
+	// whether they moved.
+	SetSeen(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, seen bool) (store.Flags, bool, error)
+}
+
+// targetOf is an email config as the mirror is asked about it.
+func targetOf(u *store.User, c *store.EmailConfig) store.SyncTarget {
+	return store.SyncTarget{ID: c.ID, UserID: u.ID, UpdatedAt: c.UpdatedAt}
+}
+
+// mailboxOf is the email config and the mailbox a request names, both the user's. It writes the
+// refusal itself and reports false when there is nothing to go on with.
+func (s *Server) mailboxOf(w http.ResponseWriter, r *http.Request) (*store.EmailConfig, *store.Mailbox, bool) {
+	u := userOf(r)
+	c, err := s.store.EmailConfig(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return nil, nil, false
+	}
+	mb, err := s.store.Mailbox(r.Context(), u.ID, c.ID, r.PathValue("mailbox"))
+	if err != nil {
+		s.fail(w, r, err)
+		return nil, nil, false
+	}
+	return c, mb, true
 }
 
 type mailboxJSON struct {
@@ -73,30 +102,70 @@ type messageJSON struct {
 	Preview        string `json:"preview"`
 }
 
-// listMessages is one run of a mailbox, newest first. limit is at most store.PageMax.
+// How long a run of a list is, unless the request says, and at most.
+const (
+	pageSize = 50
+	pageMax  = 200
+)
+
+// listMessages is one run of a mailbox, newest first. INBOX opens on the window kept of it, and
+// everything past it, like every other mailbox, comes from the server.
 func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
-	limit := 50
+	limit := pageSize
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > store.PageMax {
-			refuse(w, http.StatusBadRequest, CodeInvalid, fmt.Sprintf("limit is a number from 1 to %d.", store.PageMax))
+		if err != nil || n < 1 || n > pageMax {
+			refuse(w, http.StatusBadRequest, CodeInvalid, fmt.Sprintf("limit is a number from 1 to %d.", pageMax))
 			return
 		}
 		limit = n
 	}
-	page, err := s.store.Messages(r.Context(), userOf(r).ID, r.PathValue("id"), r.PathValue("mailbox"),
-		r.URL.Query().Get("cursor"), limit)
-	if err != nil {
-		s.fail(w, r, err)
+	var uidValidity, before uint32
+	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
+		var ok bool
+		if uidValidity, before, ok = ids.ParseMessage(cursor); !ok {
+			refuse(w, http.StatusBadRequest, CodeInvalid, "That cursor is not one this gave out. Start the list again.")
+			return
+		}
+	}
+	c, mb, ok := s.mailboxOf(w, r)
+	if !ok {
 		return
 	}
-	out := make([]messageJSON, len(page.Messages))
-	for i, m := range page.Messages {
+
+	var (
+		msgs []*store.Message
+		more bool
+	)
+	if before == 0 && mb.SpecialUse == store.UseInbox && mb.SyncedAt != nil {
+		window, err := s.store.Window(r.Context(), mb)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		msgs, more = window, len(window) > 0 && int(mb.Messages) > len(window)
+	} else {
+		if s.mirror == nil {
+			refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+			return
+		}
+		listing, err := s.mirror.List(r.Context(), targetOf(userOf(r), c), mb.Name, uidValidity, before, limit)
+		if !s.serverError(w, r, c.ID, err, "This folder has changed on the server since the list was opened. Open it again.") {
+			return
+		}
+		for _, h := range listing.Headers {
+			msgs = append(msgs, &store.Message{Header: h, UIDValidity: listing.UIDValidity})
+		}
+		more = listing.More
+	}
+
+	out := make([]messageJSON, len(msgs))
+	for i, m := range msgs {
 		out[i] = messageOut(m)
 	}
 	body := map[string]any{"messages": out}
-	if page.Next != "" {
-		body["next_cursor"] = page.Next
+	if more {
+		body["next_cursor"] = msgs[len(msgs)-1].ID()
 	}
 	writeJSON(w, http.StatusOK, body)
 }
@@ -117,7 +186,7 @@ func (s *Server) syncEmailConfig(w http.ResponseWriter, r *http.Request) {
 
 func messageOut(m *store.Message) messageJSON {
 	return messageJSON{
-		ID:             m.ID,
+		ID:             m.ID(),
 		From:           m.From,
 		To:             nonNil(m.To),
 		Subject:        m.Subject,

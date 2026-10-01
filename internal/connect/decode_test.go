@@ -7,11 +7,11 @@ import "testing"
 // sends them as the message wrote them, and this is what reads them.
 func TestEncodedWordsAreReadInTheCharsetTheyDeclare(t *testing.T) {
 	for raw, want := range map[string]string{
-		"=?koi8-r?B?8NLJ18XU?=":                    "Привет",
-		"=?windows-1251?B?z/Do4uXy?=":              "Привет",
-		"=?koi8-r?B?8NLJ18XU?=, отчёт за сентябрь": "Привет, отчёт за сентябрь",
-		"=?utf-8?q?caf=C3=A9?= au lait":            "café au lait",
-		"Plain words":                              "Plain words",
+		"=?UTF-8?B?0J/RgNC40LLQtdGC?=":                    "Привет",
+		"=?utf-8?q?caf=C3=A9?= au lait":                   "café au lait",
+		"=?UTF-8?B?0J/RgNC40LLQtdGC?=, отчёт за сентябрь": "Привет, отчёт за сентябрь",
+		"=?gb2312?B?xOO6ww==?=":                           "你好",
+		"Plain words":                                     "Plain words",
 	} {
 		got, err := wordDecoder.DecodeHeader(raw)
 		if err != nil || got != want {

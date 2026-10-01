@@ -12,8 +12,8 @@ import (
 	"github.com/emersion/go-message/charset"
 )
 
-// wordDecoder reads encoded header words in whatever charset they declare — koi8-r and
-// windows-1251 included — rather than only the few the standard library knows.
+// wordDecoder reads encoded header words in whatever charset they declare, rather than only
+// UTF-8 and the two others the standard library knows.
 var wordDecoder = &mime.WordDecoder{CharsetReader: charset.Reader}
 
 // OpenIMAP signs in and returns the session. Signing in is bounded by the connector's timeout;

@@ -2,7 +2,8 @@
 //
 // Three kinds, and one rule decides between them: a software-only identifier is a ULID, an
 // identifier a person or a model types is short, and an identifier the caller has to compute
-// without asking is derived. See docs/conventions.md.
+// without asking is derived. A message is the exception, named by its server — see
+// docs/conventions.md.
 package ids
 
 import (
@@ -10,6 +11,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -26,7 +29,6 @@ const (
 	Session     = "s_"
 	EmailConfig = "ec_"
 	Mailbox     = "mb_"
-	Message     = "m_"
 )
 
 const (
@@ -75,6 +77,29 @@ func Valid(prefix, id string) bool {
 		return err == nil
 	}
 	return false
+}
+
+// Message names a message within its mailbox by what the server calls it: the mailbox's
+// UIDVALIDITY and the message's UID. emguio keeps no row for most messages, so there is nothing
+// of its own to name them by. A dash between them rather than a dot, because a path ending in a
+// dot and digits reads as a file to whatever serves it.
+func Message(uidValidity, uid uint32) string {
+	return fmt.Sprintf("%d-%d", uidValidity, uid)
+}
+
+// ParseMessage reads a message id back. Both numbers are non-zero 32-bit integers, which is all
+// IMAP allows them to be.
+func ParseMessage(id string) (uidValidity, uid uint32, ok bool) {
+	a, b, found := strings.Cut(id, "-")
+	if !found {
+		return 0, 0, false
+	}
+	v, err1 := strconv.ParseUint(a, 10, 32)
+	u, err2 := strconv.ParseUint(b, 10, 32)
+	if err1 != nil || err2 != nil || v == 0 || u == 0 || a[0] == '0' || b[0] == '0' {
+		return 0, 0, false
+	}
+	return uint32(v), uint32(u), true
 }
 
 // encode32 renders b as n characters of the alphabet, most significant first.

@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -15,14 +16,9 @@ import (
 	"emguio/internal/store"
 )
 
-const (
-	// batch is how many new messages are fetched and stored at once. Newest first, and stored
-	// as each batch lands, so a large mailbox fills from the top while the rest arrives.
-	batch = 500
-	// recent is how many of a mailbox's newest messages have their flags looked at on a quick
-	// pass. A flag on an older one changes rarely, and is caught on the next full pass.
-	recent = 2000
-)
+// Window is how many of INBOX's newest messages are kept, so a list opens on them without asking
+// the server. Everything else is read from the server when it is asked for.
+const Window = 30
 
 // session is one signed-in IMAP connection for one email config.
 type session struct {
@@ -33,8 +29,8 @@ type session struct {
 	listed bool
 }
 
-// pass brings the store up to date. A full pass lists the mailboxes and looks at all of them; a
-// quick one looks at INBOX only.
+// pass brings what is kept up to date: the window on every pass, and on a full one the list of
+// mailboxes and how many messages each holds.
 func (s *session) pass(ctx context.Context, full bool) (bool, error) {
 	changed := false
 	if full || !s.listed {
@@ -57,7 +53,11 @@ func (s *session) pass(ctx context.Context, full bool) (bool, error) {
 		if !mb.Selectable || (!full && mb.SpecialUse != store.UseInbox) {
 			continue
 		}
-		moved, err := s.mailbox(ctx, mb, full)
+		look := s.count
+		if mb.SpecialUse == store.UseInbox {
+			look = s.window
+		}
+		moved, err := look(ctx, mb)
 		var refusal *imap.Error
 		if errors.As(err, &refusal) {
 			// One mailbox the server will not open is that mailbox's problem, not the session's.
@@ -146,136 +146,119 @@ func (s *session) list() ([]store.Listed, error) {
 	return out, nil
 }
 
-// mailbox brings one mailbox up to date, and reports whether anything a list shows moved.
-//
-// STATUS first, which is cheap: when its numbers match the last look, nothing that changes them
-// has happened, and the mailbox is not opened at all. A flag changed elsewhere without changing
-// the unseen count is caught by a full pass, which looks at INBOX's flags whatever STATUS says.
-func (s *session) mailbox(ctx context.Context, mb *store.Mailbox, full bool) (bool, error) {
+// status is what the server says a mailbox holds now.
+func (s *session) status(mb *store.Mailbox) (store.MailboxStatus, error) {
 	st, err := s.client.Status(mb.Name, &imap.StatusOptions{
 		NumMessages: true, UIDNext: true, UIDValidity: true, NumUnseen: true,
 	}).Wait()
 	if err != nil {
-		return false, err
+		return store.MailboxStatus{}, err
 	}
-	now := store.MailboxStatus{
+	return store.MailboxStatus{
 		UIDValidity: st.UIDValidity,
 		UIDNext:     uint32(st.UIDNext),
 		Messages:    deref(st.NumMessages),
 		Unseen:      deref(st.NumUnseen),
+	}, nil
+}
+
+// count records how many messages a mailbox holds and how many are unread, for the sidebar.
+func (s *session) count(ctx context.Context, mb *store.Mailbox) (bool, error) {
+	now, err := s.status(mb)
+	if err != nil {
+		return false, err
 	}
 	was := store.MailboxStatus{UIDValidity: mb.UIDValidity, UIDNext: mb.UIDNext, Messages: mb.Messages, Unseen: mb.Unseen}
-	same := mb.SyncedAt != nil && now == was
-	if same && !(full && mb.SpecialUse == store.UseInbox) {
+	if mb.SyncedAt != nil && now == was {
 		return false, nil
 	}
+	return now.Messages != was.Messages || now.Unseen != was.Unseen, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
+}
 
-	changed := !same
+// window brings the kept newest messages of a mailbox up to date, and reports whether anything
+// a list shows moved.
+//
+// The window is opened every time rather than only when STATUS has moved: a flag changed
+// elsewhere — a star — moves no number STATUS reports, and the window is small enough that its
+// flags cost one short FETCH.
+func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
+	now, err := s.status(mb)
+	if err != nil {
+		return false, err
+	}
+	was := store.MailboxStatus{UIDValidity: mb.UIDValidity, UIDNext: mb.UIDNext, Messages: mb.Messages, Unseen: mb.Unseen}
+	changed := mb.SyncedAt == nil || now != was
 	if now.UIDValidity != mb.UIDValidity {
 		if err := s.m.store.ResetMailbox(ctx, mb.ID, now.UIDValidity); err != nil {
 			return false, err
 		}
 	}
 	// EXAMINE, not SELECT: a read-only session cannot change \Seen by accident.
-	if _, err := s.client.Select(mb.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+	data, err := s.client.Select(mb.Name, &imap.SelectOptions{ReadOnly: true}).Wait()
+	if err != nil {
 		return false, err
 	}
 	defer s.unselect()
 
-	var searchOpts *imap.SearchOptions
-	if caps := s.client.Caps(); caps.Has(imap.CapESearch) || caps.Has(imap.CapIMAP4rev2) {
-		searchOpts = &imap.SearchOptions{ReturnAll: true}
+	current := map[uint32]store.Flags{}
+	if n := data.NumMessages; n > 0 {
+		from := uint32(1)
+		if n > Window {
+			from = n - Window + 1
+		}
+		msgs, err := s.client.Fetch(seqRange(from, n), &imap.FetchOptions{UID: true, Flags: true}).Collect()
+		if err != nil {
+			return false, err
+		}
+		for _, msg := range msgs {
+			current[uint32(msg.UID)] = flagsOf(msg.Flags)
+		}
 	}
-	found, err := s.client.UIDSearch(&imap.SearchCriteria{}, searchOpts).Wait()
-	if err != nil {
-		return false, err
-	}
-	local, err := s.m.store.MessageFlags(ctx, mb.ID)
+	kept, err := s.m.store.MessageFlags(ctx, mb.ID)
 	if err != nil {
 		return false, err
 	}
 
-	onServer := map[uint32]bool{}
-	var missing []uint32
-	for _, u := range found.AllUIDs() {
-		uid := uint32(u)
-		onServer[uid] = true
-		if _, ok := local[uid]; !ok {
-			missing = append(missing, uid)
+	var gone, missing []uint32
+	moved := map[uint32]store.Flags{}
+	for uid, f := range kept {
+		switch now, ok := current[uid]; {
+		case !ok:
+			gone = append(gone, uid)
+		case now != f:
+			moved[uid] = now
 		}
 	}
-	var gone []uint32
-	for uid := range local {
-		if !onServer[uid] {
-			gone = append(gone, uid)
-			delete(local, uid)
+	for uid := range current {
+		if _, ok := kept[uid]; !ok {
+			missing = append(missing, uid)
 		}
 	}
 	if err := s.m.store.DeleteMessages(ctx, mb.ID, gone); err != nil {
 		return false, err
 	}
-	changed = changed || len(gone) > 0
-
-	if moved, err := s.flags(ctx, mb, local, full); err != nil {
+	if err := s.m.store.SetFlags(ctx, mb.ID, moved); err != nil {
 		return false, err
-	} else if moved {
-		changed = true
 	}
-
-	slices.Sort(missing)
-	slices.Reverse(missing)
-	for start := 0; start < len(missing); start += batch {
-		chunk := missing[start:min(start+batch, len(missing))]
-		headers, err := s.fetch(chunk)
+	if len(missing) > 0 {
+		var set imap.UIDSet
+		for _, uid := range missing {
+			set.AddNum(imap.UID(uid))
+		}
+		headers, err := s.fetch(set)
 		if err != nil {
 			return false, err
 		}
 		if err := s.m.store.PutMessages(ctx, mb.ID, headers); err != nil {
 			return false, err
 		}
-		s.m.store.Notify(s.target.UserID)
-		changed = true
 	}
-
+	changed = changed || len(gone) > 0 || len(moved) > 0 || len(missing) > 0
 	return changed, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
 }
 
-// flags copies the flags of messages already stored: the newest on a quick pass, all of them on
-// a full one.
-func (s *session) flags(ctx context.Context, mb *store.Mailbox, local map[uint32]store.Flags, full bool) (bool, error) {
-	if len(local) == 0 {
-		return false, nil
-	}
-	uids := make([]uint32, 0, len(local))
-	for uid := range local {
-		uids = append(uids, uid)
-	}
-	slices.Sort(uids)
-	from := uids[0]
-	if !full && len(uids) > recent {
-		from = uids[len(uids)-recent]
-	}
-	msgs, err := s.client.Fetch(imap.UIDSet{{Start: imap.UID(from), Stop: 0}},
-		&imap.FetchOptions{UID: true, Flags: true}).Collect()
-	if err != nil {
-		return false, err
-	}
-	moved := map[uint32]store.Flags{}
-	for _, msg := range msgs {
-		uid := uint32(msg.UID)
-		was, ok := local[uid]
-		if f := flagsOf(msg.Flags); ok && f != was {
-			moved[uid] = f
-		}
-	}
-	return len(moved) > 0, s.m.store.SetFlags(ctx, mb.ID, moved)
-}
-
-func (s *session) fetch(uids []uint32) ([]store.Header, error) {
-	var set imap.UIDSet
-	for _, uid := range uids {
-		set.AddNum(imap.UID(uid))
-	}
+// fetch is what a list shows of the messages in set, newest to arrive first.
+func (s *session) fetch(set imap.NumSet) ([]store.Header, error) {
 	msgs, err := s.client.Fetch(set, &imap.FetchOptions{
 		UID:           true,
 		Flags:         true,
@@ -287,6 +270,7 @@ func (s *session) fetch(uids []uint32) ([]store.Header, error) {
 	if err != nil {
 		return nil, err
 	}
+	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return cmp.Compare(b.UID, a.UID) })
 	out := make([]store.Header, 0, len(msgs))
 	for _, msg := range msgs {
 		out = append(out, header(msg))
@@ -295,9 +279,13 @@ func (s *session) fetch(uids []uint32) ([]store.Header, error) {
 	return out, nil
 }
 
-// previewBytes is how much of a text part a preview is read from: a line of text and room for
-// the markup an HTML part wraps it in.
-const previewBytes = 2048
+// How much of a text part a preview is read from. A line of text and room for the markup an HTML
+// part wraps it in, first; then, for a message that gave no line, enough to get past an HTML
+// part's head and styles, which can fill the first few kilobytes on their own.
+const (
+	previewBytes = 2 << 10
+	previewMore  = 32 << 10
+)
 
 // textPart is where a message's preview is read from.
 type textPart struct {
@@ -305,14 +293,15 @@ type textPart struct {
 	encoding string
 	charset  string
 	html     bool
+	size     uint32
 }
 
-// previewPart is the first plain text part outside an attachment, or failing that the first
-// HTML one.
-func previewPart(bs imap.BodyStructure) (textPart, bool) {
+// previewParts are where a preview can be read from, best first: the first plain text part
+// outside an attachment, then the first HTML one.
+func previewParts(bs imap.BodyStructure) []textPart {
 	var plain, rich *textPart
 	if bs == nil {
-		return textPart{}, false
+		return nil
 	}
 	bs.Walk(func(path []int, part imap.BodyStructure) bool {
 		single, ok := part.(*imap.BodyStructureSinglePart)
@@ -322,7 +311,8 @@ func previewPart(bs imap.BodyStructure) (textPart, bool) {
 		if d := single.Disposition(); d != nil && strings.EqualFold(d.Value, "attachment") {
 			return false
 		}
-		found := &textPart{section: append([]int(nil), path...), encoding: single.Encoding, charset: param(single.Params, "charset")}
+		found := &textPart{section: append([]int(nil), path...), encoding: single.Encoding,
+			charset: param(single.Params, "charset"), size: single.Size}
 		switch single.MediaType() {
 		case "text/plain":
 			if plain == nil {
@@ -339,43 +329,71 @@ func previewPart(bs imap.BodyStructure) (textPart, bool) {
 		}
 		return true
 	})
-	switch {
-	case plain != nil:
-		return *plain, true
-	case rich != nil:
-		return *rich, true
+	var out []textPart
+	for _, p := range []*textPart{plain, rich} {
+		if p != nil {
+			out = append(out, *p)
+		}
 	}
-	return textPart{}, false
+	return out
 }
 
-// previews fills in what each header's list row shows under its subject. A FETCH per distinct
-// part rather than per message: in a batch most messages keep their text in the same place.
+// previews fills in what each header's list row shows under its subject.
+//
+// The best part's first bytes, for every message; then, for a message that gave no line, more of
+// that part when there was more, or else the next part. A FETCH per distinct part rather than
+// per message: in a run of messages most keep their text in the same place.
 //
 // Best effort. A preview that cannot be read is an empty line in a list, not a failed sync.
 func (s *session) previews(msgs []*imapclient.FetchMessageBuffer, headers []store.Header) {
+	want := map[uint32]textPart{}
+	next := map[uint32]textPart{}
+	for _, msg := range msgs {
+		parts := previewParts(msg.BodyStructure)
+		if len(parts) == 0 {
+			continue
+		}
+		want[uint32(msg.UID)] = parts[0]
+		if parts[0].size > previewBytes {
+			next[uint32(msg.UID)] = parts[0]
+		} else if len(parts) > 1 {
+			next[uint32(msg.UID)] = parts[1]
+		}
+	}
+	found := s.readPreviews(want, previewBytes)
+	again := map[uint32]textPart{}
+	for uid, part := range next {
+		if found[uid] == "" {
+			again[uid] = part
+		}
+	}
+	for uid, preview := range s.readPreviews(again, previewMore) {
+		found[uid] = preview
+	}
+	for i := range headers {
+		headers[i].Preview = found[headers[i].UID]
+	}
+}
+
+// readPreviews reads the first size bytes of each message's part, and makes a line of each.
+func (s *session) readPreviews(parts map[uint32]textPart, size uint32) map[uint32]string {
 	type group struct {
 		part textPart
 		uids imap.UIDSet
 	}
 	groups := map[string]*group{}
-	parts := map[uint32]textPart{}
-	for _, msg := range msgs {
-		part, ok := previewPart(msg.BodyStructure)
-		if !ok {
-			continue
-		}
-		parts[uint32(msg.UID)] = part
+	for uid, part := range parts {
 		key := fmt.Sprint(part.section)
 		if groups[key] == nil {
 			groups[key] = &group{part: part}
 		}
-		groups[key].uids.AddNum(msg.UID)
+		groups[key].uids.AddNum(imap.UID(uid))
 	}
 	found := map[uint32]string{}
 	for _, g := range groups {
 		section := &imap.FetchItemBodySection{
 			Part:    g.part.section,
-			Partial: &imap.SectionPartial{Offset: 0, Size: previewBytes},
+			Partial: &imap.SectionPartial{Offset: 0, Size: int64(size)},
 			Peek:    true,
 		}
 		got, err := s.client.Fetch(g.uids, &imap.FetchOptions{
@@ -394,9 +412,7 @@ func (s *session) previews(msgs []*imapclient.FetchMessageBuffer, headers []stor
 			found[uint32(msg.UID)] = message.SectionPreview(msg.BodySection[0].Bytes, part.encoding, part.charset, part.html)
 		}
 	}
-	for i := range headers {
-		headers[i].Preview = found[headers[i].UID]
-	}
+	return found
 }
 
 func param(params map[string]string, key string) string {
@@ -524,6 +540,12 @@ func clean(s string) string {
 		return r
 	}, s)
 	return strings.Join(strings.Fields(s), " ")
+}
+
+func seqRange(from, to uint32) imap.SeqSet {
+	var set imap.SeqSet
+	set.AddRange(from, to)
+	return set
 }
 
 func deref(n *uint32) uint32 {

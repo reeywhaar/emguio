@@ -27,8 +27,14 @@ const frame = (html: string) =>
   `overflow-wrap:anywhere;width:fit-content;min-width:100%;box-sizing:border-box}` +
   `img{max-width:100%;height:auto}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
 
-export function Frame({ html }: { html: string }) {
+/**
+ * images swaps each remote image's proxy address, which the server puts in data-src, in for the
+ * blank that holds its place.
+ */
+export function Frame({ html, images }: { html: string; images: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null);
+  const shown = useRef(images);
+  shown.current = images;
   const watch = useRef<ResizeObserver | null>(null);
   const [height, setHeight] = useState(240);
 
@@ -59,6 +65,7 @@ export function Frame({ html }: { html: string }) {
   const loaded = useCallback(() => {
     const doc = ref.current?.contentDocument;
     if (!doc?.body) return;
+    if (shown.current) show(doc);
     fit();
     doc.addEventListener("load", fit, true);
     watch.current?.disconnect();
@@ -70,6 +77,11 @@ export function Frame({ html }: { html: string }) {
   }, [fit]);
 
   useEffect(() => () => watch.current?.disconnect(), []);
+
+  useEffect(() => {
+    const doc = ref.current?.contentDocument;
+    if (images && doc?.body) show(doc);
+  }, [images]);
 
   return (
     <iframe
@@ -83,4 +95,11 @@ export function Frame({ html }: { html: string }) {
       className="block w-full overflow-hidden rounded-md border border-line bg-white"
     />
   );
+}
+
+function show(doc: Document) {
+  for (const img of doc.querySelectorAll<HTMLImageElement>("img[data-src]")) {
+    img.src = img.dataset.src!;
+    img.removeAttribute("data-src");
+  }
 }

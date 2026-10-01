@@ -2,8 +2,8 @@ import { query, request } from "@app/api/transport";
 import type {
   EmailConfig,
   EmailConfigDraft,
+  Flags,
   Mailbox,
-  Message,
   MessagePage,
   ReadMessage,
   TestResult,
@@ -61,26 +61,32 @@ export const getEmailConfigsByIdMailboxesByMailboxMessages = (
     `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages${query({ cursor })}`,
   );
 
-export const getEmailConfigsByIdMessagesByMessage = (
+const messagePath = (id: string, mailbox: string, message: string) =>
+  `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(message)}`;
+
+/** A message whole, from the server: nothing of it is kept, so every opening asks. */
+export const getEmailConfigsByIdMailboxesByMailboxMessagesByMessage = (
   id: string,
+  mailbox: string,
   message: string,
-  images: boolean,
-) =>
-  request<ReadMessage>(
-    `/api/email-configs/${encodeURIComponent(id)}/messages/${encodeURIComponent(message)}${query({ images: images ? 1 : undefined })}`,
-  );
+) => request<ReadMessage>(messagePath(id, mailbox, message));
 
 /** Marks a message read or unread: on the server, and here once the server has taken it. */
-export const patchEmailConfigsByIdMessagesByMessage = (
+export const patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage = (
   id: string,
+  mailbox: string,
   message: string,
   body: { seen: boolean },
 ) =>
-  request<Message>(
-    `/api/email-configs/${encodeURIComponent(id)}/messages/${encodeURIComponent(message)}`,
-    { method: "PATCH", body },
-  );
+  request<Flags>(messagePath(id, mailbox, message), {
+    method: "PATCH",
+    body,
+  });
 
-/** Where a part of a message is downloaded from. */
-export const partURL = (id: string, message: string, index: number) =>
-  `/api/email-configs/${encodeURIComponent(id)}/messages/${encodeURIComponent(message)}/parts/${index}`;
+/** Where a part of a message is downloaded from, by its section. */
+export const partURL = (
+  id: string,
+  mailbox: string,
+  message: string,
+  section: string,
+) => `${messagePath(id, mailbox, message)}/parts/${section}`;

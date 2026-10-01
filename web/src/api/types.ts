@@ -92,9 +92,16 @@ export type Message = {
 
 export type MessagePage = { messages: Message[]; next_cursor?: string };
 
+/** What a message's flags are on the server now. */
+export type Flags = Pick<
+  Message,
+  "id" | "seen" | "flagged" | "answered" | "draft"
+>;
+
 /** A part of a message that is not its text. */
 export type Part = {
-  index: number;
+  /** Where the server holds it, and what it is fetched by: "2", "1.3". */
+  section: string;
   name: string;
   type: string;
   size: number;
@@ -109,7 +116,10 @@ export type ReadMessage = Message & {
   text: string;
   /** Sanitized, and still a stranger's: shown only in a sandboxed frame. Empty for none. */
   html: string;
-  /** How many images the HTML asks for from elsewhere, blocked unless asked for. */
+  /**
+   * How many images the HTML asks for from elsewhere. Each is a blank image until somebody asks,
+   * with the address it loads from in data-src.
+   */
   remote_images: number;
   parts: Part[];
 };

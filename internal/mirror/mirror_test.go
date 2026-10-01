@@ -17,6 +17,7 @@ import (
 
 	"emguio/internal/connect"
 	"emguio/internal/connect/connecttest"
+	"emguio/internal/message"
 	"emguio/internal/seal"
 	"emguio/internal/store"
 )
@@ -115,17 +116,26 @@ func (w *world) mailbox(name string) *store.Mailbox {
 	return nil
 }
 
-func (w *world) messages(name string) []*store.Message {
+// window is what is kept of INBOX, newest first.
+func (w *world) window() []*store.Message {
 	w.t.Helper()
-	mb := w.mailbox(name)
+	mb := w.mailbox("INBOX")
 	if mb == nil {
-		w.t.Fatalf("no mailbox %q", name)
+		w.t.Fatal("no INBOX")
 	}
-	page, err := w.store.Messages(context.Background(), w.target.UserID, w.target.ID, mb.ID, "", 100)
+	msgs, err := w.store.Window(context.Background(), mb)
 	if err != nil {
 		w.t.Fatal(err)
 	}
-	return page.Messages
+	return msgs
+}
+
+func headers(list []store.Header) string {
+	var out []string
+	for _, h := range list {
+		out = append(out, h.Subject)
+	}
+	return strings.Join(out, ", ")
 }
 
 func subjects(msgs []*store.Message) string {
@@ -147,7 +157,7 @@ func (w *world) onServer(uid uint32, op imap.StoreFlagsOp, flags ...imap.Flag) {
 	}
 }
 
-func TestAFirstPassCopiesEveryMailboxAndItsMessages(t *testing.T) {
+func TestAFirstPassListsTheMailboxesAndKeepsINBOXsNewest(t *testing.T) {
 	w := newWorld(t, "hunter2")
 	w.create("Sent", "Projects", "Projects/emguio")
 	w.deliver("INBOX", 1, "Alice <alice@example.com>", "First")
@@ -160,16 +170,16 @@ func TestAFirstPassCopiesEveryMailboxAndItsMessages(t *testing.T) {
 	if inbox == nil || inbox.SpecialUse != store.UseInbox || inbox.Messages != 3 || inbox.Unseen != 2 {
 		t.Fatalf("INBOX = %+v", inbox)
 	}
-	if sent := w.mailbox("Sent"); sent == nil || sent.SpecialUse != store.UseSent {
-		t.Errorf("Sent = %+v, want it recognized by name", sent)
+	if sent := w.mailbox("Sent"); sent == nil || sent.SpecialUse != store.UseSent || sent.Messages != 1 {
+		t.Errorf("Sent = %+v, want it recognized by name and counted", sent)
 	}
 	if nested := w.mailbox("Projects/emguio"); nested == nil || strings.Join(nested.Path(), ">") != "Projects>emguio" {
 		t.Errorf("nested mailbox = %+v", nested)
 	}
 
-	msgs := w.messages("INBOX")
+	msgs := w.window()
 	if got := subjects(msgs); got != "Third, Second, First" {
-		t.Fatalf("INBOX lists %q, want the newest first", got)
+		t.Fatalf("INBOX keeps %q, want the newest first", got)
 	}
 	third, second, first := msgs[0], msgs[1], msgs[2]
 	if first.From != (store.Address{Name: "Alice", Email: "alice@example.com"}) {
@@ -181,8 +191,37 @@ func TestAFirstPassCopiesEveryMailboxAndItsMessages(t *testing.T) {
 	if first.Date == nil || !first.Date.Equal(start.Add(time.Minute)) {
 		t.Errorf("date = %v", first.Date)
 	}
-	if got := subjects(w.messages("Sent")); got != "Sent one" {
-		t.Errorf("Sent lists %q", got)
+	if first.ID() != fmt.Sprintf("%d-1", inbox.UIDValidity) {
+		t.Errorf("id = %q", first.ID())
+	}
+
+	var kept int
+	for _, mb := range []string{"Sent", "Projects", "Projects/emguio"} {
+		got, _ := w.store.Window(context.Background(), w.mailbox(mb))
+		kept += len(got)
+	}
+	if kept != 0 {
+		t.Errorf("%d messages kept outside INBOX", kept)
+	}
+}
+
+// The window is INBOX's newest and no more: what arrives pushes the oldest out.
+func TestOnlyTheNewestAreKept(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	for i := 1; i <= Window+2; i++ {
+		w.deliver("INBOX", i, "alice@example.com", fmt.Sprintf("m%02d", i))
+	}
+	w.sync()
+	msgs := w.window()
+	if len(msgs) != Window || msgs[0].Subject != fmt.Sprintf("m%02d", Window+2) || msgs[Window-1].Subject != "m03" {
+		t.Fatalf("kept %d, from %q to %q", len(msgs), msgs[0].Subject, msgs[len(msgs)-1].Subject)
+	}
+
+	w.deliver("INBOX", Window+3, "alice@example.com", "newest")
+	w.sync()
+	msgs = w.window()
+	if len(msgs) != Window || msgs[0].Subject != "newest" || msgs[Window-1].Subject != "m04" {
+		t.Errorf("after one more: kept %d, from %q to %q", len(msgs), msgs[0].Subject, msgs[len(msgs)-1].Subject)
 	}
 }
 
@@ -207,7 +246,7 @@ func TestNewMailArrivesOnTheNextPass(t *testing.T) {
 	w.sync()
 	w.deliver("INBOX", 2, "alice@example.com", "Second")
 	w.sync()
-	if got := subjects(w.messages("INBOX")); got != "Second, First" {
+	if got := subjects(w.window()); got != "Second, First" {
 		t.Errorf("INBOX lists %q", got)
 	}
 }
@@ -223,7 +262,7 @@ func TestAMessageExpungedOnTheServerIsDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.sync()
-	if got := subjects(w.messages("INBOX")); got != "Keep" {
+	if got := subjects(w.window()); got != "Keep" {
 		t.Errorf("INBOX lists %q", got)
 	}
 }
@@ -235,7 +274,7 @@ func TestAFlagChangedElsewhereIsCopied(t *testing.T) {
 
 	w.onServer(1, imap.StoreFlagsAdd, imap.FlagSeen)
 	w.sync()
-	if msgs := w.messages("INBOX"); !msgs[0].Flags.Seen {
+	if msgs := w.window(); !msgs[0].Flags.Seen {
 		t.Error("a message read in another client is still unread here")
 	}
 	if inbox := w.mailbox("INBOX"); inbox.Unseen != 0 {
@@ -243,40 +282,48 @@ func TestAFlagChangedElsewhereIsCopied(t *testing.T) {
 	}
 }
 
-// A star changes no count STATUS reports, so only a full look at INBOX's flags can catch it.
-func TestAStarAddedElsewhereIsCaughtByAFullPass(t *testing.T) {
+// A star changes no count STATUS reports, so the window's flags are looked at every pass.
+func TestAStarAddedElsewhereIsCopied(t *testing.T) {
 	w := newWorld(t, "hunter2")
 	w.deliver("INBOX", 1, "alice@example.com", "Star me")
 	w.sync()
 
 	w.onServer(1, imap.StoreFlagsAdd, imap.FlagFlagged)
 	w.sync()
-	if msgs := w.messages("INBOX"); !msgs[0].Flags.Flagged {
+	if msgs := w.window(); !msgs[0].Flags.Flagged {
 		t.Error("a star added elsewhere was not copied")
 	}
 }
 
-// A new UIDVALIDITY means every stored UID now names something else.
-func TestAMailboxRecreatedOnTheServerStartsAgain(t *testing.T) {
+// A new UIDVALIDITY means every UID named before now names something else, so a cursor from
+// before is refused rather than read as a position in the new mailbox.
+func TestAMailboxRecreatedOnTheServerIsGoneToAnOldCursor(t *testing.T) {
 	w := newWorld(t, "hunter2")
 	w.create("Lists")
-	w.deliver("Lists", 1, "alice@example.com", "Old")
-	w.sync()
-	before := w.mailbox("Lists")
+	for i := 1; i <= 3; i++ {
+		w.deliver("Lists", i, "alice@example.com", fmt.Sprintf("Old %d", i))
+	}
+	ctx := context.Background()
+	first, err := w.mirror.List(ctx, w.target, "Lists", 0, 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if err := w.server.Delete("Lists").Wait(); err != nil {
 		t.Fatal(err)
 	}
 	w.create("Lists")
-	w.deliver("Lists", 2, "alice@example.com", "New")
-	w.sync()
-
-	after := w.mailbox("Lists")
-	if after.UIDValidity == before.UIDValidity {
+	w.deliver("Lists", 4, "alice@example.com", "New")
+	again, err := w.mirror.List(ctx, w.target, "Lists", 0, 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.UIDValidity == first.UIDValidity {
 		t.Fatal("the server did not change UIDVALIDITY; the test proves nothing")
 	}
-	if got := subjects(w.messages("Lists")); got != "New" {
-		t.Errorf("Lists = %q, want only what is there now", got)
+	last := first.Headers[len(first.Headers)-1]
+	if _, err := w.mirror.List(ctx, w.target, "Lists", first.UIDValidity, last.UID, 2); !errors.Is(err, ErrGone) {
+		t.Errorf("an old cursor = %v, want gone", err)
 	}
 }
 
@@ -295,21 +342,21 @@ func TestAMailboxDeletedOnTheServerIsDroppedWithItsMessages(t *testing.T) {
 	}
 }
 
-// koi8-r and a Cyrillic mailbox name are an ordinary Russian account, not an edge case. The
+// Encoded words and a mailbox named in another script are how mail that is not English arrives. The
 // server here decodes headers itself, so this proves the names round-trip and the subject lands;
 // reading a header a real server sends as written is tested in connect.
 func TestEncodedSubjectsAndMailboxNamesArrive(t *testing.T) {
 	w := newWorld(t, "hunter2")
 	w.create("Входящие/Отчёты")
-	w.deliver("INBOX", 1, "=?koi8-r?B?8NLJ18XU?= <ivan@example.ru>", "=?koi8-r?B?8NLJ18XU?=")
+	w.deliver("INBOX", 1, "=?UTF-8?B?0J/RgNC40LLQtdGC?= <ivan@example.ru>", "=?UTF-8?B?0J/RgNC40LLQtdGC?=")
 	w.sync()
 
-	msg := w.messages("INBOX")[0]
+	msg := w.window()[0]
 	if msg.Subject != "Привет" || msg.From.Name != "Привет" {
 		t.Errorf("subject = %q, from = %q", msg.Subject, msg.From.Name)
 	}
 	if w.mailbox("Входящие/Отчёты") == nil {
-		t.Error("the Cyrillic mailbox did not arrive under its own name")
+		t.Error("the mailbox did not arrive under its own name")
 	}
 }
 
@@ -408,7 +455,7 @@ Content-Disposition: attachment; filename=menu.pdf
 `, start.Add(2*time.Minute))
 	w.sync()
 
-	msgs := w.messages("INBOX")
+	msgs := w.window()
 	if msgs[0].Preview != "Café tomorrow?" || !msgs[0].HasAttachments {
 		t.Errorf("rich preview = %q, attachments %v", msgs[0].Preview, msgs[0].HasAttachments)
 	}
@@ -417,18 +464,98 @@ Content-Disposition: attachment; filename=menu.pdf
 	}
 }
 
-func TestAMessageIsFetchedWholeAndStaysUnread(t *testing.T) {
+// A notification's HTML can spend its first kilobytes on a head and styles, which give no line;
+// a plain part can be empty beside an HTML one that is not. Both are read further.
+func TestAPreviewIsLookedForPastWhatGivesNoLine(t *testing.T) {
 	w := newWorld(t, "hunter2")
-	w.deliver("INBOX", 1, "alice@example.com", "Open me")
-	w.sync()
-	inbox := w.mailbox("INBOX")
+	styles := strings.Repeat(".a{color:red}\n", 400)
+	connecttest.Append(t, w.server, "INBOX", "From: monitor@example.com\nSubject: Styled\nMIME-Version: 1.0\n"+
+		"Content-Type: text/html; charset=utf-8\n\n<html><head><style>"+styles+"</style></head><body><p>Front RECOVERED</p></body></html>\n",
+		start.Add(time.Minute))
+	connecttest.Append(t, w.server, "INBOX", `From: monitor@example.com
+Subject: Empty plain
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary=b
 
-	raw, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1)
+--b
+Content-Type: text/plain; charset=utf-8
+
+
+--b
+Content-Type: text/html; charset=utf-8
+
+<p>Backend FAILED</p>
+--b--
+`, start.Add(2*time.Minute))
+	w.sync()
+
+	msgs := w.window()
+	if msgs[0].Preview != "Backend FAILED" {
+		t.Errorf("beside an empty plain part = %q", msgs[0].Preview)
+	}
+	if msgs[1].Preview != "Front RECOVERED" {
+		t.Errorf("past the styles = %q", msgs[1].Preview)
+	}
+}
+
+// Every mailbox but the window is read from the server, a run at a time, by UID: mail that
+// arrives between two runs does not shift the second.
+func TestAListPagesTheServerNewestFirst(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Archive")
+	for i := 1; i <= 5; i++ {
+		w.deliver("Archive", i, "alice@example.com", fmt.Sprintf("a%d", i))
+	}
+	ctx := context.Background()
+	first, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "Subject: Open me") || !strings.Contains(string(raw), "Hello.") {
-		t.Errorf("raw = %q", raw)
+	if got := headers(first.Headers); got != "a5, a4" || !first.More || first.Headers[0].Preview != "Hello." {
+		t.Fatalf("first run = %q more %v preview %q", got, first.More, first.Headers[0].Preview)
+	}
+
+	w.deliver("Archive", 6, "alice@example.com", "a6")
+	cursor := first.Headers[1].UID
+	second, err := w.mirror.List(ctx, w.target, "Archive", first.UIDValidity, cursor, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := headers(second.Headers); got != "a3, a2" || !second.More {
+		t.Fatalf("second run = %q more %v", got, second.More)
+	}
+	last, err := w.mirror.List(ctx, w.target, "Archive", first.UIDValidity, second.Headers[1].UID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := headers(last.Headers); got != "a1" || last.More {
+		t.Errorf("last run = %q more %v", got, last.More)
+	}
+
+	w.create("Empty")
+	if empty, err := w.mirror.List(ctx, w.target, "Empty", 0, 0, 2); err != nil || len(empty.Headers) != 0 || empty.More {
+		t.Errorf("an empty mailbox = %+v, %v", empty, err)
+	}
+	if _, err := w.mirror.List(ctx, w.target, "Nowhere", 0, 0, 2); !errors.Is(err, ErrGone) {
+		t.Errorf("a mailbox the server does not have = %v, want gone", err)
+	}
+}
+
+func TestAMessageIsReadAndStaysUnread(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "Alice <alice@example.com>", "Open me")
+	w.sync()
+	inbox := w.mailbox("INBOX")
+
+	opened, err := w.mirror.Read(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := opened.Structure.Plain; p == nil || strings.TrimSpace(string(p.Body)) != "Hello." || len(opened.Structure.Leaves) != 0 {
+		t.Errorf("structure = %+v", opened.Structure)
+	}
+	if opened.Header.Subject != "Open me" || opened.Header.From.Name != "Alice" || opened.Header.Flags.Seen {
+		t.Errorf("header = %+v", opened.Header)
 	}
 	st, _ := w.server.Status("INBOX", &imap.StatusOptions{NumUnseen: true}).Wait()
 	if *st.NumUnseen != 1 {
@@ -436,7 +563,7 @@ func TestAMessageIsFetchedWholeAndStaysUnread(t *testing.T) {
 	}
 
 	// The session is kept for the next one.
-	if _, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1); err != nil {
+	if _, err := w.mirror.Read(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1); err != nil {
 		t.Errorf("a second fetch: %v", err)
 	}
 }
@@ -449,14 +576,107 @@ func TestAMessageNoLongerOnTheServerIsGone(t *testing.T) {
 
 	w.onServer(1, imap.StoreFlagsAdd, imap.FlagDeleted)
 	w.server.Expunge().Close()
-	if _, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1); !errors.Is(err, ErrGone) {
+	ctx := context.Background()
+	if _, err := w.mirror.Read(ctx, w.target, "INBOX", inbox.UIDValidity, 1); !errors.Is(err, ErrGone) {
 		t.Errorf("expunged = %v, want gone", err)
 	}
-	if _, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity+1, 1); !errors.Is(err, ErrGone) {
+	if _, err := w.mirror.Read(ctx, w.target, "INBOX", inbox.UIDValidity+1, 1); !errors.Is(err, ErrGone) {
 		t.Errorf("another UIDVALIDITY = %v, want gone", err)
 	}
-	if _, err := w.mirror.Raw(context.Background(), w.target, "Nowhere", inbox.UIDValidity, 1); !errors.Is(err, ErrGone) {
+	if _, err := w.mirror.Read(ctx, w.target, "Nowhere", inbox.UIDValidity, 1); !errors.Is(err, ErrGone) {
 		t.Errorf("a mailbox the server does not have = %v, want gone", err)
+	}
+	if _, _, err := w.mirror.Part(ctx, w.target, "INBOX", inbox.UIDValidity, 1, []int{1}); !errors.Is(err, ErrGone) {
+		t.Errorf("a part of an expunged message = %v, want gone", err)
+	}
+}
+
+// Opening a message asks for its text and the server's word on the rest: an attachment is
+// fetched when somebody downloads it, however large.
+func TestAMessageOpensWithoutItsAttachments(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	connecttest.Append(t, w.server, "INBOX", `From: bob@example.com
+Subject: Report
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=b
+
+--b
+Content-Type: multipart/alternative; boundary=a
+
+--a
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+=D0=9F=D1=80=D0=B8=D0=B2=D0=B5=D1=82
+--a
+Content-Type: text/html; charset=utf-8
+
+<p>Hi</p>
+--a--
+--b
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=utf-8''%D0%9E%D1%82%D1%87%D1%91%D1%82.pdf
+Content-Transfer-Encoding: base64
+
+`+strings.Repeat("JVBERi0xLjQK\n", 1000)+`--b--
+`, start)
+	w.sync()
+	inbox := w.mailbox("INBOX")
+
+	opened, err := w.mirror.Read(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := opened.Structure
+	if st.Plain == nil || st.Plain.Charset != "utf-8" || st.Plain.Encoding != "quoted-printable" ||
+		strings.TrimSpace(string(st.Plain.Body)) != "=D0=9F=D1=80=D0=B8=D0=B2=D0=B5=D1=82" {
+		t.Errorf("plain = %+v", st.Plain)
+	}
+	if st.HTML == nil || strings.TrimSpace(string(st.HTML.Body)) != "<p>Hi</p>" {
+		t.Errorf("html = %+v", st.HTML)
+	}
+	if len(st.Leaves) != 1 {
+		t.Fatalf("leaves = %+v", st.Leaves)
+	}
+	pdf := st.Leaves[0]
+	if pdf.Section != "2" || pdf.Type != "application/pdf" || pdf.Disposition != "attachment" || pdf.Size < 12000 ||
+		message.Param(pdf.DispositionParams, "filename") != "Отчёт.pdf" {
+		t.Errorf("pdf = %+v", pdf)
+	}
+}
+
+// An image costs its own bytes, not its message's.
+func TestAPartIsFetchedAloneByItsSection(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	connecttest.Append(t, w.server, "INBOX", `From: bob@example.com
+Subject: Logo
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary=b
+
+--b
+Content-Type: text/html; charset=utf-8
+
+<img src="cid:logo">
+--b
+Content-Type: image/png
+Content-ID: <logo>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--b--
+`, start)
+	w.sync()
+	inbox := w.mailbox("INBOX")
+
+	head, body, err := w.mirror.Part(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1, []int{2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(head), "image/png") || strings.Contains(string(head), "Subject") {
+		t.Errorf("head = %q", head)
+	}
+	if strings.TrimSpace(string(body)) != "iVBORw0KGgo=" {
+		t.Errorf("body = %q", body)
 	}
 }
 
@@ -466,6 +686,7 @@ func TestMarkingAMessageReadSetsTheServersFlag(t *testing.T) {
 	w.deliver("INBOX", 1, "alice@example.com", "Read me")
 	w.sync()
 	inbox := w.mailbox("INBOX")
+	ctx := context.Background()
 	unseen := func() uint32 {
 		st, err := w.server.Status("INBOX", &imap.StatusOptions{NumUnseen: true}).Wait()
 		if err != nil {
@@ -474,19 +695,28 @@ func TestMarkingAMessageReadSetsTheServersFlag(t *testing.T) {
 		return *st.NumUnseen
 	}
 
-	if err := w.mirror.SetSeen(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1, true); err != nil {
-		t.Fatal(err)
+	flags, moved, err := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 1, true)
+	if err != nil || !moved || !flags.Seen {
+		t.Fatalf("marking read = %+v, %v, %v", flags, moved, err)
 	}
 	if n := unseen(); n != 0 {
 		t.Errorf("unseen on the server after marking read = %d", n)
 	}
-	if err := w.mirror.SetSeen(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1, false); err != nil {
+	if _, moved, _ := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 1, true); moved {
+		t.Error("marking a read message read again said it moved")
+	}
+
+	// A message just opened for reading is marked on the same session.
+	if _, err := w.mirror.Read(ctx, w.target, "INBOX", inbox.UIDValidity, 1); err != nil {
 		t.Fatal(err)
+	}
+	if _, moved, err := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 1, false); err != nil || !moved {
+		t.Fatalf("marking unread = %v, %v", moved, err)
 	}
 	if n := unseen(); n != 1 {
 		t.Errorf("unseen on the server after marking unread = %d", n)
 	}
-	if err := w.mirror.SetSeen(context.Background(), w.target, "INBOX", inbox.UIDValidity, 9, true); !errors.Is(err, ErrGone) {
+	if _, _, err := w.mirror.SetSeen(ctx, w.target, "INBOX", inbox.UIDValidity, 9, true); !errors.Is(err, ErrGone) {
 		t.Errorf("a UID the server does not have = %v, want gone", err)
 	}
 }

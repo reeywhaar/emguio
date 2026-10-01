@@ -1,9 +1,9 @@
-// Package mirror keeps the store's copy of every email config's mail in step with its server:
-// one worker per config, each holding one IMAP session.
+// Package mirror keeps what emguio keeps of each email config's mail — its mailboxes and INBOX's
+// newest messages — in step with its server, one worker per config holding one IMAP session.
+// Everything else is read from the server when somebody asks for it, on a second session.
 //
-// Syncing only reads: mailboxes are opened with EXAMINE and messages fetched without their bodies,
-// so a sync never changes a flag on the server. The one write is \Seen, when somebody reads or
-// unreads a message, on a session of its own. See docs/reading.md.
+// Only \Seen is ever written, when somebody reads or unreads a message. Everything else opens
+// mailboxes with EXAMINE and fetches with BODY.PEEK. See docs/reading.md.
 package mirror
 
 import (
@@ -227,7 +227,7 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 	}
 }
 
-// Once signs in, passes over every mailbox once, and signs out. What a worker does on a timer,
+// Once signs in, makes one full pass, and signs out. What a worker does on a timer,
 // done now and only once — for tests, and for a pass somebody is waiting on.
 func (m *Mirror) Once(ctx context.Context, t store.SyncTarget) error {
 	s, err := m.open(ctx, t)

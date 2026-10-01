@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@app/api/transport";
-import type { Mailbox, Message, ReadMessage } from "@app/api/types";
+import type { Flags, Mailbox, Message, ReadMessage } from "@app/api/types";
 import { Reader } from "@app/islands/app/Reader";
 import { mount } from "@app/test/harness";
 
@@ -10,18 +10,19 @@ const getMessage = vi.fn();
 const patchMessage = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
-  getEmailConfigsByIdMessagesByMessage: (
+  getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
+    mailbox: string,
     message: string,
-    images: boolean,
-  ) => getMessage(id, message, images),
-  patchEmailConfigsByIdMessagesByMessage: (
+  ) => getMessage(id, mailbox, message),
+  patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
+    mailbox: string,
     message: string,
     body: { seen: boolean },
-  ) => patchMessage(id, message, body),
-  partURL: (id: string, message: string, index: number) =>
-    `/parts/${id}/${message}/${index}`,
+  ) => patchMessage(id, mailbox, message, body),
+  partURL: (id: string, mailbox: string, message: string, section: string) =>
+    `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
 
 const inbox: Mailbox = {
@@ -34,7 +35,7 @@ const inbox: Mailbox = {
   unseen: 0,
 };
 
-/** The message as a list has it, which is what marking it read returns. */
+/** The message as a list has it. */
 const listed = (extra: Partial<Message> = {}): Message => ({
   id: "m_1",
   from: { name: "Alice", email: "alice@example.com" },
@@ -51,6 +52,15 @@ const listed = (extra: Partial<Message> = {}): Message => ({
   ...extra,
 });
 
+/** What marking it read answers with: its flags on the server now. */
+const flags = (seen: boolean): Flags => ({
+  id: "m_1",
+  seen,
+  flagged: false,
+  answered: false,
+  draft: false,
+});
+
 const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   ...listed(),
   cc: [{ name: "Bob", email: "bob@example.com" }],
@@ -60,13 +70,19 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   remote_images: 0,
   parts: [
     {
-      index: 0,
+      section: "2",
       name: "q3.pdf",
       type: "application/pdf",
       size: 12800,
       listed: true,
     },
-    { index: 1, name: "logo.png", type: "image/png", size: 300, listed: false },
+    {
+      section: "1.2",
+      name: "logo.png",
+      type: "image/png",
+      size: 300,
+      listed: false,
+    },
   ],
   ...extra,
 });
@@ -74,8 +90,8 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
 beforeEach(() => {
   getMessage.mockResolvedValue(read());
   patchMessage.mockImplementation(
-    async (_c: string, _m: string, body: { seen: boolean }) =>
-      listed({ seen: body.seen }),
+    async (_c: string, _mb: string, _m: string, body: { seen: boolean }) =>
+      flags(body.seen),
   );
 });
 afterEach(() => vi.clearAllMocks());
@@ -100,7 +116,7 @@ describe("the reading pane", () => {
     const list = await screen.findByRole("list", { name: "Attachments" });
     const links = within(list).getAllByRole("link");
     expect(links).toHaveLength(1);
-    expect(links[0]!.getAttribute("href")).toBe("/parts/ec_1/m_1/0");
+    expect(links[0]!.getAttribute("href")).toBe("/parts/ec_1/mb_inbox/m_1/2");
     within(links[0]!).getByText("q3.pdf");
     within(links[0]!).getByText("13 KB");
   });
@@ -116,23 +132,24 @@ describe("the reading pane", () => {
     expect(doc).toContain("default-src 'none'; img-src 'self' data:");
   });
 
+  // Showing them swaps them in where they stand: the message is not fetched again.
   it("asks before loading images from elsewhere", async () => {
-    getMessage.mockImplementation(
-      async (_c: string, _m: string, images: boolean) =>
-        read({ html: "<p>Rich</p>", remote_images: images ? 0 : 3 }),
+    getMessage.mockResolvedValue(
+      read({
+        html: '<p>Rich <img src="data:image/gif;base64,R0lGOD" data-src="/api/proxy?u=x"></p>',
+        remote_images: 3,
+      }),
     );
     open();
     await screen.findByText("3 images from the internet are not shown.");
-    expect(getMessage).toHaveBeenLastCalledWith("ec_1", "m_1", false);
+    expect(getMessage).toHaveBeenCalledWith("ec_1", "mb_inbox", "m_1");
     fireEvent.click(screen.getByRole("button", { name: "Show images" }));
-    await waitFor(() =>
-      expect(getMessage).toHaveBeenLastCalledWith("ec_1", "m_1", true),
-    );
     await waitFor(() =>
       expect(
         screen.queryByText(/images from the internet are not shown/),
       ).toBeNull(),
     );
+    expect(getMessage).toHaveBeenCalledTimes(1);
   });
 
   it("says what the server said when the message cannot be had", async () => {
@@ -146,7 +163,9 @@ describe("the reading pane", () => {
   it("marks an unread message read when it opens", async () => {
     open();
     await waitFor(() =>
-      expect(patchMessage).toHaveBeenCalledWith("ec_1", "m_1", { seen: true }),
+      expect(patchMessage).toHaveBeenCalledWith("ec_1", "mb_inbox", "m_1", {
+        seen: true,
+      }),
     );
     await waitFor(() =>
       expect(
@@ -165,18 +184,8 @@ describe("the reading pane", () => {
     expect(patchMessage).not.toHaveBeenCalled();
   });
 
-  // Marked unread, it stays unread while it is open, even as the message is fetched again.
+  // Marked unread, it stays unread while it is open.
   it("marks it unread on asking, once and for good", async () => {
-    let seen = false;
-    getMessage.mockImplementation(async () =>
-      read({ seen, html: "<p>Rich</p>", remote_images: 1 }),
-    );
-    patchMessage.mockImplementation(
-      async (_c: string, _m: string, body: { seen: boolean }) => {
-        seen = body.seen;
-        return listed({ seen });
-      },
-    );
     open();
     const button = await screen.findByRole<HTMLButtonElement>("button", {
       name: "Mark as unread",
@@ -184,12 +193,13 @@ describe("the reading pane", () => {
     await waitFor(() => expect(button.disabled).toBe(false));
     fireEvent.click(button);
     await screen.findByRole("button", { name: "Mark as read" });
-    fireEvent.click(screen.getByRole("button", { name: "Show images" }));
     await waitFor(() =>
-      expect(getMessage).toHaveBeenLastCalledWith("ec_1", "m_1", true),
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Mark as read" })
+          .disabled,
+      ).toBe(false),
     );
-    await screen.findByRole("button", { name: "Mark as read" });
-    expect(patchMessage.mock.calls.map((c) => c[2])).toEqual([
+    expect(patchMessage.mock.calls.map((c) => c[3])).toEqual([
       { seen: true },
       { seen: false },
     ]);
