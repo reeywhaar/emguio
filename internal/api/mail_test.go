@@ -19,9 +19,19 @@ type fakeMirror struct {
 	mu         sync.Mutex
 	reconciled int
 	refreshed  []string
+	// raw and err are what a fetch gets, and fetched how many there were.
+	raw     []byte
+	err     error
+	fetched int
 }
 
 func (f *fakeMirror) Reconcile() { f.mu.Lock(); f.reconciled++; f.mu.Unlock() }
+func (f *fakeMirror) Raw(context.Context, store.SyncTarget, string, uint32, uint32) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fetched++
+	return f.raw, f.err
+}
 func (f *fakeMirror) Refresh(id string) {
 	f.mu.Lock()
 	f.refreshed = append(f.refreshed, id)

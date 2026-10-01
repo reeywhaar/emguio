@@ -179,7 +179,7 @@ Three kinds, and the rule that decides between them:
 
 | kind | shape | used by |
 | --- | --- | --- |
-| ULID | prefix plus 26 Crockford characters over 16 bytes | `u_` user, `i_` invite, `ec_` email config |
+| ULID | prefix plus 26 Crockford characters over 16 bytes | `u_` user, `i_` invite, `ec_` email config, `mb_` mailbox, `m_` message |
 | derived | hash of the thing it names | tokens |
 
 A new prefix is added to this table in the change that introduces it.

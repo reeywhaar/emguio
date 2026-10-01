@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { getAuthMe, postAuthLogout } from "@app/api/actions/auth";
 import {
   deleteEmailConfigsById,
   getEmailConfigs,
@@ -15,6 +16,7 @@ import { describe, draftOf, labelOf } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { Results } from "@app/islands/app/Results";
 import { paths } from "@app/islands/app/route";
+import { leaveFor } from "@app/leave";
 
 export function Settings() {
   const configs = useQuery({
@@ -42,7 +44,38 @@ export function Settings() {
           configs.data.map((c) => <Card key={c.id} config={c} />)
         )}
       </section>
+      <Account />
     </main>
+  );
+}
+
+function Account() {
+  const me = useQuery({ queryKey: qk.me, queryFn: getAuthMe });
+  const signOut = useMutation({
+    mutationFn: postAuthLogout,
+    onSuccess: () => leaveFor("/login"),
+  });
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="caps text-muted">You</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-bg p-4">
+        <span className="text-sm">
+          Signed in as{" "}
+          {me.data ? (
+            <span className="font-medium">{me.data.username}</span>
+          ) : (
+            "…"
+          )}
+        </span>
+        <Button
+          size="bar"
+          disabled={signOut.isPending}
+          onClick={() => signOut.mutate()}
+        >
+          Sign out
+        </Button>
+      </div>
+    </section>
   );
 }
 

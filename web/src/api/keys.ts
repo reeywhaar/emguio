@@ -11,4 +11,6 @@ export const qk = {
   mailboxes: (config: string) => ["mail", config, "mailboxes"] as const,
   messages: (config: string, mailbox: string) =>
     ["mail", config, "messages", mailbox] as const,
+  message: (config: string, message: string, images: boolean) =>
+    ["mail", config, "message", message, images] as const,
 };

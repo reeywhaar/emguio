@@ -39,18 +39,20 @@ type Mirror struct {
 	conn  *connect.Connector
 	log   *slog.Logger
 
-	mu      sync.Mutex
-	workers map[string]*worker
-	kick    chan struct{}
+	mu       sync.Mutex
+	workers  map[string]*worker
+	fetchers map[string]*fetcher
+	kick     chan struct{}
 }
 
 func New(st *store.Store, conn *connect.Connector, log *slog.Logger) *Mirror {
 	return &Mirror{
-		store:   st,
-		conn:    conn,
-		log:     log,
-		workers: map[string]*worker{},
-		kick:    make(chan struct{}, 1),
+		store:    st,
+		conn:     conn,
+		log:      log,
+		workers:  map[string]*worker{},
+		fetchers: map[string]*fetcher{},
+		kick:     make(chan struct{}, 1),
 	}
 }
 
@@ -67,7 +69,12 @@ func (m *Mirror) Run(ctx context.Context) {
 				w.stop()
 				delete(m.workers, id)
 			}
+			fetchers := m.fetchers
+			m.fetchers = map[string]*fetcher{}
 			m.mu.Unlock()
+			for _, f := range fetchers {
+				f.shut()
+			}
 			return
 		case <-tick.C:
 		case <-m.kick:

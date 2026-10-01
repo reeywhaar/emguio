@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -9,13 +10,15 @@ import (
 	"emguio/internal/store"
 )
 
-// Mirror is what the API asks of the sync: to look again now. An interface so tests run without
-// one.
+// Mirror is what the API asks of the sync: to look again now, and to fetch one message. An
+// interface so tests run without one.
 type Mirror interface {
 	// Reconcile re-reads the set of email configs, after one is added, changed or removed.
 	Reconcile()
 	// Refresh looks at every mailbox of one email config now.
 	Refresh(id string)
+	// Raw is one message as the server holds it, or mirror.ErrGone.
+	Raw(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) ([]byte, error)
 }
 
 type mailboxJSON struct {
@@ -87,20 +90,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]messageJSON, len(page.Messages))
 	for i, m := range page.Messages {
-		out[i] = messageJSON{
-			ID:             m.ID,
-			From:           m.From,
-			To:             nonNil(m.To),
-			Subject:        m.Subject,
-			Date:           m.InternalDate.Unix(),
-			Sent:           unixOrNil(m.Date),
-			Seen:           m.Flags.Seen,
-			Flagged:        m.Flags.Flagged,
-			Answered:       m.Flags.Answered,
-			Draft:          m.Flags.Draft,
-			HasAttachments: m.HasAttachments,
-			Preview:        m.Preview,
-		}
+		out[i] = messageOut(m)
 	}
 	body := map[string]any{"messages": out}
 	if page.Next != "" {
@@ -121,6 +111,23 @@ func (s *Server) syncEmailConfig(w http.ResponseWriter, r *http.Request) {
 		s.mirror.Refresh(c.ID)
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func messageOut(m *store.Message) messageJSON {
+	return messageJSON{
+		ID:             m.ID,
+		From:           m.From,
+		To:             nonNil(m.To),
+		Subject:        m.Subject,
+		Date:           m.InternalDate.Unix(),
+		Sent:           unixOrNil(m.Date),
+		Seen:           m.Flags.Seen,
+		Flagged:        m.Flags.Flagged,
+		Answered:       m.Flags.Answered,
+		Draft:          m.Flags.Draft,
+		HasAttachments: m.HasAttachments,
+		Preview:        m.Preview,
+	}
 }
 
 func unixOrNil(t *time.Time) *int64 {

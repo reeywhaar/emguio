@@ -17,19 +17,23 @@ import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
 import { MessageList } from "@app/islands/app/MessageList";
+import { Reader } from "@app/islands/app/Reader";
 import { go, paths } from "@app/islands/app/route";
 
 /**
  * One email config's mail: its folders down the side and a folder's messages beside them.
  *
- * named and mailbox are what the address says, null for the usual ones.
+ * named, mailbox and message are what the address says: null for the usual config and folder,
+ * and for no message open.
  */
 export function Mail({
   named,
   mailbox,
+  message,
 }: {
   named: string | null;
   mailbox: string | null;
+  message: string | null;
 }) {
   const configs = useQuery({
     queryKey: qk.emailConfigs,
@@ -69,15 +73,28 @@ export function Mail({
       </Centered>
     );
   }
-  return <Folders config={config} mailbox={mailbox} key={config.id} />;
+  return (
+    <Folders
+      config={config}
+      mailbox={mailbox}
+      message={message}
+      key={config.id}
+    />
+  );
 }
 
+/**
+ * Three panes where there is room for them: folders, a folder's list, and the open message. On a
+ * narrower screen the message takes the list's place, and on a phone the folders are a menu.
+ */
 function Folders({
   config,
   mailbox,
+  message,
 }: {
   config: EmailConfig;
   mailbox: string | null;
+  message: string | null;
 }) {
   const boxes = useQuery({
     queryKey: qk.mailboxes(config.id),
@@ -92,7 +109,10 @@ function Folders({
   return (
     <div className="flex min-h-0 flex-1">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
-        <nav aria-label="Folders" className="flex-1 overflow-y-auto p-2">
+        <nav
+          aria-label="Folders"
+          className="relative flex-1 overflow-y-auto p-2"
+        >
           {boxes.data ? (
             <ul className="flex flex-col">
               {boxes.data.map((mb) => (
@@ -115,7 +135,9 @@ function Folders({
         </nav>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section
+        className={`min-w-0 flex-col lg:flex lg:w-[26rem] lg:flex-none lg:border-r lg:border-line ${message ? "hidden" : "flex flex-1"}`}
+      >
         <div className="flex items-center gap-2 border-b border-line bg-bg px-4 py-2">
           {boxes.data && boxes.data.length > 0 ? (
             <Select
@@ -158,8 +180,22 @@ function Folders({
           boxes={boxes.data}
           current={current}
           named={mailbox}
+          open={message}
         />
       </section>
+
+      {message && current ? (
+        <Reader
+          config={config.id}
+          mailbox={current}
+          message={message}
+          key={message}
+        />
+      ) : (
+        <div className="hidden flex-1 items-center justify-center lg:flex">
+          <p className="text-sm text-faint">Choose a message to read it.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -169,11 +205,13 @@ function Body({
   boxes,
   current,
   named,
+  open,
 }: {
   config: EmailConfig;
   boxes: Mailbox[] | undefined;
   current: Mailbox | undefined;
   named: string | null;
+  open: string | null;
 }) {
   if (!boxes) return <Rows />;
   if (boxes.length === 0) {
@@ -206,7 +244,14 @@ function Body({
       </Centered>
     );
   }
-  return <MessageList config={config.id} mailbox={current} key={current.id} />;
+  return (
+    <MessageList
+      config={config.id}
+      mailbox={current}
+      open={open}
+      key={current.id}
+    />
+  );
 }
 
 function FolderLink({

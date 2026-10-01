@@ -3,6 +3,7 @@ package mirror
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -294,8 +295,10 @@ func TestAMailboxDeletedOnTheServerIsDroppedWithItsMessages(t *testing.T) {
 	}
 }
 
-// koi8-r and a Cyrillic mailbox name are an ordinary Russian account, not an edge case.
-func TestEncodedSubjectsAndMailboxNamesAreDecoded(t *testing.T) {
+// koi8-r and a Cyrillic mailbox name are an ordinary Russian account, not an edge case. The
+// server here decodes headers itself, so this proves the names round-trip and the subject lands;
+// reading a header a real server sends as written is tested in connect.
+func TestEncodedSubjectsAndMailboxNamesArrive(t *testing.T) {
 	w := newWorld(t, "hunter2")
 	w.create("Входящие/Отчёты")
 	w.deliver("INBOX", 1, "=?koi8-r?B?8NLJ18XU?= <ivan@example.ru>", "=?koi8-r?B?8NLJ18XU?=")
@@ -380,5 +383,79 @@ func eventually(t *testing.T, ok func() bool) {
 			t.Fatal("never happened")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestASyncReadsAPreviewFromTheFirstTextPart(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "Plain")
+	connecttest.Append(t, w.server, "INBOX", `From: bob@example.com
+Subject: Rich
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=b
+
+--b
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<p>Caf=C3=A9 tomorrow?</p>
+--b
+Content-Type: application/pdf
+Content-Disposition: attachment; filename=menu.pdf
+
+%PDF-
+--b--
+`, start.Add(2*time.Minute))
+	w.sync()
+
+	msgs := w.messages("INBOX")
+	if msgs[0].Preview != "Café tomorrow?" || !msgs[0].HasAttachments {
+		t.Errorf("rich preview = %q, attachments %v", msgs[0].Preview, msgs[0].HasAttachments)
+	}
+	if msgs[1].Preview != "Hello." {
+		t.Errorf("plain preview = %q", msgs[1].Preview)
+	}
+}
+
+func TestAMessageIsFetchedWholeAndStaysUnread(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "Open me")
+	w.sync()
+	inbox := w.mailbox("INBOX")
+
+	raw, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "Subject: Open me") || !strings.Contains(string(raw), "Hello.") {
+		t.Errorf("raw = %q", raw)
+	}
+	st, _ := w.server.Status("INBOX", &imap.StatusOptions{NumUnseen: true}).Wait()
+	if *st.NumUnseen != 1 {
+		t.Error("fetching the message marked it read on the server")
+	}
+
+	// The session is kept for the next one.
+	if _, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1); err != nil {
+		t.Errorf("a second fetch: %v", err)
+	}
+}
+
+func TestAMessageNoLongerOnTheServerIsGone(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "Soon gone")
+	w.sync()
+	inbox := w.mailbox("INBOX")
+
+	w.onServer(1, imap.StoreFlagsAdd, imap.FlagDeleted)
+	w.server.Expunge().Close()
+	if _, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity, 1); !errors.Is(err, ErrGone) {
+		t.Errorf("expunged = %v, want gone", err)
+	}
+	if _, err := w.mirror.Raw(context.Background(), w.target, "INBOX", inbox.UIDValidity+1, 1); !errors.Is(err, ErrGone) {
+		t.Errorf("another UIDVALIDITY = %v, want gone", err)
+	}
+	if _, err := w.mirror.Raw(context.Background(), w.target, "Nowhere", inbox.UIDValidity, 1); !errors.Is(err, ErrGone) {
+		t.Errorf("a mailbox the server does not have = %v, want gone", err)
 	}
 }

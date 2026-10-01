@@ -9,6 +9,7 @@ const getEmailConfigs = vi.fn();
 const getEmailConfigsByIdMailboxes = vi.fn();
 const getMessages = vi.fn();
 const postEmailConfigsByIdSync = vi.fn();
+const getMessage = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
@@ -20,6 +21,13 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     cursor: string,
   ) => getMessages(id, mailbox, cursor),
   postEmailConfigsByIdSync: (id: string) => postEmailConfigsByIdSync(id),
+  getEmailConfigsByIdMessagesByMessage: (
+    id: string,
+    message: string,
+    images: boolean,
+  ) => getMessage(id, message, images),
+  partURL: (id: string, message: string, index: number) =>
+    `/parts/${id}/${message}/${index}`,
 }));
 
 const work: EmailConfig = {
@@ -102,7 +110,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe("the mail view", () => {
   it("opens on the inbox and lists its messages", async () => {
-    mount(<Mail named="ec_1" mailbox={null} />);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const list = await screen.findByRole("list", { name: "Messages" });
     expect(getMessages).toHaveBeenCalledWith("ec_1", "mb_inbox", "");
     const rows = within(list).getAllByRole("listitem");
@@ -115,7 +123,7 @@ describe("the mail view", () => {
   });
 
   it("lists folders in the server's tree, with what is unread", async () => {
-    mount(<Mail named="ec_1" mailbox={null} />);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const nav = await screen.findByRole("navigation", { name: "Folders" });
     const links = await within(nav).findAllByRole("link");
     expect(links.map((l) => l.textContent)).toEqual([
@@ -128,7 +136,7 @@ describe("the mail view", () => {
   });
 
   it("opens another folder from the sidebar, and the address says which", async () => {
-    mount(<Mail named="ec_1" mailbox={null} />);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const nav = await screen.findByRole("navigation", { name: "Folders" });
     fireEvent.click(await within(nav).findByRole("link", { name: /Clients/ }));
     expect(window.location.pathname).toBe("/c/ec_1/mb_clients");
@@ -136,7 +144,7 @@ describe("the mail view", () => {
 
   // In mail somebody sent, the useful name is who it went to.
   it("shows who sent mail went to", async () => {
-    mount(<Mail named="ec_1" mailbox="mb_sent" />);
+    mount(<Mail named="ec_1" mailbox="mb_sent" message={null} />);
     await screen.findAllByText("To: Bob");
   });
 
@@ -147,7 +155,7 @@ describe("the mail view", () => {
           ? { messages: [message("m_1", "Newer")], next_cursor: "c1" }
           : { messages: [message("m_2", "Older")] },
     );
-    mount(<Mail named="ec_1" mailbox={null} />);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
     fireEvent.click(await screen.findByRole("button", { name: "Show older" }));
     await screen.findByText("Older");
     expect(getMessages).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "c1");
@@ -155,7 +163,7 @@ describe("the mail view", () => {
   });
 
   it("asks for a look now", async () => {
-    mount(<Mail named="ec_1" mailbox={null} />);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
     fireEvent.click(
       await screen.findByRole("button", { name: "Fetch new mail" }),
     );
@@ -173,7 +181,7 @@ describe("the mail view", () => {
           "imap.example.com:993 refused the username or password: no.",
       },
     ]);
-    mount(<Mail named="ec_1" mailbox={null} />);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const alert = await screen.findByRole("alert");
     within(alert).getByText(/refused the username or password/);
     expect(
@@ -186,12 +194,40 @@ describe("the mail view", () => {
   it("says it is still fetching before the first look has finished", async () => {
     getEmailConfigs.mockResolvedValue([{ ...work, synced_at: null }]);
     getEmailConfigsByIdMailboxes.mockResolvedValue([]);
-    mount(<Mail named="ec_1" mailbox={null} />);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
     await screen.findByText("Fetching folders from imap.example.com…");
   });
 
   it("says so when a folder in the address is not there", async () => {
-    mount(<Mail named="ec_1" mailbox="mb_gone" />);
+    mount(<Mail named="ec_1" mailbox="mb_gone" message={null} />);
     await screen.findByText("There is no such folder.");
+  });
+
+  it("opens a message from its row, and the address says which", async () => {
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
+    const list = await screen.findByRole("list", { name: "Messages" });
+    const link = within(list).getAllByRole("link")[1]!;
+    expect(link.getAttribute("href")).toBe("/c/ec_1/mb_inbox/m_2");
+    fireEvent.click(link);
+    expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_2");
+  });
+
+  it("shows the open message beside its list", async () => {
+    getMessage.mockResolvedValue({
+      ...message("m_2", "Lunch?"),
+      cc: [],
+      mailbox: "mb_inbox",
+      text: "Thursday at one?",
+      html: "",
+      remote_images: 0,
+      parts: [],
+    });
+    mount(<Mail named="ec_1" mailbox="mb_inbox" message="m_2" />);
+    const reader = await screen.findByRole("article", { name: "Message" });
+    await within(reader).findByText("Thursday at one?");
+    const list = screen.getByRole("list", { name: "Messages" });
+    expect(
+      within(list).getAllByRole("link")[1]!.getAttribute("aria-current"),
+    ).toBe("true");
   });
 });

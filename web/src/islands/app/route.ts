@@ -5,17 +5,24 @@ import { useMemo, useSyncExternalStore } from "react";
  * lands on the same thing.
  */
 export type Route =
-  | { page: "mail"; config: string | null; mailbox: string | null }
+  | {
+      page: "mail";
+      config: string | null;
+      mailbox: string | null;
+      message: string | null;
+    }
   | { page: "settings" }
   | { page: "new-config" }
   | { page: "edit-config"; id: string }
   | { page: "missing" };
 
 export const paths = {
-  mail: (config?: string, mailbox?: string) =>
-    config
-      ? `/c/${encodeURIComponent(config)}${mailbox ? `/${encodeURIComponent(mailbox)}` : ""}`
-      : "/",
+  mail: (config?: string, mailbox?: string, message?: string) =>
+    "/" +
+    ["c", config, mailbox, message]
+      .slice(0, config ? (mailbox ? (message ? 4 : 3) : 2) : 0)
+      .map((part) => encodeURIComponent(part!))
+      .join("/"),
   settings: "/settings",
   newConfig: "/settings/email-configs/new",
   editConfig: (id: string) =>
@@ -24,10 +31,16 @@ export const paths = {
 
 export function parse(path: string): Route {
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
-  const [first, second, third] = parts;
-  if (parts.length === 0) return { page: "mail", config: null, mailbox: null };
-  if (first === "c" && (parts.length === 2 || parts.length === 3))
-    return { page: "mail", config: second!, mailbox: third ?? null };
+  const [first, second, third, fourth] = parts;
+  if (parts.length === 0)
+    return { page: "mail", config: null, mailbox: null, message: null };
+  if (first === "c" && parts.length >= 2 && parts.length <= 4)
+    return {
+      page: "mail",
+      config: second!,
+      mailbox: third ?? null,
+      message: fourth ?? null,
+    };
   if (first === "settings" && parts.length === 1) return { page: "settings" };
   if (first === "settings" && second === "email-configs" && parts.length === 3)
     return third === "new"

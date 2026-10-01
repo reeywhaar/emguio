@@ -39,7 +39,7 @@ export function Header({ route }: { route: Route }) {
       {configs.data && configs.data.length > 0 ? (
         <Select
           aria-label="Email config"
-          className="min-h-8 min-w-0 max-w-64 py-1"
+          className="min-h-8 min-w-0 max-w-64 flex-1 py-1 sm:flex-none"
           value={current?.id ?? ""}
           onChange={(e) => go(paths.mail(e.target.value))}
         >
@@ -60,16 +60,24 @@ export function Header({ route }: { route: Route }) {
           <Dummy className="h-4 w-20" />
         )}
       </span>
-      <Link href={paths.settings} className={buttonLook("quiet", "bar")}>
+      <Link
+        href={paths.settings}
+        className={`${buttonLook("quiet", "bar")} shrink-0 whitespace-nowrap`}
+      >
         Settings
       </Link>
-      <Button
-        size="bar"
-        disabled={signOut.isPending}
-        onClick={() => signOut.mutate()}
-      >
-        Sign out
-      </Button>
+      {/* On a phone the switcher needs the room more, and Settings has a way out of its own.
+          Hidden on a wrapper, because a button's own display would win over hidden. */}
+      <span className="hidden shrink-0 sm:inline-flex">
+        <Button
+          size="bar"
+          className="whitespace-nowrap"
+          disabled={signOut.isPending}
+          onClick={() => signOut.mutate()}
+        >
+          Sign out
+        </Button>
+      </span>
     </header>
   );
 }

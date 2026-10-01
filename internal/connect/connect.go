@@ -90,6 +90,16 @@ func failed(ctx context.Context, s Server, f *Failure) *Failure {
 	return f
 }
 
+// DialContext opens a TCP connection that has passed the screen, for anything else that reaches
+// a host a message named — an image the image proxy fetches.
+func (c *Connector) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	d := net.Dialer{Timeout: c.timeout, ControlContext: c.screen}
+	return d.DialContext(ctx, network, address)
+}
+
+// Roots is the pool certificates are checked against, nil for the system's.
+func (c *Connector) Roots() *x509.CertPool { return c.roots }
+
 func (c *Connector) tlsConfig(host string) *tls.Config {
 	return &tls.Config{ServerName: host, RootCAs: c.roots, MinVersion: tls.VersionTLS12}
 }

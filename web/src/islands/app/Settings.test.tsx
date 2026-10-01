@@ -9,6 +9,11 @@ const getEmailConfigs = vi.fn();
 const deleteEmailConfigsById = vi.fn();
 const postEmailConfigsByIdTest = vi.fn();
 
+vi.mock("@app/api/actions/auth", () => ({
+  getAuthMe: async () => ({ id: "u_1", username: "misha", created_at: 0 }),
+  postAuthLogout: async () => undefined,
+}));
+vi.mock("@app/leave", () => ({ leaveFor: vi.fn() }));
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
   deleteEmailConfigsById: (id: string) => deleteEmailConfigsById(id),
@@ -34,7 +39,9 @@ const work: EmailConfig = {
   sync_error: "",
 };
 
-beforeEach(() => getEmailConfigs.mockResolvedValue([work]));
+beforeEach(() => {
+  getEmailConfigs.mockResolvedValue([work]);
+});
 afterEach(() => vi.clearAllMocks());
 
 describe("settings", () => {
@@ -44,6 +51,13 @@ describe("settings", () => {
     screen.getByText("misha@example.com");
     screen.getByText("IMAP · imap.example.com:993 · TLS");
     screen.getByText("None");
+  });
+
+  // On a phone the header has no room for it, so this is where signing out is.
+  it("says who is signed in and offers a way out", async () => {
+    mount(<Settings />);
+    await screen.findByText("misha");
+    screen.getByRole("button", { name: "Sign out" });
   });
 
   it("says there are none rather than showing an empty list", async () => {

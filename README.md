@@ -8,7 +8,7 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 - **Email configs belong to the user.** Added in Settings rather than in a config file, and never
   mixed: one is shown at a time.
 
-Early: users add their email configs and test them against their servers. Mail is not read yet.
+Early, and read-only: users add their email configs and read their mail — folders, lists, messages with their attachments, HTML shown safely and remote images held back until asked for. Nothing emguio does changes anything on the server; replying and sending come later.
 
 ## Run it
 
@@ -36,5 +36,6 @@ docker logs emguio
 ```
 
 More users with `docker exec emguio emguio invite`. The environment, the image and running from a
-checkout are in [docs/deploy.md](docs/deploy.md); how the code is written is in
+checkout are in [docs/deploy.md](docs/deploy.md); how mail is read is in
+[docs/reading.md](docs/reading.md); how the code is written is in
 [docs/conventions.md](docs/conventions.md).

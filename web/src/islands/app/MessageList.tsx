@@ -9,15 +9,20 @@ import { Button } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Paperclip, Star } from "@app/components/icons";
 import { full, when } from "@app/format";
+import { Link } from "@app/islands/app/Link";
 import { counterpart } from "@app/islands/app/mailbox";
+import { paths } from "@app/islands/app/route";
 
 /** One folder's messages, newest to arrive first, reaching further back as it is scrolled. */
 export function MessageList({
   config,
   mailbox,
+  open,
 }: {
   config: string;
   mailbox: Mailbox;
+  /** The message open beside the list, if any. */
+  open: string | null;
 }) {
   const pages = useInfiniteQuery({
     queryKey: qk.messages(config, mailbox.id),
@@ -68,10 +73,19 @@ export function MessageList({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    // relative, so what is absolutely positioned inside the list — the words only a screen
+    // reader hears — is placed in the list rather than down the page, where it stretched the
+    // window past the bottom of the screen.
+    <div className="relative min-h-0 flex-1 overflow-y-auto">
       <ul aria-label="Messages">
         {messages.map((m) => (
-          <Row key={m.id} mailbox={mailbox} message={m} />
+          <Row
+            key={m.id}
+            config={config}
+            mailbox={mailbox}
+            message={m}
+            open={m.id === open}
+          />
         ))}
       </ul>
       <div ref={end} className="flex justify-center p-3">
@@ -89,43 +103,61 @@ export function MessageList({
   );
 }
 
-function Row({ mailbox, message: m }: { mailbox: Mailbox; message: Message }) {
+function Row({
+  config,
+  mailbox,
+  message: m,
+  open,
+}: {
+  config: string;
+  mailbox: Mailbox;
+  message: Message;
+  open: boolean;
+}) {
   const unread = !m.seen;
   return (
-    <li className="flex items-start gap-3 border-b border-line bg-bg px-4 py-2.5">
-      <span
-        aria-hidden="true"
-        className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : ""}`}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          {unread ? <span className="sr-only">Unread.</span> : null}
-          <span
-            className={`min-w-0 flex-1 truncate text-sm ${unread ? "font-semibold" : ""}`}
+    <li className="border-b border-line">
+      <Link
+        href={paths.mail(config, mailbox.id, m.id)}
+        aria-current={open ? "true" : undefined}
+        className={`flex items-start gap-3 px-4 py-2.5 ${open ? "bg-shade" : "bg-bg hover:bg-fill"}`}
+      >
+        <span
+          aria-hidden="true"
+          className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : ""}`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            {unread ? <span className="sr-only">Unread.</span> : null}
+            <span
+              className={`min-w-0 flex-1 truncate text-sm ${unread ? "font-semibold" : ""}`}
+            >
+              {counterpart(mailbox, m)}
+            </span>
+            {m.has_attachments ? (
+              <Paperclip className="shrink-0 self-center text-muted" />
+            ) : null}
+            {m.flagged ? (
+              <Star className="shrink-0 self-center text-warn" />
+            ) : null}
+            <time
+              dateTime={new Date(m.date * 1000).toISOString()}
+              title={full(m.date)}
+              className="shrink-0 text-xs text-muted"
+            >
+              {when(m.date)}
+            </time>
+          </div>
+          <p
+            className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}
           >
-            {counterpart(mailbox, m)}
-          </span>
-          {m.has_attachments ? (
-            <Paperclip className="shrink-0 self-center text-muted" />
+            {m.subject || "(no subject)"}
+          </p>
+          {m.preview ? (
+            <p className="truncate text-sm text-faint">{m.preview}</p>
           ) : null}
-          {m.flagged ? (
-            <Star className="shrink-0 self-center text-warn" />
-          ) : null}
-          <time
-            dateTime={new Date(m.date * 1000).toISOString()}
-            title={full(m.date)}
-            className="shrink-0 text-xs text-muted"
-          >
-            {when(m.date)}
-          </time>
         </div>
-        <p className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}>
-          {m.subject || "(no subject)"}
-        </p>
-        {m.preview ? (
-          <p className="truncate text-sm text-faint">{m.preview}</p>
-        ) : null}
-      </div>
+      </Link>
     </li>
   );
 }

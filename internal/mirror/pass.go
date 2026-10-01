@@ -3,6 +3,7 @@ package mirror
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 
+	"emguio/internal/message"
 	"emguio/internal/store"
 )
 
@@ -289,7 +291,121 @@ func (s *session) fetch(uids []uint32) ([]store.Header, error) {
 	for _, msg := range msgs {
 		out = append(out, header(msg))
 	}
+	s.previews(msgs, out)
 	return out, nil
+}
+
+// previewBytes is how much of a text part a preview is read from: a line of text and room for
+// the markup an HTML part wraps it in.
+const previewBytes = 2048
+
+// textPart is where a message's preview is read from.
+type textPart struct {
+	section  []int
+	encoding string
+	charset  string
+	html     bool
+}
+
+// previewPart is the first plain text part outside an attachment, or failing that the first
+// HTML one.
+func previewPart(bs imap.BodyStructure) (textPart, bool) {
+	var plain, rich *textPart
+	if bs == nil {
+		return textPart{}, false
+	}
+	bs.Walk(func(path []int, part imap.BodyStructure) bool {
+		single, ok := part.(*imap.BodyStructureSinglePart)
+		if !ok {
+			return true
+		}
+		if d := single.Disposition(); d != nil && strings.EqualFold(d.Value, "attachment") {
+			return false
+		}
+		found := &textPart{section: append([]int(nil), path...), encoding: single.Encoding, charset: param(single.Params, "charset")}
+		switch single.MediaType() {
+		case "text/plain":
+			if plain == nil {
+				plain = found
+			}
+		case "text/html":
+			if rich == nil {
+				found.html = true
+				rich = found
+			}
+		case "message/rfc822":
+			// A forwarded message's text is the forwarded message's, not this one's.
+			return false
+		}
+		return true
+	})
+	switch {
+	case plain != nil:
+		return *plain, true
+	case rich != nil:
+		return *rich, true
+	}
+	return textPart{}, false
+}
+
+// previews fills in what each header's list row shows under its subject. A FETCH per distinct
+// part rather than per message: in a batch most messages keep their text in the same place.
+//
+// Best effort. A preview that cannot be read is an empty line in a list, not a failed sync.
+func (s *session) previews(msgs []*imapclient.FetchMessageBuffer, headers []store.Header) {
+	type group struct {
+		part textPart
+		uids imap.UIDSet
+	}
+	groups := map[string]*group{}
+	parts := map[uint32]textPart{}
+	for _, msg := range msgs {
+		part, ok := previewPart(msg.BodyStructure)
+		if !ok {
+			continue
+		}
+		parts[uint32(msg.UID)] = part
+		key := fmt.Sprint(part.section)
+		if groups[key] == nil {
+			groups[key] = &group{part: part}
+		}
+		groups[key].uids.AddNum(msg.UID)
+	}
+	found := map[uint32]string{}
+	for _, g := range groups {
+		section := &imap.FetchItemBodySection{
+			Part:    g.part.section,
+			Partial: &imap.SectionPartial{Offset: 0, Size: previewBytes},
+			Peek:    true,
+		}
+		got, err := s.client.Fetch(g.uids, &imap.FetchOptions{
+			UID:         true,
+			BodySection: []*imap.FetchItemBodySection{section},
+		}).Collect()
+		if err != nil {
+			s.m.log.Warn("mirror could not read previews", "email_config", s.target.ID, "err", err)
+			continue
+		}
+		for _, msg := range got {
+			if len(msg.BodySection) == 0 {
+				continue
+			}
+			part := parts[uint32(msg.UID)]
+			found[uint32(msg.UID)] = message.SectionPreview(msg.BodySection[0].Bytes, part.encoding, part.charset, part.html)
+		}
+	}
+	for i := range headers {
+		headers[i].Preview = found[headers[i].UID]
+	}
+}
+
+func param(params map[string]string, key string) string {
+	for k, v := range params {
+		if strings.EqualFold(k, key) {
+			return v
+		}
+	}
+	return ""
 }
 
 // unselect closes the mailbox, so the next STATUS is never about the one open: servers are

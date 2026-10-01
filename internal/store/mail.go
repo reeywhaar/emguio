@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -97,13 +98,14 @@ type Header struct {
 	MessageID      string
 	InReplyTo      string
 	HasAttachments bool
+	// Preview is the start of the text, on one line, empty until something has read it.
+	Preview string
 }
 
 // Message is a stored message, named by its own id.
 type Message struct {
 	ID string
 	Header
-	Preview string
 }
 
 // SyncTarget is an email config as the mirror sees it: whose it is, and when it last changed.
@@ -339,8 +341,8 @@ func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Hea
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT INTO messages (id, mailbox_id, uid, internal_date, date, size, seen, flagged, answered, draft,
-		   subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (mailbox_id, uid) DO UPDATE SET
 		   seen = excluded.seen, flagged = excluded.flagged, answered = excluded.answered, draft = excluded.draft`)
 	if err != nil {
@@ -358,7 +360,7 @@ func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Hea
 		if _, err := stmt.ExecContext(ctx,
 			ids.New(ids.Message, now.UnixMilli()), mailboxID, h.UID, unix(h.InternalDate), date, h.Size,
 			h.Flags.Seen, h.Flags.Flagged, h.Flags.Answered, h.Flags.Draft,
-			h.Subject, h.From.Name, h.From.Email, string(to), string(cc), h.MessageID, h.InReplyTo, h.HasAttachments); err != nil {
+			h.Subject, h.From.Name, h.From.Email, string(to), string(cc), h.MessageID, h.InReplyTo, h.HasAttachments, h.Preview); err != nil {
 			return fmt.Errorf("put messages: %w", err)
 		}
 	}
@@ -554,4 +556,94 @@ func SortMailboxes(list []*Mailbox) {
 			return strings.Compare(strings.ToLower(x), strings.ToLower(y))
 		})
 	})
+}
+
+// Opened is a message somebody asked to read: the message, and where it is on the server.
+type Opened struct {
+	Message
+	MailboxID   string
+	MailboxName string
+	SpecialUse  string
+	UIDValidity uint32
+}
+
+// OpenMessage finds one of a user's messages under one of their email configs.
+func (s *Store) OpenMessage(ctx context.Context, userID, configID, messageID string) (*Opened, error) {
+	if _, err := s.emailConfigRow(ctx, userID, configID); err != nil {
+		return nil, err
+	}
+	if !ids.Valid(ids.Message, messageID) {
+		return nil, Invalid("%q is not a message id.", messageID)
+	}
+	var (
+		o        Opened
+		internal int64
+		date     sql.NullInt64
+		to, cc   string
+	)
+	err := s.reader.QueryRowContext(ctx,
+		`SELECT m.id, m.uid, m.internal_date, m.date, m.size, m.seen, m.flagged, m.answered, m.draft,
+		        m.subject, m.from_name, m.from_email, m.to_json, m.cc_json, m.message_id, m.in_reply_to,
+		        m.has_attachments, m.preview, b.id, b.name, b.special_use, b.uidvalidity
+		   FROM messages m JOIN mailboxes b ON b.id = m.mailbox_id
+		  WHERE m.id = ? AND b.email_config_id = ?`, messageID, configID).
+		Scan(&o.ID, &o.UID, &internal, &date, &o.Size,
+			&o.Flags.Seen, &o.Flags.Flagged, &o.Flags.Answered, &o.Flags.Draft,
+			&o.Subject, &o.From.Name, &o.From.Email, &to, &cc, &o.MessageID, &o.InReplyTo,
+			&o.HasAttachments, &o.Preview, &o.MailboxID, &o.MailboxName, &o.SpecialUse, &o.UIDValidity)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, NotFound("There is no such message.")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open message: %w", err)
+	}
+	o.InternalDate = fromUnix(internal)
+	if date.Valid {
+		d := fromUnix(date.Int64)
+		o.Date = &d
+	}
+	json.Unmarshal([]byte(to), &o.To)
+	json.Unmarshal([]byte(cc), &o.Cc)
+	return &o, nil
+}
+
+// Body is a message as the server sent it, when it has been kept.
+func (s *Store) Body(ctx context.Context, messageID string) ([]byte, bool, error) {
+	var raw []byte
+	err := s.reader.QueryRowContext(ctx, `SELECT raw FROM message_bodies WHERE message_id = ?`, messageID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("body: %w", err)
+	}
+	return raw, true, nil
+}
+
+// PutBody keeps a message as the server sent it, with the preview it gives the list.
+func (s *Store) PutBody(ctx context.Context, messageID string, raw []byte, preview string) error {
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("put body: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO message_bodies (message_id, raw, fetched_at) VALUES (?, ?, ?)
+		 ON CONFLICT (message_id) DO UPDATE SET raw = excluded.raw, fetched_at = excluded.fetched_at`,
+		messageID, raw, unix(s.Now())); err != nil {
+		return fmt.Errorf("put body: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET preview = ? WHERE id = ?`, preview, messageID); err != nil {
+		return fmt.Errorf("put body: %w", err)
+	}
+	return tx.Commit()
+}
+
+// SetPreview replaces a message's preview, when reading it gives a better one than it has.
+func (s *Store) SetPreview(ctx context.Context, messageID, preview string) error {
+	_, err := s.writer.ExecContext(ctx, `UPDATE messages SET preview = ? WHERE id = ?`, preview, messageID)
+	if err != nil {
+		return fmt.Errorf("set preview: %w", err)
+	}
+	return nil
 }

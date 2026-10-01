@@ -22,6 +22,7 @@ var all = []Migration{
 	initialSchema,
 	emailConfigs,
 	mailboxes,
+	bodies,
 }
 
 // exec runs a statement block as one migration.

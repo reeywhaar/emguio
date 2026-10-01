@@ -53,3 +53,10 @@ export function ago(unix: number, now = new Date()): string {
   }
   return words.format(seconds, "second");
 }
+
+/** A size in the unit that keeps it short. */
+export function size(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

@@ -39,10 +39,14 @@ type Server struct {
 	connector *connect.Connector
 	// mirror is nil in tests that do not need mail to arrive.
 	mirror Mirror
+	// imageClient fetches what the image proxy relays, and proxyKey signs what it may fetch.
+	imageClient *http.Client
+	proxyKey    []byte
 
 	loginAll  *limiter
 	loginUser *limiter
 	tests     *limiter
+	images    *limiter
 
 	// writeDeadline is how long a request that changes something may run. A field so a test
 	// can make it short.
@@ -68,13 +72,17 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 
 		connector: connect.New(cfg.AllowNetworks),
 		mirror:    mirror,
+		proxyKey:  proxyKey(cfg.SecretKey),
 
 		loginAll:  newLimiter(30, 2*time.Second),
 		loginUser: newLimiter(5, 20*time.Second),
 		tests:     newLimiter(10, 6*time.Second),
+		images:    newLimiter(200, 100*time.Millisecond),
 
 		writeDeadline: WriteDeadline,
 	}
+
+	s.imageClient = imageClient(s.connector)
 
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 
@@ -95,6 +103,10 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 	s.mux.Handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
+
+	s.mux.Handle("GET /api/email-configs/{id}/messages/{message}", s.requireSession(s.readMessage))
+	s.mux.Handle("GET /api/email-configs/{id}/messages/{message}/parts/{index}", s.requireSession(s.readPart))
+	s.mux.Handle("GET /api/proxy", s.requireSession(s.proxyImage))
 
 	s.mux.Handle("GET /api/events", s.requireSession(s.events))
 

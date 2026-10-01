@@ -13,9 +13,9 @@ export function App() {
   const route = useRoute();
   useLive();
   // The height of the window and no more: the mail view scrolls its own list, and every other
-  // page scrolls inside the space under the header.
+  // page scrolls inside the space under the header. The window itself never scrolls.
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="relative flex h-dvh flex-col overflow-hidden">
       <Header route={route} />
       <Boundary what="This page" key={route.page}>
         <Page route={route} />
@@ -27,7 +27,13 @@ export function App() {
 function Page({ route }: { route: Route }) {
   switch (route.page) {
     case "mail":
-      return <Mail named={route.config} mailbox={route.mailbox} />;
+      return (
+        <Mail
+          named={route.config}
+          mailbox={route.mailbox}
+          message={route.message}
+        />
+      );
     case "settings":
       return (
         <Scroll>
@@ -61,5 +67,7 @@ function Page({ route }: { route: Route }) {
 }
 
 function Scroll({ children }: { children: ReactNode }) {
-  return <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>;
+  return (
+    <div className="relative min-h-0 flex-1 overflow-y-auto">{children}</div>
+  );
 }

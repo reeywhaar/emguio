@@ -91,3 +91,25 @@ export type Message = {
 };
 
 export type MessagePage = { messages: Message[]; next_cursor?: string };
+
+/** A part of a message that is not its text. */
+export type Part = {
+  index: number;
+  name: string;
+  type: string;
+  size: number;
+  /** False for an image the HTML shows in place. */
+  listed: boolean;
+};
+
+/** A message whole, for the reading pane. */
+export type ReadMessage = Message & {
+  cc: Address[];
+  mailbox: string;
+  text: string;
+  /** Sanitized, and still a stranger's: shown only in a sandboxed frame. Empty for none. */
+  html: string;
+  /** How many images the HTML asks for from elsewhere, blocked unless asked for. */
+  remote_images: number;
+  parts: Part[];
+};

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ago, when } from "@app/format";
+import { ago, size, when } from "@app/format";
 
 const now = new Date(2026, 9, 1, 15, 30);
 const unix = (d: Date) => d.getTime() / 1000;
@@ -18,5 +18,13 @@ describe("how long ago", () => {
     expect(ago(unix(now) - 10, now)).toBe("just now");
     expect(ago(unix(now) - 5 * 60, now)).toMatch(/5 minutes ago/);
     expect(ago(unix(now) - 3 * 3600, now)).toMatch(/3 hours ago/);
+  });
+});
+
+describe("a size", () => {
+  it("is in the unit that keeps it short", () => {
+    expect(size(512)).toBe("512 B");
+    expect(size(12_800)).toBe("13 KB");
+    expect(size(5_400_000)).toBe("5.1 MB");
   });
 });

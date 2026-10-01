@@ -4,6 +4,7 @@ import type {
   EmailConfigDraft,
   Mailbox,
   MessagePage,
+  ReadMessage,
   TestResult,
 } from "@app/api/types";
 
@@ -58,3 +59,16 @@ export const getEmailConfigsByIdMailboxesByMailboxMessages = (
   request<MessagePage>(
     `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages${query({ cursor })}`,
   );
+
+export const getEmailConfigsByIdMessagesByMessage = (
+  id: string,
+  message: string,
+  images: boolean,
+) =>
+  request<ReadMessage>(
+    `/api/email-configs/${encodeURIComponent(id)}/messages/${encodeURIComponent(message)}${query({ images: images ? 1 : undefined })}`,
+  );
+
+/** Where a part of a message is downloaded from. */
+export const partURL = (id: string, message: string, index: number) =>
+  `/api/email-configs/${encodeURIComponent(id)}/messages/${encodeURIComponent(message)}/parts/${index}`;
