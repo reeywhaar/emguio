@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 /**
  * Where a message's HTML is shown: a frame that runs no script and loads nothing from elsewhere.
@@ -18,14 +18,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const policy = (origin: string) =>
   `default-src 'none'; img-src 'self' ${origin} data:; style-src 'unsafe-inline'; font-src data:`;
 
-// The frame never scrolls: the reading pane around it does, and two scrollbars on one message
-// is one too many. Its height is the content's, measured.
+// The frame fills the space under the headers, edge to edge, and scrolls itself: a mail lays
+// itself out to fill a page. Taller than its space and left to the pane to scroll, it could not
+// be scrolled on a phone, because Mobile Safari does not hand a touch on a frame to the pane
+// around it.
 const frame = (html: string) =>
   `<!doctype html><html><head><meta charset="utf-8">` +
   `<meta http-equiv="Content-Security-Policy" content="${policy(window.location.origin)}">` +
   `<base target="_blank">` +
-  `<style>html{color-scheme:light;overflow:hidden}` +
-  `body{margin:0;padding:16px;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +
+  `<style>html{color-scheme:light;overflow-x:hidden;overflow-y:auto}` +
+  `body{margin:0;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +
   `overflow-wrap:anywhere;width:fit-content;min-width:100%;box-sizing:border-box}` +
   `img{max-width:100%;height:auto}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
 
@@ -38,32 +40,26 @@ export function Frame({ html, images }: { html: string; images: boolean }) {
   const shown = useRef(images);
   shown.current = images;
   const watch = useRef<ResizeObserver | null>(null);
-  const [height, setHeight] = useState(240);
 
   /*
-   * Fits the message to the frame. Mail is laid out for a fixed width — a 600px table is the
-   * norm — and browsers will not shrink a table below the width it states, so one wider than the
-   * frame is zoomed out until it fits, the way a phone's mail app does, rather than cut off or
-   * scrolled sideways. Then the frame takes the height of what it now holds.
+   * Fits the message to the frame's width. Mail is laid out for a fixed width — a 600px table is
+   * the norm — and browsers will not shrink a table below the width it states, so one wider than
+   * the frame is zoomed out until it fits, the way a phone's mail app does, rather than cut off
+   * or scrolled sideways.
    */
   const fit = useCallback(() => {
-    const el = ref.current;
-    const doc = el?.contentDocument;
-    if (!el || !doc?.body) return;
+    const doc = ref.current?.contentDocument;
+    if (!doc?.body) return;
     const root = doc.documentElement;
     root.style.zoom = "";
     const natural = doc.body.scrollWidth;
-    const room = el.clientWidth;
-    const zoom = natural > room && room > 0 ? room / natural : 1;
-    if (zoom < 1) root.style.zoom = String(zoom);
-    // Plus the frame's own border, which the height it is given includes.
-    const border = el.offsetHeight - el.clientHeight;
-    setHeight(Math.ceil(doc.body.getBoundingClientRect().height) + border);
+    const room = root.clientWidth;
+    if (natural > room && room > 0) root.style.zoom = String(room / natural);
   }, []);
 
-  // Images arrive after the frame says it has loaded, and the pane can narrow when its own
-  // scrollbar appears: either changes the height, so the content is watched rather than
-  // measured once.
+  // Images arrive after the frame says it has loaded and can widen what they sit in, and the
+  // pane can change width: either can need another fit, so the content is watched rather than
+  // fitted once.
   const loaded = useCallback(() => {
     const doc = ref.current?.contentDocument;
     if (!doc?.body) return;
@@ -92,9 +88,9 @@ export function Frame({ html, images }: { html: string; images: boolean }) {
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       srcDoc={frame(html)}
       onLoad={loaded}
-      scrolling="no"
-      style={{ height }}
-      className="block w-full overflow-hidden rounded-md border border-line bg-white"
+      // A pixel wide with the pane's width as its minimum: Mobile Safari sizes an iframe to its
+      // content and ignores a width it is given, but honors a minimum.
+      className="block min-h-64 w-px min-w-full flex-1 border-0 bg-white"
     />
   );
 }

@@ -47,7 +47,7 @@ export function Reader({
       aria-label="Message"
       className="relative flex min-w-0 flex-1 flex-col overflow-y-auto bg-bg"
     >
-      <div className="flex flex-col gap-2 border-b border-line px-4 py-4 sm:px-6">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-line px-4 py-4">
         <Actions
           config={config}
           mailbox={mailbox}
@@ -105,7 +105,7 @@ export function Reader({
             parts={m.parts}
           />
           {m.held_images > 0 && !images ? (
-            <div className="flex flex-wrap items-center gap-3 border-b border-line bg-fill px-4 py-2 text-sm sm:px-6">
+            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-fill px-4 py-2 text-sm">
               <span className="text-muted">
                 {m.held_images === 1
                   ? "1 image from the internet is not shown."
@@ -116,15 +116,13 @@ export function Reader({
               </Button>
             </div>
           ) : null}
-          <div className="px-4 py-4 sm:px-6">
-            {m.html ? (
-              <Frame html={m.html} images={images} />
-            ) : (
-              <pre className="font-sans text-sm whitespace-pre-wrap break-words">
-                {m.text}
-              </pre>
-            )}
-          </div>
+          {m.html ? (
+            <Frame html={m.html} images={images} />
+          ) : (
+            <pre className="shrink-0 px-4 py-4 font-sans text-sm whitespace-pre-wrap break-words">
+              {m.text}
+            </pre>
+          )}
         </>
       ) : null}
     </article>
@@ -162,7 +160,7 @@ function Attachments({
   return (
     <ul
       aria-label="Attachments"
-      className="flex flex-wrap gap-2 border-b border-line px-4 py-3 sm:px-6"
+      className="flex shrink-0 flex-wrap gap-2 border-b border-line px-4 py-3"
     >
       {listed.map((p) => (
         <li key={p.section}>

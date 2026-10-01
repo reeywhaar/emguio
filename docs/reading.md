@@ -176,10 +176,16 @@ The second is the browser: the HTML is shown only in an `<iframe sandbox>` witho
 alone stops a script; both are kept because the first is code that can have a bug and the
 second is a browser that can be old.
 
-The frame never scrolls; the reading pane around it does. Its height is its content's, watched
-as images arrive and as the pane changes width. Mail laid out wider than the frame — a 600px
-table is the norm — is zoomed out until it fits, rather than cut off or scrolled sideways. It is
-always on white: mail is written for a white page.
+The frame fills the space under the headers, edge to edge with no margin of its own, and scrolls
+itself while the headers stay above it: mail lays itself out to fill a page. A frame as tall as
+its content, left to the pane to scroll, cannot be scrolled on a phone, because Mobile Safari does
+not hand a touch on a frame to the pane around it. For the same browser its width is a minimum
+over one pixel rather than a width: Mobile Safari sizes an iframe to its content and ignores a
+width it is given, but honors a minimum.
+
+Mail laid out wider than the frame — a 600px table is the norm — is zoomed out until it fits,
+rather than cut off or scrolled sideways, and fitted again as images arrive and the pane changes
+width. It is always on white: mail is written for a white page.
 
 Without `<style>` sheets a newsletter that depends on them looks plainer than it should. Allowing
 them safely means rewriting their `url()`s too, and that is not done.
