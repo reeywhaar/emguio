@@ -1,0 +1,19 @@
+# Plans, scratch scripts, local secrets — mine, not the repository's.
+private
+
+node_modules
+
+# The built bundle. emguio reads it from disk at startup rather than embedding it, so a clone
+# with no dist/ compiles and runs — it serves the placeholder page until Node has run once.
+web/dist
+
+# A local instance's database, and the WAL sidecars beside it.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# A local build without -o.
+/emguio
+
+.DS_Store

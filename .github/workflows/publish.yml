@@ -1,0 +1,205 @@
+name: publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer commit on main should win the race for `latest` rather than queue behind an older
+# one that would overwrite it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/reeywhaar/emguio
+
+jobs:
+  # Publishing `latest` unconditionally means a broken commit becomes the image everyone
+  # pulls. This gate is the whole reason a push trigger is safe.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # Deliberately with no frontend build present: the bundle is read at startup, so a
+      # missing one is the placeholder rather than a compile error.
+      - name: Test the backend
+        run: go test ./...
+
+      - name: Set up Node
+        # `current` rather than a pinned major: the image pins node:26 because a build that
+        # ships has to be reproducible, and this job only checks.
+        uses: actions/setup-node@v7
+        with:
+          node-version: current
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Check formatting
+        run: npm run format:check
+        working-directory: web
+
+      - name: Lint
+        run: npm run lint
+        working-directory: web
+
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: web
+
+      - name: Test the frontend
+        run: npm test
+        working-directory: web
+
+      - name: Build the bundle
+        run: npm run build
+        working-directory: web
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # latest is what a `docker run` with no tag gets, and is a pin to nothing. v1 is this
+          # line of the software, fixes included — what a deployment pins to.
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:v1
+          build-args: VERSION=${{ github.sha }}
+          # Keeps the package listing to one real platform instead of an unknown/unknown
+          # entry beside it.
+          provenance: false
+
+      # Steps on publish rather than a job of their own: a fresh GHCR package is private, so
+      # a separate job would have to sign in again to pull the image it just pushed.
+      - name: Smoke-test the image
+        # By digest: exactly what this run pushed, which a tag that moves cannot promise.
+        env:
+          REF: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -eu
+          docker pull "$REF"
+          docker run --rm "$REF" version
+          # A volume, because the server never creates /data: without one it exits at start.
+          docker run -d --name emguio-smoke -p 8080:80 -v emguio-smoke:/data \
+            -e EMGUIO_PUBLIC_URL=http://localhost:8080 \
+            -e EMGUIO_SECRET_KEY="$(openssl rand -base64 32)" "$REF"
+          # The container's own logs, however this ends: a failure without them is a guess.
+          trap 'docker logs emguio-smoke; docker rm -f emguio-smoke >/dev/null' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/healthz | grep -q '"ok":true'
+          # A mistyped API path must answer JSON, or a fetch receives HTML it cannot parse.
+          curl -sS http://localhost:8080/api/nope | grep -q '"ok":false'
+          # Each shell carries the root div rather than the "has not been built" placeholder,
+          # which is the failure that otherwise reaches users looking like a successful publish.
+          curl -fsS http://localhost:8080/login | grep -q 'id="root"'
+          # The application is only served signed in. An empty database prints an invitation,
+          # and accepting it is the way in.
+          token=$(docker logs emguio-smoke 2>&1 | grep -o '/invite/[A-Za-z0-9_-]*' | head -1 | cut -d/ -f3)
+          test -n "$token"
+          curl -fsS -c jar -H 'Content-Type: application/json' \
+            -d '{"username":"smoke","password":"a smoke-test password"}' \
+            "http://localhost:8080/api/auth/invites/$token/accept"
+          curl -fsS -b jar http://localhost:8080/ | grep -q 'id="root"'
+          # An email config saves and lists, which is the key and the sealing working together.
+          curl -fsS -b jar -H 'Content-Type: application/json' \
+            -d '{"name":"","email":"smoke@example.com","incoming":{"protocol":"imap","host":"imap.example.com","port":993,"tls":"implicit","username":"smoke","password":"a password"},"outgoing":null}' \
+            http://localhost:8080/api/email-configs | grep -q '"id":"ec_'
+          curl -fsS -b jar http://localhost:8080/api/email-configs | grep -q 'imap.example.com'
+
+  # A job of its own rather than steps on `publish`, because a failing `test` *skips*
+  # `publish` rather than failing it, and a step in a job that never starts cannot report
+  # that it never started. This one runs either way and reads the results off `needs`.
+  notify:
+    needs: [test, publish]
+    # Not always(): cancel-in-progress means a newer push kills the run in flight, and being
+    # told that a commit you just superseded was cancelled is noise.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+
+    # The secrets context is not available to `if`, so the presence check goes through env.
+    # Without this, a repo that has not set the secrets yet gets a red run on every push —
+    # a broken notifier should not look like a broken build.
+    env:
+      NOTIFIO_HOST: ${{ secrets.NOTIFIO_HOST }}
+      NOTIFIO_TOKEN: ${{ secrets.NOTIFIO_TOKEN }}
+      CONFIGURED: ${{ secrets.NOTIFIO_HOST != '' && secrets.NOTIFIO_TOKEN != '' }}
+
+    steps:
+      - name: Notify on success
+        if: ${{ env.CONFIGURED == 'true' && needs.publish.result == 'success' }}
+        uses: reeywhaar/notifio/ghactions/notify@main
+        with:
+          host: ${{ env.NOTIFIO_HOST }}
+          token: ${{ env.NOTIFIO_TOKEN }}
+          subject: "${{ github.repository }} published"
+          body-type: md
+          body: |
+            📬 Published `${{ env.IMAGE }}:latest`
+
+            - by ${{ github.actor }}
+            - [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+
+      - name: Notify on failure
+        if: ${{ env.CONFIGURED == 'true' && needs.publish.result != 'success' }}
+        uses: reeywhaar/notifio/ghactions/notify@main
+        with:
+          host: ${{ env.NOTIFIO_HOST }}
+          token: ${{ env.NOTIFIO_TOKEN }}
+          # Which half broke is the first thing worth knowing: a failing test means the
+          # commit is bad, a failing publish means the commit is fine and the build is not.
+          subject: "${{ github.repository }} ${{ needs.test.result != 'success' && 'tests failed' || 'publish failed' }}"
+          body-type: md
+          body: |
+            ❌ ${{ needs.test.result != 'success' && 'Tests failed' || 'Publish failed' }}, by ${{ github.actor }}
+
+            - [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            - [view the run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})

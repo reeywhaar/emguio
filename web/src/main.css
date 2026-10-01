@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+/*
+ * Semantic tokens, not colors. Components name what a color is for; this is the only file
+ * that says what those are.
+ *
+ * Plain elements: a thing is told apart from what it sits on by a hairline and a step in
+ * ground, never by a shadow.
+ *
+ * brand is what the application does; accent is what it refuses. brand-ink is what can be read
+ * on top of the brand, and flips with the theme because the brand does.
+ *
+ * Light is the base; dark is an override. The alternative was a dark: variant on every
+ * className in the application, half of which somebody eventually forgets.
+ */
+@theme {
+  /* What a field or a card is painted with, the page behind it, and the rail beside it. */
+  --color-bg: #ffffff;
+  --color-page: #fafafa;
+  --color-surface: #f4f4f5;
+  --color-fg: #1f2329;
+  --color-muted: #5f6672;
+  --color-faint: #80868f;
+  --color-line: #e3e5e8;
+  --color-fill: #f0f1f3;
+  /* A darker patch of whatever it is on, so a current row takes its hue from the ground. */
+  --color-shade: rgb(0 0 0 / 0.05);
+  --color-brand: #ef6500;
+  --color-brand-ink: #ffffff;
+  --color-accent: #b91c1c;
+  --color-ok: #15803d;
+  --color-warn: #b45309;
+}
+
+/* A plain override of the same variables rather than a second @theme: @theme is hoisted to the
+   top level whatever it is nested in, so one inside a media query replaces the light values for
+   everybody. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #202226;
+    --color-page: #17181b;
+    --color-surface: #1c1d21;
+    --color-fg: #e7e9ee;
+    --color-muted: #a2a8b4;
+    --color-faint: #7d8490;
+    --color-line: #31343a;
+    --color-fill: #2a2c31;
+    --color-shade: rgb(255 255 255 / 0.06);
+    --color-brand: #818cf8;
+    --color-brand-ink: #111113;
+    --color-accent: #f87171;
+    --color-ok: #4ade80;
+    --color-warn: #f59e0b;
+  }
+}
+
+/* Everything that is not a field takes a ring. focus-visible, so a click does not leave one,
+   and :where, so a component can still say otherwise. */
+:where(a, button, summary, [role="button"]):focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Without this a light page renders a dark-mode select, and the first paint flashes. */
+:root {
+  color-scheme: light dark;
+  accent-color: var(--color-brand);
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-fg);
+}
+
+/* Under 16px iOS Safari zooms the page on focus. Not button, which cannot be typed into and
+   would lose text-sm everywhere. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+@media (min-width: 40rem) {
+  input,
+  select,
+  textarea {
+    font-size: 14px;
+  }
+}
+
+/* Something on its way: a band of lighter grey travelling across a darker one, which reads as
+   waiting rather than as broken. */
+@keyframes dummy {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+.dummy {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-fill) 25%,
+    var(--color-line) 37%,
+    var(--color-fill) 63%
+  );
+  background-size: 400% 100%;
+  animation: dummy 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dummy {
+    animation: none;
+    background-image: none;
+    background-color: var(--color-fill);
+  }
+}
+
+/* Labels are small caps. */
+@utility caps {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.04em;
+}
+
+/* A dialog fades and rises in, and fades out, where the browser can animate the top layer.
+   Dialog's FADE says the same duration. */
+dialog {
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+dialog:not([open]) {
+  opacity: 0;
+  translate: 0 0.5rem;
+}
+
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    translate: 0 0.5rem;
+  }
+}
+
+dialog::backdrop {
+  transition-property: background-color, display, overlay;
+  transition-duration: 150ms;
+  transition-behavior: allow-discrete;
+}
+
+dialog:not([open])::backdrop {
+  background-color: transparent;
+}
+
+@starting-style {
+  dialog[open]::backdrop {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog,
+  dialog::backdrop {
+    transition: none;
+  }
+}

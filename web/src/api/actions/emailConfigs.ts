@@ -1,0 +1,192 @@
+import { query, request } from "@app/api/transport";
+import type {
+  EmailConfig,
+  EmailConfigDraft,
+  ClosedDraft,
+  Conversation,
+  KeptDraft,
+  Mailbox,
+  MessagePage,
+  Outgoing,
+  ReadMessage,
+  Settings,
+  TestResult,
+} from "@app/api/types";
+
+/** Named mechanically from the route, so a call site and a handler find each other by grep. */
+
+export const getEmailConfigs = () =>
+  request<{ email_configs: EmailConfig[] }>("/api/email-configs").then(
+    (it) => it.email_configs,
+  );
+
+export const postEmailConfigs = (body: EmailConfigDraft) =>
+  request<EmailConfig>("/api/email-configs", { method: "POST", body });
+
+export const putEmailConfigsById = (id: string, body: EmailConfigDraft) =>
+  request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body,
+  });
+
+export const deleteEmailConfigsById = (id: string) =>
+  request<void>(`/api/email-configs/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+/** Signs in to a draft that is not saved yet. */
+export const postEmailConfigsTest = (body: EmailConfigDraft) =>
+  request<TestResult>("/api/email-configs/test", { method: "POST", body });
+
+/** Makes a folder on the mail server, at the top or inside parent, and answers with it. */
+export const postEmailConfigsByIdMailboxes = (
+  id: string,
+  body: { name: string; parent: string },
+) =>
+  request<Mailbox>(`/api/email-configs/${encodeURIComponent(id)}/mailboxes`, {
+    method: "POST",
+    body,
+  });
+
+/** Renames a folder, or moves it inside parent or to the top; what is inside goes with it. */
+export const putEmailConfigsByIdMailboxesByMailbox = (
+  id: string,
+  mailbox: string,
+  body: { name: string; parent: string },
+) =>
+  request<Mailbox>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}`,
+    { method: "PUT", body },
+  );
+
+/** Deletes an empty folder from the mail server. */
+export const deleteEmailConfigsByIdMailboxesByMailbox = (
+  id: string,
+  mailbox: string,
+) =>
+  request<void>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}`,
+    { method: "DELETE" },
+  );
+
+/** Puts folders side by side in an order; answered with every folder, in the new order. */
+export const putEmailConfigsByIdMailboxesOrder = (id: string, ids: string[]) =>
+  request<{ mailboxes: Mailbox[] }>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/order`,
+    { method: "PUT", body: { ids } },
+  ).then((it) => it.mailboxes);
+
+/** Chooses the folder a config archives to; empty for the one the server names. */
+export const putEmailConfigsByIdArchive = (id: string, mailbox: string) =>
+  request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}/archive`, {
+    method: "PUT",
+    body: { mailbox },
+  });
+
+/** Looks up the servers of an address's domain, for a new config to start from. */
+export const postEmailConfigsAutoconfig = (email: string) =>
+  request<Settings>("/api/email-configs/autoconfig", {
+    method: "POST",
+    body: { email },
+  });
+
+/** Signs in to a draft of a saved config, with its saved passwords where the draft has none. */
+export const postEmailConfigsByIdTest = (id: string, body: EmailConfigDraft) =>
+  request<TestResult>(`/api/email-configs/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+    body,
+  });
+
+/** Asks for a look at every mailbox now. What it finds arrives on the event stream. */
+export const postEmailConfigsByIdSync = (id: string) =>
+  request<void>(`/api/email-configs/${encodeURIComponent(id)}/sync`, {
+    method: "POST",
+  });
+
+/** Sends a message, and answers once the outgoing server has taken it. */
+export const postEmailConfigsByIdSend = (id: string, body: Outgoing) =>
+  request<{ message_id: string }>(
+    `/api/email-configs/${encodeURIComponent(id)}/send`,
+    { method: "POST", body },
+  );
+
+/** Keeps a new draft in emguio, written to Drafts in a while; with close, now. */
+export const postEmailConfigsByIdDrafts = <T extends KeptDraft | ClosedDraft>(
+  id: string,
+  body: Outgoing,
+) =>
+  request<T>(`/api/email-configs/${encodeURIComponent(id)}/drafts`, {
+    method: "POST",
+    body,
+  });
+
+/** Keeps what is written in a draft now. */
+export const putEmailConfigsByIdDraftsByDraft = <
+  T extends KeptDraft | ClosedDraft,
+>(
+  id: string,
+  draft: string,
+  body: Outgoing,
+) =>
+  request<T>(
+    `/api/email-configs/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draft)}`,
+    { method: "PUT", body },
+  );
+
+/** Discards a draft kept in emguio, and says where the mail server holds its copy. */
+export const deleteEmailConfigsByIdDraftsByDraft = (
+  id: string,
+  draft: string,
+) =>
+  request<{ kept: { mailbox: string; message: string } | null }>(
+    `/api/email-configs/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draft)}`,
+    { method: "DELETE" },
+  );
+
+export const getEmailConfigsByIdMailboxes = (id: string) =>
+  request<{ mailboxes: Mailbox[] }>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes`,
+  ).then((it) => it.mailboxes);
+
+export const getEmailConfigsByIdMailboxesByMailboxMessages = (
+  id: string,
+  mailbox: string,
+  cursor: string,
+  q = "",
+) =>
+  request<MessagePage>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages${query({ cursor, q })}`,
+  );
+
+const messagePath = (id: string, mailbox: string, message: string) =>
+  `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(message)}`;
+
+/** A message whole, from the server: nothing of it is kept, so every opening asks. */
+export const getEmailConfigsByIdMailboxesByMailboxMessagesByMessage = (
+  id: string,
+  mailbox: string,
+  message: string,
+) => request<ReadMessage>(messagePath(id, mailbox, message));
+
+/** The conversation a message is in. */
+export const getEmailConfigsByIdMailboxesByMailboxMessagesByMessageConversation =
+  (id: string, mailbox: string, message: string) =>
+    request<Conversation>(`${messagePath(id, mailbox, message)}/conversation`);
+
+/** How many messages each of some is in a conversation with in its folder, those not alone. */
+export const getEmailConfigsByIdMailboxesByMailboxThreads = (
+  id: string,
+  mailbox: string,
+  messages: string[],
+) =>
+  request<{ counts: Record<string, number> }>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/threads${query({ messages: messages.join(",") })}`,
+  );
+
+/** Where a part of a message is downloaded from, by its section. */
+export const partURL = (
+  id: string,
+  mailbox: string,
+  message: string,
+  section: string,
+) => `${messagePath(id, mailbox, message)}/parts/${section}`;
