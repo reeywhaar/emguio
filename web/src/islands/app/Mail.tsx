@@ -11,8 +11,9 @@ import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
-import { Refresh, SelectMark } from "@app/components/icons";
+import { Refresh, SelectMark, WriteMark } from "@app/components/icons";
 import { ago } from "@app/format";
+import { blank, write } from "@app/islands/app/drafts";
 import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
@@ -117,6 +118,21 @@ function Folders({
   const boxes = {
     data: listed.data && countsWithPending(listed.data, pending),
   };
+  // Gmail's key for a new message, from anywhere but a field or a dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "c" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (el?.closest("input, textarea, select, [contenteditable='true']"))
+        return;
+      if (document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      write(blank(config.id));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [config.id]);
+
   // While messages are being selected, the ones that are; null while they are not. A folder's
   // own, so another folder starts with none.
   const [selected, setSelected] = useState<Set<string> | null>(null);
@@ -193,6 +209,14 @@ function Folders({
               <h1 className="hidden min-w-0 flex-1 truncate font-semibold md:block">
                 {current ? labelOfMailbox(current) : ""}
               </h1>
+              <Button
+                size="bar"
+                aria-label="Write a message"
+                title="Write a message (c)"
+                onClick={() => write(blank(config.id))}
+              >
+                <WriteMark />
+              </Button>
               {current?.selectable ? (
                 // Selecting is about the list: an open message is closed for it.
                 <Button

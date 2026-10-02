@@ -25,6 +25,7 @@ const work: EmailConfig = {
   id: "ec_1",
   name: "Work",
   email: "misha@example.com",
+  sender_name: "",
   incoming: {
     protocol: "imap",
     host: "imap.example.com",

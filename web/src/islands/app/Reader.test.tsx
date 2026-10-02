@@ -2,7 +2,14 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@app/api/transport";
-import type { JobDraft, Mailbox, Message, ReadMessage } from "@app/api/types";
+import type {
+  JobDraft,
+  Mailbox,
+  Message,
+  Outgoing,
+  ReadMessage,
+} from "@app/api/types";
+import { Compose } from "@app/islands/app/Compose";
 import { Notice } from "@app/islands/app/Notice";
 import { Reader } from "@app/islands/app/Reader";
 import { mount } from "@app/test/harness";
@@ -11,6 +18,7 @@ const getMessage = vi.fn();
 const getMailboxes = vi.fn();
 const postJob = vi.fn();
 
+const postSend = vi.fn();
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
@@ -18,6 +26,32 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     message: string,
   ) => getMessage(id, mailbox, message),
   getEmailConfigsByIdMailboxes: (id: string) => getMailboxes(id),
+  getEmailConfigs: async () => [
+    {
+      id: "ec_1",
+      name: "Work",
+      email: "misha@example.com",
+      sender_name: "Misha",
+      incoming: {
+        protocol: "imap",
+        host: "imap.example.com",
+        port: 993,
+        tls: "implicit",
+        username: "misha",
+      },
+      outgoing: {
+        host: "smtp.example.com",
+        port: 465,
+        tls: "implicit",
+        username: "",
+      },
+      created_at: 0,
+      updated_at: 0,
+      synced_at: null,
+      sync_error: "",
+    },
+  ],
+  postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
@@ -73,7 +107,9 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   ...listed(),
   cc: [{ name: "Bob", email: "bob@example.com" }],
   mailbox: "mb_inbox",
+  reply_to: [],
   text: "The numbers are in.",
+  html_text: "",
   html: "",
   held_images: 0,
   parts: [
@@ -114,6 +150,7 @@ const open = (mailbox = inbox) =>
   mount(
     <>
       <Reader config="ec_1" mailbox={mailbox} message="m_1" />
+      <Compose />
       <Notice />
     </>,
   );
@@ -354,5 +391,78 @@ describe("the reading pane", () => {
     within(await screen.findByRole("alert")).getByText(
       "“Quarterly numbers” was not moved: emguio cannot be reached right now.",
     );
+  });
+
+  // A reply opens with who and what filled in, and is threaded under the message; what is
+  // written above the quote is what goes, and the window closes once the server has it.
+  it("replies, threaded under the message", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    postSend.mockResolvedValue({ message_id: "<r@example.com>" });
+    open();
+    fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Reply" });
+    expect(
+      dialog.getByRole<HTMLInputElement>("textbox", { name: "To" }).value,
+    ).toBe("Alice <alice@example.com>");
+    expect(
+      dialog.getByRole<HTMLInputElement>("textbox", { name: "Subject" }).value,
+    ).toBe("Re: Quarterly numbers");
+    const text = dialog.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Message",
+    });
+    expect(text.value).toContain("> The numbers are in.");
+    fireEvent.change(text, { target: { value: `Thanks!${text.value}` } });
+    fireEvent.click(dialog.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(postSend).toHaveBeenCalledTimes(1));
+    const [config, body] = postSend.mock.calls[0] as [string, Outgoing];
+    expect(config).toBe("ec_1");
+    expect(body).toMatchObject({
+      to: "Alice <alice@example.com>",
+      subject: "Re: Quarterly numbers",
+      reply: { mailbox: "mb_inbox", message: "m_1" },
+      forward: null,
+      attachments: [],
+    });
+    expect(body.text).toMatch(
+      /^Thanks!\n\nOn .*, Alice <alice@example.com> wrote:\n> The numbers are in.\n$/,
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    screen.getByText("Sent.");
+  });
+
+  // A forward carries the message's attachments; a refusal is said in the window, and what was
+  // written stays to be sent again.
+  it("forwards with its attachments, and keeps the window when the server says no", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    postSend.mockRejectedValue(
+      new ApiError(
+        502,
+        "unreachable",
+        "smtp.example.com:465 refused the message: No such user here",
+      ),
+    );
+    open();
+    await screen.findByRole("button", { name: "Forward" });
+    fireEvent.keyDown(document.body, { key: "f" });
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Forward" });
+    within(dialog.getByRole("list", { name: "Attachments" })).getByText(
+      "q3.pdf",
+    );
+    fireEvent.change(dialog.getByRole("textbox", { name: "To" }), {
+      target: { value: "nobody@example.com" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Send" }));
+    await dialog.findByText(/refused the message: No such user here/);
+    expect((postSend.mock.calls[0] as [string, Outgoing])[1].forward).toEqual({
+      mailbox: "mb_inbox",
+      message: "m_1",
+      parts: ["2"],
+    });
+    expect(
+      dialog.getByRole<HTMLInputElement>("textbox", { name: "To" }).value,
+    ).toBe("nobody@example.com");
   });
 });

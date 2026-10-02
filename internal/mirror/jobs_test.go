@@ -8,6 +8,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 
+	"emguio/internal/connect/connecttest"
 	"emguio/internal/ids"
 	"emguio/internal/store"
 )
@@ -173,5 +174,47 @@ func TestAJobThatCannotReachTheServerIsTriedAgain(t *testing.T) {
 	})
 	if j := w.jobs()[0]; j.Error != "" {
 		t.Errorf("failed after one try: %+v", j)
+	}
+}
+
+// A sent message is filed in Sent once, read, and not again where the server filed it itself;
+// the message it answers is marked answered. A reply reads its original's Message-ID and
+// References to thread under it, and where its sender asks replies to go.
+func TestASentMessageIsFiledOnceAndItsOriginalAnswered(t *testing.T) {
+	was := fileAfter
+	fileAfter = 0
+	defer func() { fileAfter = was }()
+	w := newWorld(t, "hunter2")
+	w.create("Sent")
+	connecttest.Append(t, w.server, "INBOX", "From: alice@example.com\nReply-To: lists@example.com\nTo: misha@example.com\nSubject: Question\nMessage-ID: <q@example.com>\nReferences: <root@example.com>\n <before@example.com>\n\nWell?\n", start)
+	w.sync()
+	inbox, sent := w.mailbox("INBOX"), w.mailbox("Sent")
+	ctx := context.Background()
+
+	origin, err := w.mirror.Origin(ctx, w.target, "INBOX", inbox.UIDValidity, 1)
+	if err != nil || origin.MessageID != "<q@example.com>" || strings.Join(origin.References, " ") != "<root@example.com> <before@example.com>" {
+		t.Fatalf("origin = %+v, %v", origin, err)
+	}
+	opened, err := w.mirror.Read(ctx, w.target, "INBOX", inbox.UIDValidity, 1)
+	if err != nil || len(opened.ReplyTo) != 1 || opened.ReplyTo[0].Email != "lists@example.com" {
+		t.Fatalf("reply-to = %+v, %v", opened, err)
+	}
+
+	raw := []byte("From: misha@example.com\r\nTo: alice@example.com\r\nSubject: Re: Question\r\nMessage-ID: <reply@example.com>\r\n\r\nYes.\r\n")
+	w.mirror.Sent(w.target, Sending{Sent: sent, ID: "<reply@example.com>", Raw: raw,
+		Answers: &Answering{Mailbox: inbox, UIDValidity: inbox.UIDValidity, UID: 1}})
+	filed := func() []store.Header {
+		listing, err := w.mirror.List(ctx, w.target, "Sent", 0, 0, 10, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return listing.Headers
+	}
+	eventually(t, func() bool { return len(filed()) == 1 && w.window()[0].Flags.Answered })
+	if h := filed()[0]; h.Subject != "Re: Question" || !h.Flags.Seen {
+		t.Errorf("filed = %+v", h)
+	}
+	if err := w.mirror.file(ctx, w.target, "Sent", "<reply@example.com>", raw); err != nil || len(filed()) != 1 {
+		t.Errorf("filed again: %v, %d in Sent", err, len(filed()))
 	}
 }

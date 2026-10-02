@@ -34,11 +34,13 @@ type Server struct {
 
 // EmailConfig is one of a user's mail accounts.
 type EmailConfig struct {
-	ID       string
-	UserID   string
-	Name     string
-	Email    string
-	Incoming Server
+	ID     string
+	UserID string
+	Name   string
+	Email  string
+	// SenderName is who mail sent from it is from, beside Email; empty sends the address alone.
+	SenderName string
+	Incoming   Server
 	// Outgoing is nil when there is none.
 	Outgoing  *Server
 	CreatedAt time.Time
@@ -58,10 +60,11 @@ type Login struct {
 // EmailConfigInput is a whole email config as a form sends it. On an edit, a password left
 // empty keeps the one stored.
 type EmailConfigInput struct {
-	Name     string
-	Email    string
-	Incoming Login
-	Outgoing *Login
+	Name       string
+	Email      string
+	SenderName string
+	Incoming   Login
+	Outgoing   *Login
 }
 
 // Logins are an email config's servers ready to dial: passwords opened, and an outgoing server
@@ -79,7 +82,7 @@ type emailConfigRow struct {
 	outgoingSecret []byte
 }
 
-const emailConfigColumns = `id, user_id, name, email,
+const emailConfigColumns = `id, user_id, name, email, sender_name,
   incoming_protocol, incoming_host, incoming_port, incoming_tls, incoming_username, incoming_secret,
   outgoing_host, outgoing_port, outgoing_tls, outgoing_username, outgoing_secret,
   created_at, updated_at`
@@ -96,7 +99,7 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 		created, updated   int64
 		synced             sql.NullInt64
 	)
-	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email,
+	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email, &r.SenderName,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
 		&created, &updated, &synced, &r.SyncError)
@@ -167,13 +170,13 @@ func (s *Store) CreateEmailConfig(ctx context.Context, userID string, in EmailCo
 	}
 	now := s.Now()
 	id := ids.New(ids.EmailConfig, now.UnixMilli())
-	args := []any{id, userID, in.Name, in.Email,
+	args := []any{id, userID, in.Name, in.Email, in.SenderName,
 		in.Incoming.Protocol, in.Incoming.Host, in.Incoming.Port, in.Incoming.TLS, in.Incoming.Username,
 		s.sealer.Seal([]byte(in.Incoming.Password), secretAAD(id, "incoming"))}
 	args = append(args, s.outgoingColumns(id, in.Outgoing)...)
 	args = append(args, unix(now), unix(now))
 	_, err = s.writer.ExecContext(ctx,
-		`INSERT INTO email_configs (`+emailConfigColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO email_configs (`+emailConfigColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		args...)
 	if err != nil {
 		return nil, fmt.Errorf("create email config: %w", err)
@@ -192,7 +195,7 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 		return nil, err
 	}
 	now := s.Now()
-	args := []any{in.Name, in.Email,
+	args := []any{in.Name, in.Email, in.SenderName,
 		in.Incoming.Protocol, in.Incoming.Host, in.Incoming.Port, in.Incoming.TLS, in.Incoming.Username,
 		s.sealer.Seal([]byte(in.Incoming.Password), secretAAD(id, "incoming"))}
 	args = append(args, s.outgoingColumns(id, in.Outgoing)...)
@@ -204,7 +207,7 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx,
-		`UPDATE email_configs SET name = ?, email = ?,
+		`UPDATE email_configs SET name = ?, email = ?, sender_name = ?,
 		   incoming_protocol = ?, incoming_host = ?, incoming_port = ?, incoming_tls = ?, incoming_username = ?, incoming_secret = ?,
 		   outgoing_host = ?, outgoing_port = ?, outgoing_tls = ?, outgoing_username = ?, outgoing_secret = ?,
 		   updated_at = ?
@@ -377,13 +380,14 @@ func (s *Store) outgoingColumns(id string, o *Login) []any {
 
 func shown(id, userID string, in EmailConfigInput, created, updated time.Time) *EmailConfig {
 	c := &EmailConfig{
-		ID:        id,
-		UserID:    userID,
-		Name:      in.Name,
-		Email:     in.Email,
-		Incoming:  in.Incoming.Server,
-		CreatedAt: created,
-		UpdatedAt: updated,
+		ID:         id,
+		UserID:     userID,
+		Name:       in.Name,
+		Email:      in.Email,
+		SenderName: in.SenderName,
+		Incoming:   in.Incoming.Server,
+		CreatedAt:  created,
+		UpdatedAt:  updated,
 	}
 	if in.Outgoing != nil {
 		o := in.Outgoing.Server
@@ -393,6 +397,7 @@ func shown(id, userID string, in EmailConfigInput, created, updated time.Time) *
 }
 
 func (in *EmailConfigInput) normalize() error {
+	in.SenderName = strings.TrimSpace(in.SenderName)
 	in.Name = strings.TrimSpace(in.Name)
 	in.Email = strings.TrimSpace(in.Email)
 	switch {
@@ -400,6 +405,10 @@ func (in *EmailConfigInput) normalize() error {
 		return Invalid("That name is longer than 64 characters.")
 	case hasControl(in.Name):
 		return Invalid("A name cannot contain control characters.")
+	case utf8.RuneCountInString(in.SenderName) > 128:
+		return Invalid("Your name is longer than 128 characters.")
+	case hasControl(in.SenderName):
+		return Invalid("Your name cannot contain control characters.")
 	}
 	if err := validateEmail(in.Email); err != nil {
 		return err

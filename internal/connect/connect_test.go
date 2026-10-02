@@ -72,6 +72,37 @@ func TestSMTPSaysTheServerRefusedThePassword(t *testing.T) {
 	failure(t, err, "auth")
 }
 
+// A message goes to the server as given, for each recipient; one the server will not deliver to
+// is its refusal, in a sentence, and nothing is sent.
+func TestSMTPSendsAMessage(t *testing.T) {
+	cert := connecttest.NewCert(t)
+	box := &connecttest.Outbox{}
+	port := connecttest.SMTPInto(t, cert, connect.Implicit, "misha", "hunter2", box)
+	s := server(port, connect.Implicit, "misha", "hunter2")
+	msg := "From: misha@example.com\r\nTo: robin@example.com\r\nSubject: Hi\r\n\r\nHello.\r\n"
+
+	err := connector(cert).Send(context.Background(), s, "misha@example.com",
+		[]string{"robin@example.com", "kim@example.com"}, strings.NewReader(msg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := box.Sent()
+	if len(sent) != 1 || sent[0].From != "misha@example.com" || strings.Join(sent[0].To, ",") != "robin@example.com,kim@example.com" ||
+		!strings.Contains(string(sent[0].Data), "Hello.") {
+		t.Fatalf("sent = %+v", sent)
+	}
+
+	err = connector(cert).Send(context.Background(), s, "misha@example.com",
+		[]string{"robin@example.com", "nobody@" + connecttest.Refused}, strings.NewReader(msg))
+	f := failure(t, err, "refused")
+	if !strings.Contains(f.Sentence, "No such user here") {
+		t.Errorf("sentence = %q", f.Sentence)
+	}
+	if n := len(box.Sent()); n != 1 {
+		t.Errorf("%d sent after a refusal", n)
+	}
+}
+
 // The commonest mistake in the form: TLS chosen for a port that speaks plain text first.
 func TestImplicitTLSAgainstAPlainPortSaysToTryStartTLS(t *testing.T) {
 	cert := connecttest.NewCert(t)

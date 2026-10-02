@@ -38,7 +38,11 @@ type readJSON struct {
 	messageJSON
 	Cc      []store.Address `json:"cc"`
 	Mailbox string          `json:"mailbox"`
+	// ReplyTo is where its sender asks replies to go.
+	ReplyTo []store.Address `json:"reply_to"`
 	Text    string          `json:"text"`
+	// HTMLText is the HTML as text, for a message with no text of its own: what a reply quotes.
+	HTMLText string `json:"html_text"`
 	// HTML is sanitized, and empty for a message with none. It is still a stranger's, and the
 	// page shows it only in a sandboxed frame.
 	HTML string `json:"html"`
@@ -106,7 +110,9 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 		messageJSON: messageOut(m),
 		Cc:          nonNil(m.Cc),
 		Mailbox:     mb.ID,
+		ReplyTo:     nonNil(opened.ReplyTo),
 		Text:        read.Text,
+		HTMLText:    read.HTMLText,
 		HTML:        read.HTML,
 		HeldImages:  read.Held,
 		Parts:       []partJSON{},
@@ -145,6 +151,19 @@ var inline = map[string]bool{
 // sectionPattern is an IMAP section number: "2", "1.3", nested no deeper than any real message.
 var sectionPattern = regexp.MustCompile(`^[1-9][0-9]{0,3}(\.[1-9][0-9]{0,3}){0,15}$`)
 
+// sectionOf reads a section number as IMAP takes it, "1.3" as [1 3].
+func sectionOf(at string) ([]int, bool) {
+	if !sectionPattern.MatchString(at) {
+		return nil, false
+	}
+	var section []int
+	for _, n := range strings.Split(at, ".") {
+		i, _ := strconv.Atoi(n)
+		section = append(section, i)
+	}
+	return section, true
+}
+
 // readPart is one part of a message, fetched alone: an attachment to download, or an image the
 // HTML shows.
 //
@@ -153,14 +172,10 @@ var sectionPattern = regexp.MustCompile(`^[1-9][0-9]{0,3}(\.[1-9][0-9]{0,3}){0,1
 // under one UIDVALIDITY names one message for good, and a message never changes.
 func (s *Server) readPart(w http.ResponseWriter, r *http.Request) {
 	at := r.PathValue("section")
-	if !sectionPattern.MatchString(at) {
+	section, ok := sectionOf(at)
+	if !ok {
 		refuse(w, http.StatusBadRequest, CodeInvalid, "A part is named by its section, like 2 or 1.3.")
 		return
-	}
-	var section []int
-	for _, n := range strings.Split(at, ".") {
-		i, _ := strconv.Atoi(n)
-		section = append(section, i)
 	}
 	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
 	if !ok {

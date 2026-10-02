@@ -34,6 +34,7 @@ const ports = {
 type Draft = {
   name: string;
   email: string;
+  sender_name: string;
   incoming: {
     protocol: Protocol;
     host: string;
@@ -58,6 +59,7 @@ function blank(): Draft {
   return {
     name: "",
     email: "",
+    sender_name: "",
     incoming: {
       protocol: "imap",
       host: "",
@@ -83,6 +85,7 @@ function fromConfig(c: EmailConfig): Draft {
   return {
     name: c.name,
     email: c.email,
+    sender_name: c.sender_name,
     incoming: { ...c.incoming, port: String(c.incoming.port), password: "" },
     outgoing: c.outgoing
       ? {
@@ -104,6 +107,7 @@ function bodyOf(d: Draft): EmailConfigDraft {
   return {
     name: d.name,
     email: d.email,
+    sender_name: d.sender_name,
     incoming: {
       ...d.incoming,
       port: Number(d.incoming.port) || 0,
@@ -361,6 +365,19 @@ function Form({
           </label>
           {draft.outgoing.on ? (
             <>
+              <Field
+                label="Your name"
+                hint="Who mail sent from here is from, beside the address."
+              >
+                <TextField
+                  autoComplete="name"
+                  value={draft.sender_name}
+                  onChange={(e) => {
+                    const sender_name = e.target.value;
+                    change((d) => ({ ...d, sender_name }));
+                  }}
+                />
+              </Field>
               <div className="grid gap-3 sm:grid-cols-[1fr_7rem_10rem]">
                 <Field label="Host">
                   <TextField

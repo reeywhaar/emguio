@@ -4,6 +4,7 @@ import type {
   EmailConfigDraft,
   Mailbox,
   MessagePage,
+  Outgoing,
   ReadMessage,
   TestResult,
 } from "@app/api/types";
@@ -45,6 +46,13 @@ export const postEmailConfigsByIdSync = (id: string) =>
   request<void>(`/api/email-configs/${encodeURIComponent(id)}/sync`, {
     method: "POST",
   });
+
+/** Sends a message, and answers once the outgoing server has taken it. */
+export const postEmailConfigsByIdSend = (id: string, body: Outgoing) =>
+  request<{ message_id: string }>(
+    `/api/email-configs/${encodeURIComponent(id)}/send`,
+    { method: "POST", body },
+  );
 
 export const getEmailConfigsByIdMailboxes = (id: string) =>
   request<{ mailboxes: Mailbox[] }>(

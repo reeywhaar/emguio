@@ -19,10 +19,12 @@ type serverJSON struct {
 }
 
 type emailConfigJSON struct {
-	ID       string     `json:"id"`
-	Name     string     `json:"name"`
-	Email    string     `json:"email"`
-	Incoming serverJSON `json:"incoming"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	// SenderName is who mail sent from it is from; empty sends the address alone.
+	SenderName string     `json:"sender_name"`
+	Incoming   serverJSON `json:"incoming"`
 	// Outgoing is null for none, and its username is empty when it signs in as the incoming
 	// server does.
 	Outgoing  *serverJSON `json:"outgoing"`
@@ -36,14 +38,15 @@ type emailConfigJSON struct {
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
 	out := emailConfigJSON{
-		ID:        c.ID,
-		Name:      c.Name,
-		Email:     c.Email,
-		Incoming:  serverJSON(c.Incoming),
-		CreatedAt: c.CreatedAt.Unix(),
-		UpdatedAt: c.UpdatedAt.Unix(),
-		SyncedAt:  unixOrNil(c.SyncedAt),
-		SyncError: c.SyncError,
+		ID:         c.ID,
+		Name:       c.Name,
+		Email:      c.Email,
+		SenderName: c.SenderName,
+		Incoming:   serverJSON(c.Incoming),
+		CreatedAt:  c.CreatedAt.Unix(),
+		UpdatedAt:  c.UpdatedAt.Unix(),
+		SyncedAt:   unixOrNil(c.SyncedAt),
+		SyncError:  c.SyncError,
 	}
 	if c.Outgoing != nil {
 		o := serverJSON(*c.Outgoing)
@@ -68,16 +71,18 @@ type incomingBody struct {
 // emailConfigBody is a whole email config, as the form sends it to save or to test. A password
 // left empty is the one already saved.
 type emailConfigBody struct {
-	Name     string       `json:"name"`
-	Email    string       `json:"email"`
-	Incoming incomingBody `json:"incoming"`
-	Outgoing *loginBody   `json:"outgoing"`
+	Name       string       `json:"name"`
+	Email      string       `json:"email"`
+	SenderName string       `json:"sender_name"`
+	Incoming   incomingBody `json:"incoming"`
+	Outgoing   *loginBody   `json:"outgoing"`
 }
 
 func (b emailConfigBody) input() store.EmailConfigInput {
 	in := store.EmailConfigInput{
-		Name:  b.Name,
-		Email: b.Email,
+		Name:       b.Name,
+		Email:      b.Email,
+		SenderName: b.SenderName,
 		Incoming: store.Login{
 			Server: store.Server{
 				Protocol: b.Incoming.Protocol,

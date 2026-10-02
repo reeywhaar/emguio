@@ -67,6 +67,8 @@ type Part struct {
 // Read is a message ready to show.
 type Read struct {
 	Text string
+	// HTMLText is the HTML as text, for a message with no text of its own: what a reply quotes.
+	HTMLText string
 	// Preview is the start of the text, on one line, for a list.
 	Preview string
 	// HTML is sanitized, and empty when the message has none.
@@ -104,7 +106,8 @@ func Show(st Structure, opts Options) *Read {
 	if out.Text != "" || rich == "" {
 		out.Preview = Preview(out.Text)
 	} else {
-		out.Preview = Preview(clean(htmlText(rich)))
+		out.HTMLText = clean(htmlText(rich))
+		out.Preview = Preview(out.HTMLText)
 	}
 
 	cids := map[string]string{}

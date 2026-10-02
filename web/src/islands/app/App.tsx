@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { useLive } from "@app/api/live";
 import { Boundary } from "@app/components/Boundary";
+import { Compose } from "@app/islands/app/Compose";
 import { Header } from "@app/islands/app/Header";
 import { Link } from "@app/islands/app/Link";
 import { Jobs } from "@app/islands/app/Jobs";
@@ -23,6 +24,7 @@ export function App() {
       <Boundary what="This page" key={route.page}>
         <Page route={route} />
       </Boundary>
+      <Compose />
       <Jobs />
       <Notice />
     </div>

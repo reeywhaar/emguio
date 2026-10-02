@@ -27,6 +27,7 @@ const saved: EmailConfig = {
   id: "ec_1",
   name: "Work",
   email: "misha@example.com",
+  sender_name: "",
   incoming: {
     protocol: "imap",
     host: "imap.example.com",
@@ -72,6 +73,7 @@ describe("adding an email config", () => {
     expect(postEmailConfigs).toHaveBeenCalledWith({
       name: "",
       email: "misha@example.com",
+      sender_name: "",
       incoming: {
         protocol: "imap",
         host: "imap.example.com",

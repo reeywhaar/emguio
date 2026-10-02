@@ -33,6 +33,7 @@ const config = (id: string, name: string): EmailConfig => ({
   id,
   name,
   email: `${name.toLowerCase()}@example.com`,
+  sender_name: "",
   incoming: {
     protocol: "imap",
     host: "imap.example.com",

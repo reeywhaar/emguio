@@ -132,3 +132,27 @@ export const SelectMark = () => (
     <path d="M2.5 2.5h11v11h-11zM5 8l2 2 4-4" />
   </Mark>
 );
+
+export const WriteMark = () => (
+  <Mark>
+    <path d="M11 2.5 13.5 5l-8 8H3v-2.5zM9.5 4 12 6.5" />
+  </Mark>
+);
+
+export const ReplyMark = () => (
+  <Mark>
+    <path d="M6 4 2.5 7.5 6 11M2.5 7.5H10a3.5 3.5 0 0 1 3.5 3.5v1" />
+  </Mark>
+);
+
+export const ReplyAllMark = () => (
+  <Mark>
+    <path d="M7.5 4 4 7.5 7.5 11M4.5 4 1 7.5 4.5 11M4 7.5h6.5a3.5 3.5 0 0 1 3.5 3.5v1" />
+  </Mark>
+);
+
+export const ForwardMark = () => (
+  <Mark>
+    <path d="M10 4l3.5 3.5L10 11M13.5 7.5H6A3.5 3.5 0 0 0 2.5 11v1" />
+  </Mark>
+);

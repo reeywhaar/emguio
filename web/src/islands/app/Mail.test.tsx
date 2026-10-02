@@ -73,6 +73,7 @@ const work: EmailConfig = {
   id: "ec_1",
   name: "Work",
   email: "misha@example.com",
+  sender_name: "",
   incoming: {
     protocol: "imap",
     host: "imap.example.com",
@@ -163,6 +164,8 @@ const opened = (id: string) => {
     mailbox: "mb_inbox",
     text: "Hello.",
     html: "",
+    reply_to: [],
+    html_text: "",
     held_images: 0,
     parts: [],
   });
@@ -376,6 +379,8 @@ describe("the mail view", () => {
       mailbox: "mb_inbox",
       text: "Thursday at one?",
       html: "",
+      reply_to: [],
+      html_text: "",
       held_images: 0,
       parts: [],
     });
@@ -432,6 +437,8 @@ describe("the mail view", () => {
         mailbox: "mb_inbox",
         text: `Text of ${id}`,
         html: "",
+        reply_to: [],
+        html_text: "",
         held_images: 0,
         parts: [],
       }),

@@ -34,7 +34,24 @@ type fakeMirror struct {
 	parts map[string][2]string
 	// kicked is each config told it has a job waiting.
 	kicked []string
-	err    error
+	// origin is what a reply reads of its original, and sendings what was sent.
+	origin   *mirror.Origin
+	sendings []mirror.Sending
+	err      error
+}
+
+func (f *fakeMirror) Origin(context.Context, store.SyncTarget, string, uint32, uint32) (*mirror.Origin, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.origin == nil {
+		return nil, mirror.ErrGone
+	}
+	return f.origin, nil
+}
+func (f *fakeMirror) Sent(_ store.SyncTarget, s mirror.Sending) {
+	f.mu.Lock()
+	f.sendings = append(f.sendings, s)
+	f.mu.Unlock()
 }
 
 func (f *fakeMirror) Reconcile() { f.mu.Lock(); f.reconciled++; f.mu.Unlock() }

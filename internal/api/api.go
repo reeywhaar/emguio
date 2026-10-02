@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -101,6 +102,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 	s.mux.Handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
 	s.mux.Handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
 	s.mux.Handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
+	s.mux.Handle("POST /api/email-configs/{id}/send", s.requireSession(s.sendMessage))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
 
@@ -222,14 +224,19 @@ func (s *Server) guard(next http.Handler) http.Handler {
 // forgotten check at a time. DisallowUnknownFields also means a caller's typo'd field is a
 // refusal saying so rather than a silently ignored intention.
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	return decodeUpTo(w, r, v, bodyMax)
+}
+
+// decodeUpTo is decode for a body that may be larger: a message with its attachments.
+func decodeUpTo(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
 	// MaxBytesReader rather than LimitReader: a limit that cuts the body short silently reads as
 	// JSON that ends early. Hitting this limit says so.
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, bodyMax))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		var over *http.MaxBytesError
 		if errors.As(err, &over) {
-			refuse(w, http.StatusRequestEntityTooLarge, CodeBodyTooLarge, "That request body is over 1 MB.")
+			refuse(w, http.StatusRequestEntityTooLarge, CodeBodyTooLarge, fmt.Sprintf("That request body is over %d MB.", limit>>20))
 			return false
 		}
 		refuse(w, http.StatusBadRequest, CodeInvalid, "That request body is not the JSON this expects: "+err.Error())

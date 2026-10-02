@@ -24,6 +24,8 @@ export type EmailConfig = {
   /** Empty when the address is name enough. */
   name: string;
   email: string;
+  /** Who mail sent from it is from, beside the address; empty sends the address alone. */
+  sender_name: string;
   incoming: Server & { protocol: Protocol };
   outgoing: Server | null;
   created_at: number;
@@ -38,6 +40,7 @@ export type EmailConfig = {
 export type EmailConfigDraft = {
   name: string;
   email: string;
+  sender_name: string;
   incoming: Server & { protocol: Protocol; password: string };
   outgoing: (Server & { password: string }) | null;
 };
@@ -113,7 +116,11 @@ export type Part = {
 export type ReadMessage = Message & {
   cc: Address[];
   mailbox: string;
+  /** Where its sender asks replies to go. */
+  reply_to: Address[];
   text: string;
+  /** The HTML as text, for a message with no text of its own: what a reply quotes. */
+  html_text: string;
   /** Sanitized, and still a stranger's: shown only in a sandboxed frame. Empty for none. */
   html: string;
   /**
@@ -145,4 +152,20 @@ export type Job = JobDraft & {
   /** Empty while it waits. */
   error: string;
   created_at: number;
+};
+
+/** A message to send, as the server is asked it. */
+export type Outgoing = {
+  /** As typed: addresses apart by commas, each with a name or without. */
+  to: string;
+  cc: string;
+  bcc: string;
+  subject: string;
+  text: string;
+  /** Files from this device, base64. */
+  attachments: { name: string; type: string; data: string }[];
+  /** The message it answers: threaded under it, and marked answered. */
+  reply: { mailbox: string; message: string } | null;
+  /** The message it passes on, and the sections of its parts that go with it. */
+  forward: { mailbox: string; message: string; parts: string[] } | null;
 };

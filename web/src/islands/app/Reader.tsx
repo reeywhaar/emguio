@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, type InfiniteData } from "@tanstack/react-query";
 
 import {
+  getEmailConfigs,
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
   partURL,
 } from "@app/api/actions/emailConfigs";
@@ -13,12 +14,19 @@ import type {
   Message,
   MessagePage,
   Part,
+  ReadMessage,
 } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
-import { Paperclip } from "@app/components/icons";
+import {
+  ForwardMark,
+  Paperclip,
+  ReplyAllMark,
+  ReplyMark,
+} from "@app/components/icons";
 import { full, size } from "@app/format";
 import { Actions } from "@app/islands/app/Actions";
+import { forwardOf, others, replyTo, write } from "@app/islands/app/drafts";
 import { Frame } from "@app/islands/app/Frame";
 import { usePending, withPending } from "@app/islands/app/pending";
 import { useCached } from "@app/api/cached";
@@ -158,9 +166,66 @@ export function Reader({
               {m.text}
             </pre>
           )}
+          <Replies config={config} m={m} />
         </>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * The ways to answer it, along the bottom of the pane: under a frame that scrolls itself, and
+ * kept in view while a plain message scrolls the pane. Gmail's keys too: r, a and f.
+ */
+function Replies({ config, m }: { config: string; m: ReadMessage }) {
+  const configs = useQuery({
+    queryKey: qk.emailConfigs,
+    queryFn: getEmailConfigs,
+  });
+  const self = configs.data?.find((c) => c.id === config)?.email ?? "";
+  const answer = {
+    r: () => write(replyTo(m, config, self, false)),
+    a: others(m, self)
+      ? () => write(replyTo(m, config, self, true))
+      : undefined,
+    f: () => write(forwardOf(m, config)),
+  };
+
+  const latest = useRef(answer);
+  latest.current = answer;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (el?.closest("input, textarea, select, [contenteditable='true']"))
+        return;
+      if (document.querySelector("dialog[open]")) return;
+      const run = latest.current[e.key as "r" | "a" | "f"];
+      if (!run) return;
+      e.preventDefault();
+      run();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  return (
+    <div className="sticky bottom-0 mt-auto flex shrink-0 flex-wrap gap-2 border-t border-line bg-bg px-4 py-2">
+      <Button size="bar" title="Reply (r)" onClick={answer.r}>
+        <ReplyMark />
+        Reply
+      </Button>
+      {answer.a ? (
+        <Button size="bar" title="Reply all (a)" onClick={answer.a}>
+          <ReplyAllMark />
+          Reply all
+        </Button>
+      ) : null}
+      <Button size="bar" title="Forward (f)" onClick={answer.f}>
+        <ForwardMark />
+        Forward
+      </Button>
+    </div>
   );
 }
 

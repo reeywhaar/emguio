@@ -29,6 +29,10 @@ type Mirror interface {
 	Part(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, section []int) ([]byte, []byte, error)
 	// Kick says an email config has a job waiting.
 	Kick(configID string)
+	// Origin is what a reply needs of the message it answers, or mirror.ErrGone.
+	Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Origin, error)
+	// Sent files a sent message in Sent and marks what it answers, in the background.
+	Sent(t store.SyncTarget, s mirror.Sending)
 }
 
 // targetOf is an email config as the mirror is asked about it.

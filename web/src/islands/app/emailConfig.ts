@@ -16,6 +16,7 @@ export function draftOf(config: EmailConfig): EmailConfigDraft {
   return {
     name: config.name,
     email: config.email,
+    sender_name: config.sender_name,
     incoming: { ...config.incoming, password: "" },
     outgoing: config.outgoing ? { ...config.outgoing, password: "" } : null,
   };

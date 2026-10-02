@@ -189,7 +189,9 @@ func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, u
 // Opened is a message as a reading pane needs it: what a list shows of it, and its structure
 // with the bytes of its text.
 type Opened struct {
-	Header    store.Header
+	Header store.Header
+	// ReplyTo is where its sender asks replies to go, when the server says.
+	ReplyTo   []store.Address
 	Structure message.Structure
 }
 
@@ -219,6 +221,9 @@ func (m *Mirror) Read(ctx context.Context, t store.SyncTarget, mailbox string, u
 			return ErrGone
 		}
 		out = &Opened{Header: header(msgs[0])}
+		if env := msgs[0].Envelope; env != nil {
+			out.ReplyTo = addresses(env.ReplyTo)
+		}
 
 		texts := previewParts(msgs[0].BodyStructure)
 		var sections []*imap.FetchItemBodySection
@@ -324,10 +329,11 @@ func (m *Mirror) Part(ctx context.Context, t store.SyncTarget, mailbox string, u
 	return head, body, err
 }
 
-// Flags emguio sets on the server: read, and starred.
+// Flags emguio sets on the server: read, starred, and answered once a reply has gone.
 const (
-	Seen    = imap.FlagSeen
-	Flagged = imap.FlagFlagged
+	Seen     = imap.FlagSeen
+	Flagged  = imap.FlagFlagged
+	Answered = imap.FlagAnswered
 )
 
 // ErrUnsupported is an action the server cannot do to some messages without touching others.
@@ -364,10 +370,13 @@ func (h Had) set() imap.UIDSet {
 	return s
 }
 
-// has is whether flags carry flag, Seen or Flagged.
+// has is whether flags carry flag: Seen, Flagged or Answered.
 func has(flags store.Flags, flag imap.Flag) bool {
-	if flag == Flagged {
+	switch flag {
+	case Flagged:
 		return flags.Flagged
+	case Answered:
+		return flags.Answered
 	}
 	return flags.Seen
 }

@@ -17,6 +17,7 @@ import (
 	"math/big"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -131,8 +132,38 @@ func IMAPSaying(t testing.TB, cert *Cert, mode, username, password string, caps 
 // SMTP accepts username and password over PLAIN and nothing else, secured as mode says.
 func SMTP(t testing.TB, cert *Cert, mode, username, password string) int {
 	t.Helper()
+	return SMTPInto(t, cert, mode, username, password, nil)
+}
+
+// Outbox is what an SMTP server here was given to send.
+type Outbox struct {
+	mu   sync.Mutex
+	sent []Delivery
+}
+
+// Delivery is one message handed to the server: who from, who to, and its bytes.
+type Delivery struct {
+	From string
+	To   []string
+	Data []byte
+}
+
+// Sent is every message given so far, in order.
+func (o *Outbox) Sent() []Delivery {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return slices.Clone(o.sent)
+}
+
+// Refused is the domain an SMTP server here will not deliver to, as a real one refuses an
+// address it has no way to.
+const Refused = "refused.example.com"
+
+// SMTPInto is SMTP keeping what it is given in box.
+func SMTPInto(t testing.TB, cert *Cert, mode, username, password string, box *Outbox) int {
+	t.Helper()
 	srv := smtp.NewServer(smtp.BackendFunc(func(*smtp.Conn) (smtp.Session, error) {
-		return &smtpSession{username: username, password: password}, nil
+		return &smtpSession{username: username, password: password, box: box}, nil
 	}))
 	srv.Domain = "localhost"
 	srv.AllowInsecureAuth = mode == ""
@@ -235,6 +266,9 @@ func port(ln net.Listener) int { return ln.Addr().(*net.TCPAddr).Port }
 
 type smtpSession struct {
 	username, password string
+	box                *Outbox
+	from               string
+	to                 []string
 }
 
 func (s *smtpSession) AuthMechanisms() []string { return []string{sasl.Plain} }
@@ -248,8 +282,31 @@ func (s *smtpSession) Auth(string) (sasl.Server, error) {
 	}), nil
 }
 
-func (s *smtpSession) Mail(string, *smtp.MailOptions) error { return nil }
-func (s *smtpSession) Rcpt(string, *smtp.RcptOptions) error { return nil }
-func (s *smtpSession) Data(io.Reader) error                 { return nil }
-func (s *smtpSession) Reset()                               {}
-func (s *smtpSession) Logout() error                        { return nil }
+func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
+	s.from = from
+	return nil
+}
+
+func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
+	if strings.HasSuffix(to, "@"+Refused) {
+		return &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 1, 1}, Message: "No such user here"}
+	}
+	s.to = append(s.to, to)
+	return nil
+}
+
+func (s *smtpSession) Data(r io.Reader) error {
+	data, err := io.ReadAll(r)
+	if err != nil || s.box == nil {
+		return err
+	}
+	s.box.mu.Lock()
+	defer s.box.mu.Unlock()
+	s.box.sent = append(s.box.sent, Delivery{From: s.from, To: s.to, Data: data})
+	return nil
+}
+
+func (s *smtpSession) Reset() {
+	s.from, s.to = "", nil
+}
+func (s *smtpSession) Logout() error { return nil }
