@@ -10,6 +10,11 @@ import (
 // that sees nothing for a minute is entitled to assume the connection is dead.
 const ping = 25 * time.Second
 
+// eventGap is the least time between two events. Each has the browser read its lists again,
+// some of them from the mail server; changes closer together than this are one event, sent
+// when the gap is over.
+const eventGap = time.Second
+
 /*
 events tells a browser that something changed, so it can ask what.
 
@@ -40,6 +45,16 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	beat := time.NewTicker(ping)
 	defer beat.Stop()
 
+	var (
+		// quiet is set while the gap after an event lasts; owed, if a change came during it.
+		quiet <-chan time.Time
+		owed  bool
+	)
+	changed := func() {
+		fmt.Fprint(w, "event: changed\ndata: 1\n\n")
+		flusher.Flush()
+		quiet = time.After(eventGap)
+	}
 	for {
 		select {
 		case <-r.Context().Done():
@@ -47,8 +62,17 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			// every request is built on, so a held-open stream does not outlast it.
 			return
 		case <-changes:
-			fmt.Fprint(w, "event: changed\ndata: 1\n\n")
-			flusher.Flush()
+			if quiet != nil {
+				owed = true
+				continue
+			}
+			changed()
+		case <-quiet:
+			quiet = nil
+			if owed {
+				owed = false
+				changed()
+			}
 		case <-beat.C:
 			// A comment. EventSource ignores it; everything in between counts it as traffic.
 			fmt.Fprint(w, ": ping\n\n")

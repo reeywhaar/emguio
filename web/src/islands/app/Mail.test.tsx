@@ -1,4 +1,10 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { qk } from "@app/api/keys";
@@ -14,6 +20,7 @@ import { Mail } from "@app/islands/app/Mail";
 import { Notice } from "@app/islands/app/Notice";
 import { useRoute } from "@app/islands/app/route";
 import { mount } from "@app/test/harness";
+import { reach } from "@app/test/view";
 
 const getEmailConfigs = vi.fn();
 const getEmailConfigsByIdMailboxes = vi.fn();
@@ -244,7 +251,9 @@ describe("the mail view", () => {
     await screen.findAllByText("To: Bob");
   });
 
-  it("reaches further back on asking", async () => {
+  // The end of the list is rows still to come, drawn before they are here, and reaching it
+  // brings them; past the last there is nothing more to draw.
+  it("reaches further back as the end of the list comes into view", async () => {
     getMessages.mockImplementation(
       async (_c: string, _m: string, cursor: string) =>
         cursor === ""
@@ -252,10 +261,14 @@ describe("the mail view", () => {
           : { messages: [message("m_2", "Older")] },
     );
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Show older" }));
+    await screen.findByText("Newer");
+    screen.getByText("Loading older messages.");
+    expect(getMessages).toHaveBeenCalledTimes(1);
+
+    act(reach);
     await screen.findByText("Older");
     expect(getMessages).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "c1");
-    expect(screen.queryByRole("button", { name: "Show older" })).toBeNull();
+    expect(screen.queryByText("Loading older messages.")).toBeNull();
   });
 
   it("asks for a look now", async () => {
@@ -503,6 +516,37 @@ describe("the mail view", () => {
       expect(postJobsRequest.mock.calls[0]![0]).toEqual([
         expect.objectContaining({ message: "m_1", kind: "seen", value: true }),
       ]);
+    });
+
+    // Every row shown taken away is not an empty folder: what is further back loads.
+    it("goes on to older messages once all those shown are moved", async () => {
+      getMessages.mockImplementation(
+        async (_c: string, _m: string, cursor: string) =>
+          cursor === ""
+            ? {
+                messages: [message("m_1", "First"), message("m_2", "Second")],
+                next_cursor: "c1",
+              }
+            : { messages: [message("m_3", "Third")] },
+      );
+      postJob.mockImplementation(take);
+      await start();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+      fireEvent.change(screen.getByLabelText("Move to folder"), {
+        target: { value: "mb_work" },
+      });
+      await waitFor(() =>
+        expect(screen.queryByRole("list", { name: "Messages" })).toBeNull(),
+      );
+      expect(screen.queryByText("No messages here.")).toBeNull();
+      screen.getByText("Loading older messages.");
+
+      act(reach);
+      const list = within(
+        await screen.findByRole("list", { name: "Messages" }),
+      );
+      expect(checkbox(list, "Third").checked).toBe(false);
+      expect(getMessages).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "c1");
     });
 
     it("leaves on Escape, and the rows open messages again", async () => {

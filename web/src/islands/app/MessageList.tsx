@@ -52,51 +52,54 @@ export function MessageList({
 
   // The next run loads before the end of the list comes into view, so scrolling seldom meets
   // it. Measured on the list's own scroll box: a margin on the window would not reach past the
-  // box's edge. Where the browser cannot say, the button below does it instead.
+  // box's edge. The end is the same node whether rows are drawn above it or not, so rows taken
+  // away by a selection acted on bring it into view, and what is further back loads.
   const scroller = useRef<HTMLDivElement>(null);
   const end = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
+  const {
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  } = pages;
   useEffect(() => {
     const node = end.current;
-    if (!node || !hasNextPage || typeof IntersectionObserver === "undefined")
-      return;
+    if (!node || !hasNextPage || isFetchNextPageError) return;
     const watch = new IntersectionObserver(
       (entries) => {
+        // A read of the whole list underway is let finish rather than cut short: the next run
+        // is asked for from what it brings.
         if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage)
-          fetchNextPage();
+          fetchNextPage({ cancelRefetch: false });
       },
       { root: scroller.current, rootMargin: `0px 0px ${AHEAD}px 0px` },
     );
     watch.observe(node);
     return () => watch.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, pages.data]);
+  }, [
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+    pages.data,
+  ]);
 
   // Where a Shift-click's range starts: the last row toggled.
   const anchor = useRef<string | null>(null);
 
-  if (pages.error) {
-    return <p className="p-4 text-sm text-accent">{messageOf(pages.error)}</p>;
-  }
   if (!pages.data) {
-    return (
-      <div className="flex flex-col gap-3 p-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="flex flex-col gap-1.5">
-            <Dummy className="h-4 w-48" />
-            <Dummy className="h-4 w-80 max-w-full" />
-          </div>
-        ))}
-      </div>
-    );
+    if (pages.error) {
+      return (
+        <p className="p-4 text-sm text-accent">{messageOf(pages.error)}</p>
+      );
+    }
+    return <MessageDummies count={4} />;
   }
   const messages = listWithPending(
     pages.data.pages.flatMap((p) => p.messages),
     mailbox.id,
     pending,
   );
-  if (messages.length === 0) {
-    return <p className="p-4 text-sm text-muted">No messages here.</p>;
-  }
 
   // A click toggles one row; a Shift-click sets every row from the last one toggled to this one
   // the way this one goes.
@@ -126,31 +129,75 @@ export function MessageList({
     // reader hears — is placed in the list rather than down the page, where it stretched the
     // window past the bottom of the screen.
     <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto">
-      <ul aria-label="Messages">
-        {messages.map((m) => (
-          <Row
-            key={m.id}
-            config={config}
-            mailbox={mailbox}
-            message={m}
-            open={m.id === open}
-            selected={select ? select.selected.has(m.id) : undefined}
-            onToggle={select ? (range) => toggle(m.id, range) : undefined}
-          />
-        ))}
-      </ul>
-      <div ref={end} className="flex justify-center p-3">
-        {hasNextPage ? (
-          <Button
-            size="bar"
-            disabled={isFetchingNextPage}
-            onClick={() => fetchNextPage()}
-          >
-            {isFetchingNextPage ? "Loading" : "Show older"}
-          </Button>
+      {messages.length > 0 ? (
+        <ul aria-label="Messages">
+          {messages.map((m) => (
+            <Row
+              key={m.id}
+              config={config}
+              mailbox={mailbox}
+              message={m}
+              open={m.id === open}
+              selected={select ? select.selected.has(m.id) : undefined}
+              onToggle={select ? (range) => toggle(m.id, range) : undefined}
+            />
+          ))}
+        </ul>
+      ) : hasNextPage ? null : (
+        <p className="p-4 text-sm text-muted">No messages here.</p>
+      )}
+      <div ref={end}>
+        {pages.error ? (
+          <div className="flex flex-col items-center gap-2 p-4 text-center">
+            <p className="text-sm text-accent">{messageOf(pages.error)}</p>
+            <Button
+              size="bar"
+              onClick={() =>
+                isFetchNextPageError ? fetchNextPage() : pages.refetch()
+              }
+            >
+              Try again
+            </Button>
+          </div>
+        ) : hasNextPage ? (
+          // What is further back, drawn before it is here: it is asked for as this nears the
+          // view, so by the time it is seen it is mostly on its way.
+          <div role="status">
+            <span className="sr-only">Loading older messages.</span>
+            <MessageDummies count={2} />
+          </div>
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** Rows standing in for messages not here yet, a message's height each. */
+export function MessageDummies({ count }: { count: number }) {
+  return (
+    <ul aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => (
+        <li
+          key={i}
+          className="flex items-start gap-3 border-b border-line px-4 py-2.5"
+        >
+          <span className="mt-1.5 size-2 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex h-5 items-center gap-2">
+              <Dummy className="h-3.5 w-32" />
+              <span className="flex-1" />
+              <Dummy className="h-3 w-12" />
+            </div>
+            <div className="flex h-5 items-center">
+              <Dummy className="h-3.5 w-56 max-w-full" />
+            </div>
+            <div className="flex h-5 items-center">
+              <Dummy className="h-3.5 w-72 max-w-full" />
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -171,6 +218,12 @@ function Row({
   onToggle?: (range: boolean) => void;
 }) {
   const unread = !m.seen;
+  const dot = (
+    <span
+      aria-hidden="true"
+      className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : ""}`}
+    />
+  );
   const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"}`;
   const body = (
     <div className="min-w-0 flex-1">
@@ -220,6 +273,8 @@ function Row({
             aria-label={m.subject || "(no subject)"}
             className="mt-1 size-4 shrink-0 accent-brand"
           />
+          {/* Kept while selecting: read or unread is often what a selection is made by. */}
+          {dot}
           {body}
         </label>
       ) : (
@@ -228,10 +283,7 @@ function Row({
           aria-current={open ? "true" : undefined}
           className={look}
         >
-          <span
-            aria-hidden="true"
-            className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : ""}`}
-          />
+          {dot}
           {body}
         </Link>
       )}

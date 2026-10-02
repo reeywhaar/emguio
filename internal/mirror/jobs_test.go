@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 
@@ -59,6 +60,30 @@ func TestJobsAreDoneOnTheServerInTheOrderAsked(t *testing.T) {
 	st, _ := w.server.Status("INBOX", &imap.StatusOptions{NumUnseen: true}).Wait()
 	if *st.NumUnseen != 0 {
 		t.Errorf("unseen on the server = %d", *st.NumUnseen)
+	}
+}
+
+// A run of jobs is told to its user once it is over: every page watching reads its lists again
+// on each telling, and a selection acted on would otherwise be a read for each message in it.
+func TestARunOfJobsIsToldOnceItIsOver(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "One")
+	w.deliver("INBOX", 2, "alice@example.com", "Two")
+	w.sync()
+	changes, stop := w.store.Watch(w.target.UserID)
+	defer stop()
+
+	w.job(store.JobSeen, 1, true, "")
+	w.job(store.JobFlagged, 1, true, "")
+	w.job(store.JobSeen, 2, true, "")
+	w.mirror.Kick(w.target.ID)
+	select {
+	case <-changes:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run was never told")
+	}
+	if left := len(w.jobs()); left != 0 {
+		t.Errorf("told with %d jobs still waiting", left)
 	}
 }
 

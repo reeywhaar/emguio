@@ -249,6 +249,56 @@ func TestAConfigCarriesItsSyncState(t *testing.T) {
 	}
 }
 
+// Changes close together are one event, sent once the gap after the last is over: each has the
+// browser read its lists again.
+func TestTheEventStreamSpacesChangesOut(t *testing.T) {
+	s, st, c, _, _ := withMail(t, 0)
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL+"/api/events", nil)
+	req.AddCookie(c.cookie)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	events := make(chan time.Time)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			if sc.Text() == "event: changed" {
+				events <- time.Now()
+			}
+		}
+		close(events)
+	}()
+
+	me := c.json(c.do("GET", "/api/auth/me", ""))["id"].(string)
+	st.Notify(me)
+	first := <-events
+	for range 3 {
+		time.Sleep(10 * time.Millisecond)
+		st.Notify(me)
+	}
+	var after []time.Time
+	deadline := time.After(eventGap + 500*time.Millisecond)
+	for collecting := true; collecting; {
+		select {
+		case at := <-events:
+			after = append(after, at)
+		case <-deadline:
+			collecting = false
+		}
+	}
+	if len(after) != 1 {
+		t.Fatalf("%d events after the first, want 1", len(after))
+	}
+	if gap := after[0].Sub(first); gap < eventGap-50*time.Millisecond {
+		t.Errorf("the second came %v after the first", gap)
+	}
+}
+
 // The stream carries no payload, only that the user's mail moved.
 func TestTheEventStreamSaysWhenMailMoved(t *testing.T) {
 	s, st, c, _, _ := withMail(t, 0)

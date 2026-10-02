@@ -17,8 +17,11 @@ import {
   type Pending,
 } from "@app/islands/app/pending";
 
-/** How often the jobs are read while some wait, should the event stream be down. */
-const POLL = 5000;
+/**
+ * How often the jobs are read while some wait. The event stream tells only when a run of them is
+ * over; a long run shows how far it has got by this.
+ */
+const POLL = 2000;
 
 /**
  * The user's jobs, kept in step with the server, and what is still being done, in the corner.

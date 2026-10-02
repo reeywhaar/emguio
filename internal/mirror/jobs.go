@@ -45,6 +45,14 @@ func (m *Mirror) Kick(configID string) {
 
 func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 	ctx := m.life
+	// Whose jobs this run has done, and whether one took a message out of its mailbox. Told
+	// once the run stops: each telling has every page watching read its lists again, and a
+	// selection of a hundred messages would otherwise be a hundred reads while it is worked on.
+	// A page sees the jobs leave meanwhile by asking for them.
+	var (
+		done  string
+		moved bool
+	)
 	for {
 		j, err := m.store.NextJob(ctx, configID)
 		if err != nil && ctx.Err() == nil {
@@ -59,7 +67,17 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 			later = time.After(time.Until(j.NextAt))
 		default:
 			m.do(ctx, j)
+			done = j.UserID
+			moved = moved || j.Kind == store.JobMove || j.Kind == store.JobDelete
 			continue
+		}
+		if done != "" {
+			if moved {
+				// The window has places to fill, and the counts are the server's to confirm.
+				m.Refresh(configID)
+			}
+			m.store.Notify(done)
+			done, moved = "", false
 		}
 		select {
 		case <-ctx.Done():
@@ -84,7 +102,6 @@ func (m *Mirror) do(ctx context.Context, j *store.Job) {
 		return
 	}
 	m.settle(ctx, j, err)
-	m.store.Notify(t.UserID)
 }
 
 // attempt does a job on the server and records what the server then holds.
@@ -130,12 +147,7 @@ func (m *Mirror) attempt(ctx context.Context, t store.SyncTarget, j *store.Job) 
 		} else if flags, err = m.Delete(ctx, t, mb.Name, uidValidity, uid); err != nil {
 			return err
 		}
-		if err := m.store.MessageMoved(ctx, mb.ID, to, uid, flags.Seen); err != nil {
-			return err
-		}
-		// The window has a place to fill, and the counts are the server's to confirm.
-		m.Refresh(t.ID)
-		return nil
+		return m.store.MessageMoved(ctx, mb.ID, to, uid, flags.Seen)
 	}
 	return store.Invalid("%q is not something a job does.", j.Kind)
 }

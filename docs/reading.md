@@ -68,6 +68,12 @@ The only thing a closed tab can lose is a job not yet taken: the page asks befor
 one is on its way, which is the moment between a press and its answer. While any wait, a corner
 of the screen says how many.
 
+Open pages are told once a run of jobs is over rather than after each job: every telling has
+them read INBOX's list again, page by page, and a selection of a hundred would be a hundred
+reads while it is worked on, on the session the jobs are done on. While jobs wait, a page reads
+`GET /api/jobs` every two seconds, so a long run shows how far it has got. The mirror's look
+after moves is asked for once at the end of the run too.
+
 ## Every action is drawn before it is done, over what the server said
 
 Read, star, archive, delete, spam and move change the screen on the press — the button, the
@@ -78,13 +84,13 @@ being drawn as waiting, so it never shows undone in between.
 
 So a failure has nothing to undo. The failed job stops being pending, and the screen is what the
 server said, with every job asked after it still drawn; a pile of jobs with a failure at its end
-loses only that one, and the notice says why. And a list read back while jobs wait — the event
-stream asks for one after each — is drawn with them still applied, rather than showing the
-messages they were asked on as though nothing had been done.
+loses only that one, and the notice says why. And a list read back while jobs wait is drawn with
+them still applied, rather than showing the messages they were asked on as though nothing had
+been done.
 
 After a move or a delete the pane goes on to the message below it in the list, or else the one
-above, or else back to the folder. The mirror is asked for a look: the window has a place to
-fill, and the counts are the server's to confirm.
+above, or else back to the folder. The mirror is asked for a look once the run is over: the
+window has places to fill, and the counts are the server's to confirm.
 
 ## A selection is acted on in one request
 
@@ -150,7 +156,12 @@ server which UIDs are below the last one shown, so mail arriving or leaving betw
 does not shift the second.
 
 The next page is asked for while the end of the list is still 200px below what shows of it, so
-scrolling down rarely reaches a row that says it is loading.
+scrolling down rarely reaches it. Until it arrives, the end is rows shaped like messages. A list
+whose every row shown was moved away by a selection is not empty while the server has more: its
+end comes into view, and the next page loads.
+
+A next page asked for while the whole list is being read again waits for that read rather than
+cutting it short, and is then asked for from what the read brought.
 
 A list shows the server's internal date — when the message arrived. The `Date` header is the
 sender's claim, which spam and misconfigured clients get wrong; it is kept beside it, as `sent`.
@@ -175,6 +186,10 @@ The mirror tells the store when a user's kept mail moved, and the store tells th
 tabs over `/api/events`. The event carries nothing; the tab refetches the mailboxes and INBOX's
 list. A list read from the server, and the open message, are not refetched on an event: each
 would be a trip to the mail server on every change. Fetch new mail asks for them again.
+
+Events are at least a second apart. Changes closer together than that are one event, sent when
+the second is up: INBOX's list past its window is read from the mail server, and a burst of
+changes would be a burst of those reads.
 
 ## A list's preview is read with its headers
 

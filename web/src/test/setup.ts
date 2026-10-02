@@ -1,5 +1,7 @@
 import { configure } from "@testing-library/react";
 
+import { Watcher } from "@app/test/view";
+
 // The first render in a file is cold, and on a busy machine it passed testing-library's one
 // second to wait for something that was on its way. A wait that will end is not a failure.
 configure({ asyncUtilTimeout: 5000 });
@@ -21,3 +23,6 @@ if (typeof HTMLDialogElement !== "undefined") {
   HTMLDialogElement.prototype.showModal ??= showModal;
   HTMLDialogElement.prototype.close ??= close;
 }
+
+globalThis.IntersectionObserver ??=
+  Watcher as unknown as typeof IntersectionObserver;

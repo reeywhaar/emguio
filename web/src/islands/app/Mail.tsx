@@ -16,7 +16,11 @@ import { ago } from "@app/format";
 import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
-import { MessageList, type Selecting } from "@app/islands/app/MessageList";
+import {
+  MessageDummies,
+  MessageList,
+  type Selecting,
+} from "@app/islands/app/MessageList";
 import { Selection } from "@app/islands/app/Selection";
 import { countsWithPending, usePending } from "@app/islands/app/pending";
 import { Reader } from "@app/islands/app/Reader";
@@ -255,7 +259,7 @@ function Body({
   open: string | null;
   select?: Selecting;
 }) {
-  if (!boxes) return <Rows />;
+  if (!boxes) return <MessageDummies count={4} />;
   if (boxes.length === 0) {
     // Nothing yet and nothing wrong: the first look at the server has not finished.
     if (config.sync_error) return null;
@@ -264,7 +268,7 @@ function Body({
         <p className="text-sm text-muted">
           Fetching folders from {config.incoming.host}…
         </p>
-        <Rows />
+        <MessageDummies count={4} />
       </div>
     );
   }
@@ -363,19 +367,6 @@ function SyncState({ config }: { config: EmailConfig }) {
       >
         <Refresh />
       </Button>
-    </div>
-  );
-}
-
-function Rows() {
-  return (
-    <div className="flex flex-col gap-3 p-4">
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="flex flex-col gap-1.5">
-          <Dummy className="h-4 w-48" />
-          <Dummy className="h-4 w-80 max-w-full" />
-        </div>
-      ))}
     </div>
   );
 }
