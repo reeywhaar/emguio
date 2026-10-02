@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
 
 	"emguio/internal/connect"
 	"emguio/internal/store"
@@ -216,16 +217,24 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 	}
 	defer s.client.Close()
 
-	tick := time.NewTicker(Quick)
+	// With IDLE the server says when INBOX moves, and the timer is only for every other
+	// mailbox's counts; without it, INBOX is looked at every minute.
+	idles := s.idles()
+	every := Quick
+	if idles {
+		every = Full
+	}
+	tick := time.NewTicker(every)
 	defer tick.Stop()
 	full, lastFull, synced := true, time.Time{}, false
 	for {
+		began := time.Now()
 		changed, err := s.pass(ctx, full)
 		if err != nil {
 			return synced, err
 		}
 		if full {
-			lastFull = time.Now()
+			lastFull = began
 		}
 		if err := m.store.SetSyncState(ctx, w.target.ID, ""); err != nil {
 			return synced, err
@@ -236,15 +245,80 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 			m.store.Notify(w.target.UserID)
 		}
 		synced = true
-		select {
-		case <-ctx.Done():
+		why, err := s.wait(ctx, tick.C, w.wake)
+		switch {
+		case why == ended:
 			return true, nil
-		case <-tick.C:
-			full = time.Since(lastFull) >= Full
-		case <-w.wake:
+		case err != nil:
+			return true, err
+		case why == poked:
 			full = true
+		default:
+			// A tick comes a moment before Full has passed since the last full pass began.
+			full = time.Since(lastFull) >= Full-every/2
 		}
 	}
+}
+
+// Why a session stopped waiting.
+const (
+	ticked = iota
+	poked
+	// arrived is INBOX moving, said by the server under IDLE.
+	arrived
+	ended
+)
+
+// idles is whether the server can say when a mailbox moves, rather than be asked.
+func (s *session) idles() bool {
+	caps := s.client.Caps()
+	return caps.Has(imap.CapIdle) || caps.Has(imap.CapIMAP4rev2)
+}
+
+// wait waits between passes for the timer or a poke, and on a server with IDLE, in INBOX, for
+// the server to say INBOX moved: new mail is looked at as it arrives rather than up to a minute
+// later. INBOX is examined, never selected, so waiting there changes nothing.
+func (s *session) wait(ctx context.Context, tick <-chan time.Time, wake <-chan struct{}) (int, error) {
+	var (
+		idle  *imapclient.IdleCommand
+		moved chan struct{}
+	)
+	if s.idles() {
+		moved = s.moved
+		if _, err := s.client.Select("INBOX", &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+			return ticked, err
+		}
+		// What was said before this wait, the pass just made has seen.
+		select {
+		case <-s.moved:
+		default:
+		}
+		var err error
+		if idle, err = s.client.Idle(); err != nil {
+			return ticked, err
+		}
+	}
+	why := ticked
+	select {
+	case <-ctx.Done():
+		return ended, nil
+	case <-tick:
+	case <-wake:
+		why = poked
+	case <-moved:
+		why = arrived
+	}
+	if idle == nil {
+		return why, nil
+	}
+	if err := idle.Close(); err != nil {
+		return why, err
+	}
+	if err := idle.Wait(); err != nil {
+		return why, err
+	}
+	s.unselect()
+	return why, nil
 }
 
 // Once signs in, makes one full pass, and signs out. What a worker does on a timer,
@@ -275,11 +349,25 @@ func (m *Mirror) open(ctx context.Context, t store.SyncTarget) (*session, error)
 	}
 	in := logins.Incoming
 	server := connect.Server{Host: in.Host, Port: in.Port, TLS: in.TLS, Username: in.Username, Password: in.Password}
-	client, err := m.conn.OpenIMAP(ctx, server)
+	moved := make(chan struct{}, 1)
+	say := func() {
+		select {
+		case moved <- struct{}{}:
+		default:
+		}
+	}
+	client, err := m.conn.OpenIMAPTelling(ctx, server, &imapclient.UnilateralDataHandler{
+		Mailbox: func(*imapclient.UnilateralDataMailbox) { say() },
+		Expunge: func(uint32) { say() },
+		Fetch: func(msg *imapclient.FetchMessageData) {
+			msg.Collect()
+			say()
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &session{m: m, target: t, host: in.Host, client: client}, nil
+	return &session{m: m, target: t, host: in.Host, client: client, moved: moved}, nil
 }
 
 // failed records why the latest attempt did not work, in a sentence for the settings page.

@@ -27,6 +27,8 @@ type session struct {
 	host   string
 	client *imapclient.Client
 	listed bool
+	// moved is signalled when the server says, unasked, that the selected mailbox changed.
+	moved chan struct{}
 }
 
 // pass brings what is kept up to date: the window on every pass, and on a full one the list of

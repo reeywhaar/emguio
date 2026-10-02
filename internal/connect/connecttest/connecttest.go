@@ -78,10 +78,10 @@ func NewCert(t testing.TB) *Cert {
 	}
 }
 
-// What an IMAP server here offers: Modern what any current server does, MOVE and UIDPLUS among
-// it, and Bare only IMAP4rev1, for what has to be refused without them.
+// What an IMAP server here offers: Modern what any current server does, IDLE, MOVE and UIDPLUS
+// among it, and Bare only IMAP4rev1, for what has to be refused or polled for without them.
 var (
-	Modern = imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapMove: {}, imap.CapUIDPlus: {}}
+	Modern = imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapIdle: {}, imap.CapMove: {}, imap.CapUIDPlus: {}}
 	Bare   = imap.CapSet{imap.CapIMAP4rev1: {}}
 )
 

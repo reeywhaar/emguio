@@ -58,7 +58,8 @@ func (s *transcript) commands(name string) int {
 	defer s.mu.Unlock()
 	n := 0
 	for _, line := range strings.Split(s.buf.String(), "\n") {
-		if _, rest, ok := strings.Cut(line, " "); ok && strings.HasPrefix(rest, name+" ") {
+		_, rest, _ := strings.Cut(strings.TrimRight(line, "\r"), " ")
+		if rest == name || strings.HasPrefix(rest, name+" ") {
 			n++
 		}
 	}
@@ -426,6 +427,31 @@ func TestAPassTellsTheUsersWatchers(t *testing.T) {
 	default:
 		t.Error("nobody was told")
 	}
+}
+
+// On a server with IDLE, mail arriving in INBOX is kept as it arrives, and the user told, rather
+// than at the next look a minute later; the session goes on waiting there after.
+func TestNewMailIsKeptAsItArrives(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "First")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.mirror.Run(ctx)
+	eventually(t, func() bool { return w.mailbox("INBOX") != nil && subjects(w.window()) == "First" })
+	// The worker is waiting in INBOX once IDLE is sent.
+	eventually(t, func() bool { return w.said.commands("IDLE") > 0 })
+
+	changes, stop := w.store.Watch(w.target.UserID)
+	defer stop()
+	w.deliver("INBOX", 2, "alice@example.com", "Second")
+	eventually(t, func() bool { return subjects(w.window()) == "Second, First" })
+	select {
+	case <-changes:
+	case <-time.After(5 * time.Second):
+		t.Fatal("nobody was told")
+	}
+	w.deliver("INBOX", 3, "alice@example.com", "Third")
+	eventually(t, func() bool { return subjects(w.window()) == "Third, Second, First" })
 }
 
 func TestAWorkerStartsForANewConfigAndStopsWhenItIsDeleted(t *testing.T) {

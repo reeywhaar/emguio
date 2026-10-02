@@ -19,6 +19,12 @@ var wordDecoder = &mime.WordDecoder{CharsetReader: charset.Reader}
 // OpenIMAP signs in and returns the session. Signing in is bounded by the connector's timeout;
 // the session is not, and lives until ctx ends or it is closed.
 func (c *Connector) OpenIMAP(ctx context.Context, s Server) (*imapclient.Client, error) {
+	return c.OpenIMAPTelling(ctx, s, nil)
+}
+
+// OpenIMAPTelling is OpenIMAP with told called on what the server says unasked: mail arriving in
+// or leaving the selected mailbox, a flag another client changed.
+func (c *Connector) OpenIMAPTelling(ctx context.Context, s Server, told *imapclient.UnilateralDataHandler) (*imapclient.Client, error) {
 	signIn, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
@@ -26,7 +32,7 @@ func (c *Connector) OpenIMAP(ctx context.Context, s Server) (*imapclient.Client,
 	if err != nil {
 		return nil, err
 	}
-	client, err := c.signInIMAP(signIn, s, conn)
+	client, err := c.signInIMAP(signIn, s, conn, told)
 	if !release() {
 		// The sign-in ran out of time and the connection was closed under it.
 		if client != nil {
@@ -42,8 +48,8 @@ func (c *Connector) OpenIMAP(ctx context.Context, s Server) (*imapclient.Client,
 	return client, nil
 }
 
-func (c *Connector) signInIMAP(ctx context.Context, s Server, conn net.Conn) (*imapclient.Client, error) {
-	opts := &imapclient.Options{TLSConfig: c.tlsConfig(s.Host), WordDecoder: wordDecoder}
+func (c *Connector) signInIMAP(ctx context.Context, s Server, conn net.Conn, told *imapclient.UnilateralDataHandler) (*imapclient.Client, error) {
+	opts := &imapclient.Options{TLSConfig: c.tlsConfig(s.Host), WordDecoder: wordDecoder, UnilateralDataHandler: told}
 	var client *imapclient.Client
 	if s.TLS == StartTLS {
 		var err error

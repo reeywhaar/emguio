@@ -135,10 +135,17 @@ worker, so it never goes on signing in with what was saved before.
 The latest failure is the config's `sync_error`, in a sentence, shown above the list and cleared
 by the next pass that works.
 
-## The window every minute, the counts every five
+## INBOX as it changes, the counts every five minutes
 
 A quick pass brings the window up to date; a full pass also lists the mailboxes and asks each
-for its counts with `STATUS`. Fetch new mail, and saving a config, ask for a full pass now.
+for its counts with `STATUS`, every five minutes. Fetch new mail, saving a config, and a run of
+jobs that moved mail ask for a full pass now.
+
+Between passes the worker waits in INBOX with `IDLE`, examined rather than selected, so waiting
+there changes nothing. Whatever the server says unasked — mail arriving or leaving, a flag
+another client changed — ends the wait with a quick pass, so new mail is in the list as it
+arrives rather than up to a minute later. go-imap sends `IDLE` again before a server's
+inactivity timeout. On a server without `IDLE`, INBOX is looked at every minute instead.
 
 The window is opened on every pass rather than only when `STATUS` has moved: a flag changed
 elsewhere — a star — moves no number `STATUS` reports, and the newest 30 messages' flags cost
