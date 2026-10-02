@@ -10,8 +10,9 @@ import { qk } from "@app/api/keys";
 import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
-import { Select } from "@app/components/Field";
+import { Dialog } from "@app/components/Dialog";
 import { Refresh, SelectMark, WriteMark } from "@app/components/icons";
+import { PickerButton } from "@app/components/PickerButton";
 import { ago } from "@app/format";
 import { blank, write } from "@app/islands/app/drafts";
 import { pick, rememberConfig } from "@app/islands/app/emailConfig";
@@ -66,9 +67,9 @@ export function Mail({
   if (configs.data.length === 0) {
     return (
       <Centered>
-        <p className="text-sm text-muted">No email configs yet.</p>
+        <p className="text-sm text-muted">No mail accounts yet.</p>
         <Link href={paths.newConfig} className={buttonLook("solid")}>
-          Add an email config
+          Add a mail account
         </Link>
       </Centered>
     );
@@ -76,7 +77,7 @@ export function Mail({
   if (!config) {
     return (
       <Centered>
-        <p className="text-sm text-muted">There is no such email config.</p>
+        <p className="text-sm text-muted">There is no such mail account.</p>
         <Link href={paths.mail()} className="text-sm underline">
           Open the usual one
         </Link>
@@ -158,17 +159,11 @@ function Folders({
           className="relative flex-1 overflow-y-auto p-2"
         >
           {boxes.data ? (
-            <ul className="flex flex-col">
-              {boxes.data.map((mb) => (
-                <li key={mb.id}>
-                  <FolderLink
-                    config={config.id}
-                    mb={mb}
-                    current={mb.id === current?.id}
-                  />
-                </li>
-              ))}
-            </ul>
+            <FolderList
+              config={config.id}
+              boxes={boxes.data}
+              current={current}
+            />
           ) : (
             <div className="flex flex-col gap-2 p-1">
               <Dummy className="h-6 w-full" />
@@ -177,6 +172,9 @@ function Folders({
             </div>
           )}
         </nav>
+        <div className="flex border-t border-line px-3 py-2">
+          <SyncState config={config} />
+        </div>
       </aside>
 
       <section
@@ -195,22 +193,11 @@ function Folders({
             />
           ) : null}
           {!selected && boxes.data && boxes.data.length > 0 ? (
-            <Select
-              aria-label="Folder"
-              size="bar"
-              className="min-w-0 flex-1 md:hidden"
-              value={current?.id ?? ""}
-              onChange={(e) => go(paths.mail(config.id, e.target.value))}
-            >
-              {current ? null : <option value="">Choose a folder</option>}
-              {boxes.data.map((mb) => (
-                <option key={mb.id} value={mb.id} disabled={!mb.selectable}>
-                  {" ".repeat(depthOf(mb))}
-                  {labelOfMailbox(mb)}
-                  {mb.unseen ? ` (${mb.unseen})` : ""}
-                </option>
-              ))}
-            </Select>
+            <FolderPicker
+              config={config}
+              boxes={boxes.data}
+              current={current}
+            />
           ) : null}
           {selected ? null : (
             <>
@@ -240,7 +227,10 @@ function Folders({
                   <SelectMark />
                 </Button>
               ) : null}
-              <SyncState config={config} />
+              {/* Hidden on a wrapper, because a button's own display would win over hidden. */}
+              <span className="md:hidden">
+                <FetchMail config={config} />
+              </span>
             </>
           )}
         </div>
@@ -287,7 +277,7 @@ function Folders({
         />
       ) : (
         <div className="hidden flex-1 items-center justify-center lg:flex">
-          <p className="text-sm text-faint">Choose a message to read it.</p>
+          <p className="text-sm text-faint">Choose a message</p>
         </div>
       )}
     </div>
@@ -354,14 +344,104 @@ function Body({
   );
 }
 
+/** The folders as a tree; onPick is told when one is chosen, for a list that closes then. */
+function FolderList({
+  config,
+  boxes,
+  current,
+  onPick,
+}: {
+  config: string;
+  boxes: Mailbox[];
+  current: Mailbox | undefined;
+  onPick?: () => void;
+}) {
+  return (
+    <ul className="flex flex-col">
+      {boxes.map((mb) => (
+        <li key={mb.id}>
+          <FolderLink
+            config={config}
+            mb={mb}
+            current={mb.id === current?.id}
+            onPick={onPick}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** On a phone, the folder open, which opens the folders to choose another. */
+function FolderPicker({
+  config,
+  boxes,
+  current,
+}: {
+  config: EmailConfig;
+  boxes: Mailbox[];
+  current: Mailbox | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <PickerButton
+        name="Folder"
+        className="flex-1 md:hidden"
+        onClick={() => setOpen(true)}
+      >
+        <span className="min-w-0 flex-1 truncate">
+          {current ? labelOfMailbox(current) : "Choose a folder"}
+        </span>
+        {current ? <Counts mb={current} /> : null}
+      </PickerButton>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Folders"
+        footer={<SyncState config={config} />}
+      >
+        <FolderList
+          config={config.id}
+          boxes={boxes}
+          current={current}
+          onPick={() => setOpen(false)}
+        />
+      </Dialog>
+    </>
+  );
+}
+
+/** What is unread of a folder, and how many it holds. */
+function Counts({ mb }: { mb: Mailbox }) {
+  if (!mb.messages) return null;
+  return (
+    <span className="text-xs tabular-nums">
+      {mb.unseen ? (
+        <span className="font-medium text-brand">
+          <span className="sr-only">, unread: </span>
+          {mb.unseen.toLocaleString()}
+        </span>
+      ) : null}
+      <span className="text-faint">
+        <span className="sr-only">, messages: </span>
+        {mb.unseen ? <span aria-hidden="true">/</span> : null}
+        {mb.messages.toLocaleString()}
+      </span>
+    </span>
+  );
+}
+
 function FolderLink({
   config,
   mb,
   current,
+  onPick,
 }: {
   config: string;
   mb: Mailbox;
   current: boolean;
+  onPick?: () => void;
 }) {
   const indent = { paddingLeft: `${0.75 + depthOf(mb) * 0.875}rem` };
   if (!mb.selectable) {
@@ -380,29 +460,31 @@ function FolderLink({
       aria-current={current ? "page" : undefined}
       className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${current ? "bg-shade font-medium" : "hover:bg-shade"}`}
       style={indent}
+      onClick={onPick}
     >
       <span className="min-w-0 flex-1 truncate">{labelOfMailbox(mb)}</span>
-      {mb.messages ? (
-        <span className="text-xs tabular-nums">
-          {mb.unseen ? (
-            <span className="font-medium text-brand">
-              <span className="sr-only">, unread: </span>
-              {mb.unseen.toLocaleString()}
-            </span>
-          ) : null}
-          <span className="text-faint">
-            <span className="sr-only">, messages: </span>
-            {mb.unseen ? <span aria-hidden="true">/</span> : null}
-            {mb.messages.toLocaleString()}
-          </span>
-        </span>
-      ) : null}
+      <Counts mb={mb} />
     </Link>
   );
 }
 
 /** When the mail was last brought up to date, and a way to ask for it now. */
 function SyncState({ config }: { config: EmailConfig }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-xs text-muted">
+        {config.synced_at
+          ? `Updated ${ago(config.synced_at)}`
+          : config.sync_error
+            ? ""
+            : "Not fetched yet"}
+      </span>
+      <FetchMail config={config} />
+    </div>
+  );
+}
+
+function FetchMail({ config }: { config: EmailConfig }) {
   const client = useQueryClient();
   const sync = useMutation({
     mutationFn: () => postEmailConfigsByIdSync(config.id),
@@ -412,24 +494,15 @@ function SyncState({ config }: { config: EmailConfig }) {
       client.invalidateQueries({ queryKey: qk.lists(config.id) }),
   });
   return (
-    <div className="flex shrink-0 items-center gap-2">
-      <span className="hidden text-xs text-muted sm:inline">
-        {config.synced_at
-          ? `Updated ${ago(config.synced_at)}`
-          : config.sync_error
-            ? ""
-            : "Not fetched yet"}
-      </span>
-      <Button
-        size="bar"
-        aria-label="Fetch new mail"
-        title="Fetch new mail"
-        disabled={sync.isPending}
-        onClick={() => sync.mutate()}
-      >
-        <Refresh />
-      </Button>
-    </div>
+    <Button
+      size="bar"
+      aria-label="Fetch new mail"
+      title="Fetch new mail"
+      disabled={sync.isPending}
+      onClick={() => sync.mutate()}
+    >
+      <Refresh />
+    </Button>
   );
 }
 

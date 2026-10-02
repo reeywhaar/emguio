@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { useState } from "react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Dialog } from "@app/components/Dialog";
@@ -10,14 +11,36 @@ function Breaks(): never {
 
 afterEach(() => vi.restoreAllMocks());
 
+function Shuttable() {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(false)}>
+        Shut
+      </button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Folders">
+        <p>Inside</p>
+      </Dialog>
+    </>
+  );
+}
+
 describe("a dialog", () => {
+  // What it holds stays while it fades out, then goes, so a form starts empty the next time.
+  it("keeps what it holds while it fades out, then lets it go", async () => {
+    mount(<Shuttable />);
+    fireEvent.click(screen.getByRole("button", { name: "Shut" }));
+    screen.getByText("Inside");
+    await waitFor(() => expect(screen.queryByText("Inside")).toBeNull());
+  });
+
   // showModal focuses the first control it finds, and a ring on Delete reads as armed.
   it("leaves nothing lit when no field asked for focus", () => {
     mount(
       <Dialog
         open
         onClose={vi.fn()}
-        title="Email config"
+        title="Mail account"
         footer={<button type="button">Delete</button>}
       >
         <input aria-label="Host" />
@@ -31,7 +54,7 @@ describe("a dialog", () => {
       <Dialog
         open
         onClose={vi.fn()}
-        title="Add email config"
+        title="Add mail account"
         footer={<button type="button">Cancel</button>}
       >
         <input data-autofocus aria-label="Email address" />
@@ -42,12 +65,12 @@ describe("a dialog", () => {
 
   it("keeps the title out of the part that scrolls", () => {
     const { container } = mount(
-      <Dialog open onClose={vi.fn()} title="Email config">
+      <Dialog open onClose={vi.fn()} title="Mail account">
         <p>Something long</p>
       </Dialog>,
     );
     const scroller = container.querySelector(".overflow-y-auto")!;
-    const heading = screen.getByRole("heading", { name: "Email config" });
+    const heading = screen.getByRole("heading", { name: "Mail account" });
     expect(scroller.contains(heading)).toBe(false);
     expect(scroller.textContent).toBe("Something long");
   });
@@ -57,14 +80,14 @@ describe("a dialog", () => {
       <Dialog
         open
         onClose={vi.fn()}
-        title="Email config"
+        title="Mail account"
         aside={<span>ec_1</span>}
       >
         <p>Something</p>
       </Dialog>,
     );
     const id = screen.getByText("ec_1");
-    const heading = screen.getByRole("heading", { name: "Email config" });
+    const heading = screen.getByRole("heading", { name: "Mail account" });
     expect(heading.parentElement!.contains(id)).toBe(true);
     expect(container.querySelector(".overflow-y-auto")!.contains(id)).toBe(
       false,
@@ -75,7 +98,7 @@ describe("a dialog", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const onClose = vi.fn();
     mount(
-      <Dialog open onClose={onClose} title="Email config">
+      <Dialog open onClose={onClose} title="Mail account">
         <Breaks />
       </Dialog>,
     );

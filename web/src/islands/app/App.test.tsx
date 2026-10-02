@@ -86,11 +86,11 @@ describe("the application", () => {
   it("points somewhere when there are no email configs yet", async () => {
     mount(<App />);
     fireEvent.click(
-      await screen.findByRole("link", { name: "Add an email config" }),
+      await screen.findByRole("link", { name: "Add a mail account" }),
     );
     expect(window.location.pathname).toBe("/settings/email-configs/new");
     const dialog = await screen.findByRole("dialog");
-    within(dialog).getByRole("heading", { name: "Add email config" });
+    within(dialog).getByRole("heading", { name: "Add mail account" });
   });
 
   // One config at a time, chosen in the header, and the address says which.
@@ -102,11 +102,30 @@ describe("the application", () => {
     mount(<App />);
     await screen.findByRole("heading", { name: "Inbox of ec_1" });
 
-    fireEvent.change(screen.getByLabelText("Email config"), {
+    fireEvent.change(screen.getByLabelText("Mail account"), {
       target: { value: "ec_2" },
     });
     expect(window.location.pathname).toBe("/c/ec_2");
     await screen.findByRole("heading", { name: "Inbox of ec_2" });
+  });
+
+  // On a phone the switcher is a button, and the configs a list in a dialog.
+  it("on a phone, switches email config from a list", async () => {
+    getEmailConfigs.mockResolvedValue([
+      config("ec_1", "Work"),
+      config("ec_2", "Home"),
+    ]);
+    mount(<App />);
+    await screen.findByRole("heading", { name: "Inbox of ec_1" });
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Mail account:\s*Work/ }),
+    );
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Mail accounts" });
+    fireEvent.click(dialog.getByRole("link", { name: /^Home/ }));
+    expect(window.location.pathname).toBe("/c/ec_2");
+    await screen.findByRole("heading", { name: "Inbox of ec_2" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("opens on the config last looked at", async () => {

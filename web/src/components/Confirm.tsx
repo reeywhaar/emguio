@@ -37,6 +37,7 @@ const ConfirmContext = createContext<Ask | null>(null);
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [asking, setAsking] = useState<ConfirmOptions | null>(null);
+  const [open, setOpen] = useState(false);
   const answer = useRef<(yes: boolean) => void>(() => {});
 
   const ask = useCallback<Ask>(
@@ -47,6 +48,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         answer.current(false);
         answer.current = resolve;
         setAsking(options);
+        setOpen(true);
       }),
     [],
   );
@@ -54,14 +56,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const settle = (yes: boolean) => {
     answer.current(yes);
     answer.current = () => {};
-    setAsking(null);
+    setOpen(false);
   };
 
   return (
     <ConfirmContext.Provider value={ask}>
       {children}
       <Dialog
-        open={asking !== null}
+        open={open}
         onClose={() => settle(false)}
         title={asking?.title ?? ""}
         footer={

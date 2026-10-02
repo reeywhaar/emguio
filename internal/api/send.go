@@ -78,7 +78,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if logins.Outgoing == nil {
-		refuse(w, http.StatusConflict, CodeConflict, "This email config has no outgoing server. Add one in its settings to send from it.")
+		refuse(w, http.StatusConflict, CodeConflict, "This mail account has no outgoing server. Add one in its settings to send from it.")
 		return
 	}
 

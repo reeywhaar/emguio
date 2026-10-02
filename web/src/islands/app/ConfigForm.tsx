@@ -127,9 +127,11 @@ function bodyOf(d: Draft): EmailConfigDraft {
 /** A dialog adding an email config, or editing the one with id. */
 export function ConfigForm({
   id,
+  open,
   onClose,
 }: {
   id: string | null;
+  open: boolean;
   onClose: () => void;
 }) {
   const configs = useQuery({
@@ -138,10 +140,10 @@ export function ConfigForm({
     enabled: id !== null,
   });
 
-  if (id === null) return <Form onClose={onClose} />;
+  if (id === null) return <Form open={open} onClose={onClose} />;
   if (!configs.data) {
     return (
-      <Dialog open wide onClose={onClose} title="Edit email config">
+      <Dialog open={open} wide onClose={onClose} title="Edit mail account">
         <Dummy className="h-64 w-full" />
       </Dialog>
     );
@@ -149,19 +151,21 @@ export function ConfigForm({
   const config = configs.data.find((c) => c.id === id);
   if (!config) {
     return (
-      <Dialog open wide onClose={onClose} title="Edit email config">
-        <p className="text-sm text-muted">There is no such email config.</p>
+      <Dialog open={open} wide onClose={onClose} title="Edit mail account">
+        <p className="text-sm text-muted">There is no such mail account.</p>
       </Dialog>
     );
   }
-  return <Form config={config} onClose={onClose} />;
+  return <Form config={config} open={open} onClose={onClose} />;
 }
 
 function Form({
   config,
+  open,
   onClose,
 }: {
   config?: EmailConfig;
+  open: boolean;
   onClose: () => void;
 }) {
   const form = useId();
@@ -222,10 +226,10 @@ function Form({
 
   return (
     <Dialog
-      open
+      open={open}
       wide
       onClose={onClose}
-      title={editing ? `Edit ${labelOf(config)}` : "Add email config"}
+      title={editing ? `Edit ${labelOf(config)}` : "Add mail account"}
       footer={
         <>
           {/* Beside the buttons that caused it, whatever the body is scrolled to. */}

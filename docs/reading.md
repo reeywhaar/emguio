@@ -68,6 +68,10 @@ messages archived cost the mail server two commands rather than two hundred. Any
 in between ends the run, so nothing is done out of order. A refusal or a lost connection is every
 job's in it; a message another client took away first fails alone.
 
+A newer read or star on a message replaces one still waiting on it, so read then unread pressed
+quickly is one `STORE` of the flag it ends with. A move or a delete is never dropped: where a
+message goes is not undone by what was asked after.
+
 A failed job keeps its sentence until a page has shown it and let it go; one nobody comes back for
 is swept after a day. `GET /api/jobs` lists what waits and what failed, so a page opened later —
 a reload, another tab — draws them too.

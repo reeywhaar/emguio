@@ -246,6 +246,28 @@ describe("the mail view", () => {
     expect(links[0]!.getAttribute("aria-current")).toBe("page");
   });
 
+  // On a phone the folder open is a button, and the folders a list in a dialog.
+  it("on a phone, chooses another folder from a list", async () => {
+    window.history.pushState({}, "", "/c/ec_1/mb_inbox");
+    mount(<Routed />);
+    const open = await screen.findByRole("button", {
+      name: /^Folder:\s*Inbox/,
+    });
+    expect(open.textContent).toBe("Folder: Inbox, unread: 2, messages: /10");
+    fireEvent.click(open);
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Folders" });
+    expect(dialog.getAllByRole("link").map((l) => l.textContent)).toEqual([
+      "Inbox, unread: 2, messages: /10",
+      "Sent, messages: 10",
+      "Work, messages: 10",
+      "Clients, unread: 1, messages: /10",
+    ]);
+    fireEvent.click(dialog.getByRole("link", { name: /^Clients/ }));
+    expect(window.location.pathname).toBe("/c/ec_1/mb_clients");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("opens another folder from the sidebar, and the address says which", async () => {
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const nav = await screen.findByRole("navigation", { name: "Folders" });
@@ -329,7 +351,7 @@ describe("the mail view", () => {
   it("asks for a look now", async () => {
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Fetch new mail" }),
+      (await screen.findAllByRole("button", { name: "Fetch new mail" }))[0]!,
     );
     await waitFor(() =>
       expect(postEmailConfigsByIdSync).toHaveBeenCalledWith("ec_1"),

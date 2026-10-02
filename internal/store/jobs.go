@@ -69,6 +69,14 @@ func (s *Store) AddJobs(ctx context.Context, jobs []Job) ([]*Job, error) {
 	out := make([]*Job, 0, len(jobs))
 	for _, j := range jobs {
 		j.ID, j.CreatedAt, j.NextAt = ids.New(ids.Job, now.UnixMilli()), now, now
+		// A newer read or star replaces one still waiting on the same message: only the last counts.
+		if j.Kind == JobSeen || j.Kind == JobFlagged {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM jobs WHERE email_config_id = ? AND mailbox_id = ? AND message = ? AND kind = ? AND error = ''`,
+				j.EmailConfigID, j.MailboxID, j.Message, j.Kind); err != nil {
+				return nil, fmt.Errorf("add jobs: %w", err)
+			}
+		}
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?)`,
 			j.ID, j.UserID, j.EmailConfigID, j.MailboxID, j.Message, j.Kind, j.Value, j.Target, j.Seen,
@@ -223,7 +231,7 @@ func (s *Store) JobTarget(ctx context.Context, configID string) (SyncTarget, err
 	err := s.reader.QueryRowContext(ctx,
 		`SELECT user_id, updated_at FROM email_configs WHERE id = ?`, configID).Scan(&t.UserID, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
-		return t, NotFound("There is no such email config.")
+		return t, NotFound("There is no such mail account.")
 	}
 	if err != nil {
 		return t, fmt.Errorf("job target: %w", err)

@@ -154,7 +154,7 @@ func (s *Store) emailConfigRow(ctx context.Context, userID, id string) (*emailCo
 	r, err := scanEmailConfig(s.reader.QueryRowContext(ctx,
 		`SELECT `+emailConfigSelect+` FROM email_configs WHERE id = ? AND user_id = ?`, id, userID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, NotFound("There is no such email config.")
+		return nil, NotFound("There is no such mail account.")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("email config: %w", err)
@@ -216,7 +216,7 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 		return nil, fmt.Errorf("update email config: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return nil, NotFound("There is no such email config.")
+		return nil, NotFound("There is no such mail account.")
 	}
 	// Another host or another username is another mailbox store, and what was copied from the
 	// old one is not this config's mail any more. A port or a security setting is the same one.
@@ -253,7 +253,7 @@ func (s *Store) DeleteEmailConfig(ctx context.Context, userID, id string) error 
 		return fmt.Errorf("delete email config: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return NotFound("There is no such email config.")
+		return NotFound("There is no such mail account.")
 	}
 	return nil
 }

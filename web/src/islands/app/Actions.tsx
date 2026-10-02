@@ -117,15 +117,17 @@ export function Actions({
 
   // Opening an unread message is reading it, once per opening: see docs/reading.md. Before the
   // first paint, so the pane never shows it unread for a moment and then not.
+  // Decided once, by how it opened: marked unread while open, it stays so.
   const opened = useRef(ask);
   opened.current = ask;
-  const marked = useRef(false);
-  const unread = m !== undefined && !m.seen;
+  const decided = useRef(false);
+  const known = m !== undefined;
+  const unread = known && !m.seen;
   useLayoutEffect(() => {
-    if (!unread || marked.current) return;
-    marked.current = true;
-    opened.current({ kind: "seen", value: true, seen: false });
-  }, [unread]);
+    if (!known || decided.current) return;
+    decided.current = true;
+    if (unread) opened.current({ kind: "seen", value: true, seen: false });
+  }, [known, unread]);
 
   const seen = m?.seen ?? true;
   const starred = m?.flagged ?? false;

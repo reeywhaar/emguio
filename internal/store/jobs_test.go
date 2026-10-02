@@ -49,6 +49,30 @@ func TestJobsAreDoneInTheOrderAsked(t *testing.T) {
 
 // What goes to the server at once is a run of the same done to one mailbox's messages, as a
 // selection acted on asks for; anything else asked in between ends the run, so the order holds.
+// Read then unread on one message is one job, the last: only the flag it ends with counts. A
+// star, a move, and another message's read are other jobs.
+func TestANewerReadOrStarReplacesOneWaiting(t *testing.T) {
+	st, u, cfg, mb := mailWorld(t, 2)
+	ctx := context.Background()
+	job := func(message, kind string, value bool) Job {
+		return Job{UserID: u.ID, EmailConfigID: cfg.ID, MailboxID: mb.ID, Message: message, Kind: kind, Value: value, Target: mb.ID}
+	}
+	st.AddJobs(ctx, []Job{job("1-1", JobSeen, true), job("1-1", JobFlagged, true), job("1-2", JobSeen, true)})
+	st.AddJob(ctx, job("1-1", JobSeen, false))
+	st.AddJob(ctx, job("1-1", JobMove, false))
+	st.AddJob(ctx, job("1-1", JobMove, false))
+
+	var got []string
+	jobs, _ := st.Jobs(ctx, u.ID)
+	for _, j := range jobs {
+		got = append(got, fmt.Sprintf("%s %s %v", j.Message, j.Kind, j.Value))
+	}
+	want := "[1-1 flagged true 1-2 seen true 1-1 seen false 1-1 move false 1-1 move false]"
+	if fmt.Sprint(got) != want {
+		t.Errorf("jobs = %v, want %s", got, want)
+	}
+}
+
 func TestARunOfTheSameJobIsDoneAtOnce(t *testing.T) {
 	st, u, cfg, mb := mailWorld(t, 2)
 	ctx := context.Background()

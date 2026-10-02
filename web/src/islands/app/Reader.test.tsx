@@ -260,6 +260,15 @@ describe("the reading pane", () => {
     ]);
   });
 
+  // Opened read, it is not read again when it is marked unread while open.
+  it("leaves a message opened read unread when asked", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    open();
+    fireEvent.click(await ready("Mark as unread"));
+    await ready("Mark as read");
+    expect(asked().map((j) => [j.kind, j.value])).toEqual([["seen", false]]);
+  });
+
   // Archive, Trash and spam are each a move, to the folder the server says is for it; then the
   // message has left this folder, and so has the pane.
   it("archives to the server's archive and goes back to the list", async () => {

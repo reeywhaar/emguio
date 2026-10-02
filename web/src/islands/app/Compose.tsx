@@ -31,11 +31,14 @@ const LIMIT = 25 * 1024 * 1024;
 /** The compose window, over whatever is open, while something is being written. */
 export function Compose() {
   const writing = useWriting();
-  if (!writing) return null;
-  return <Writer start={writing.draft} key={writing.id} />;
+  // The last draft stays while its window fades out.
+  const [last, setLast] = useState(writing);
+  if (writing && writing !== last) setLast(writing);
+  if (!last) return null;
+  return <Writer start={last.draft} open={writing !== null} key={last.id} />;
 }
 
-function Writer({ start }: { start: Draft }) {
+function Writer({ start, open }: { start: Draft; open: boolean }) {
   const confirm = useConfirm();
   const form = useId();
   const [draft, setDraft] = useState(start);
@@ -65,11 +68,11 @@ function Writer({ start }: { start: Draft }) {
     draft.files.length > 0;
 
   useEffect(() => {
-    if (!changed || send.isSuccess) return;
+    if (!open || !changed || send.isSuccess) return;
     const stay = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", stay);
     return () => window.removeEventListener("beforeunload", stay);
-  }, [changed, send.isSuccess]);
+  }, [open, changed, send.isSuccess]);
 
   const text = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -116,9 +119,9 @@ function Writer({ start }: { start: Draft }) {
 
   if (config && !config.outgoing) {
     return (
-      <Dialog open onClose={stopWriting} title={title}>
+      <Dialog open={open} onClose={stopWriting} title={title}>
         <p className="text-sm text-muted">
-          This email config has no outgoing server to send through.{" "}
+          This mail account has no outgoing server to send through.{" "}
           <Link
             href={paths.editConfig(config.id)}
             className="underline"
@@ -134,7 +137,7 @@ function Writer({ start }: { start: Draft }) {
   const error = problem || (send.error ? messageOf(send.error) : "");
   return (
     <Dialog
-      open
+      open={open}
       wide
       onClose={close}
       title={title}

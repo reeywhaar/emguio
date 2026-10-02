@@ -6,8 +6,8 @@ import type { ReactNode } from "react";
  */
 
 const box = {
-  width: 14,
-  height: 14,
+  width: 16,
+  height: 16,
   viewBox: "0 0 16 16",
   fill: "none",
   stroke: "currentColor",
@@ -48,13 +48,7 @@ export function Refresh({ className = "" }: { className?: string }) {
 
 export function Cross({ className = "" }: { className?: string }) {
   return (
-    <svg
-      {...box}
-      width={18}
-      height={18}
-      className={className}
-      aria-hidden="true"
-    >
+    <svg {...box} className={className} aria-hidden="true">
       <path d="m4 4 8 8M12 4l-8 8" />
     </svg>
   );
@@ -69,13 +63,7 @@ function Mark({
   filled?: boolean;
 }) {
   return (
-    <svg
-      {...box}
-      width={16}
-      height={16}
-      fill={filled ? "currentColor" : "none"}
-      aria-hidden="true"
-    >
+    <svg {...box} fill={filled ? "currentColor" : "none"} aria-hidden="true">
       {children}
     </svg>
   );
@@ -154,5 +142,11 @@ export const ReplyAllMark = () => (
 export const ForwardMark = () => (
   <Mark>
     <path d="M10 4l3.5 3.5L10 11M13.5 7.5H6A3.5 3.5 0 0 0 2.5 11v1" />
+  </Mark>
+);
+
+export const ChevronMark = () => (
+  <Mark>
+    <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
   </Mark>
 );

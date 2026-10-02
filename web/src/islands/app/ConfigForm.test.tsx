@@ -63,7 +63,7 @@ const type = (label: string, value: string) =>
 
 describe("adding an email config", () => {
   it("sends the whole draft and closes", async () => {
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     type("Email address", "misha@example.com");
     type("Host", "imap.example.com");
     type("Password", "hunter2");
@@ -88,7 +88,7 @@ describe("adding an email config", () => {
   });
 
   it("stops the username following the address once it is typed", () => {
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     type("Email address", "misha@example.com");
     type("Username", "misha");
     type("Email address", "robin@example.com");
@@ -97,7 +97,7 @@ describe("adding an email config", () => {
 
   // A port still at the usual one is the usual one for the setting, not a choice somebody made.
   it("moves a usual port with the security setting and leaves a typed one", () => {
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     type("Security", "starttls");
     expect(field("Port").value).toBe("143");
 
@@ -107,7 +107,7 @@ describe("adding an email config", () => {
   });
 
   it("sends an outgoing server that shares the sign-in with no username of its own", async () => {
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     type("Email address", "misha@example.com");
     type("Password", "hunter2");
     fireEvent.click(screen.getByLabelText("Send mail through an SMTP server"));
@@ -130,16 +130,16 @@ describe("adding an email config", () => {
     postEmailConfigs.mockRejectedValue(
       new ApiError(400, "invalid", "The incoming server needs a host."),
     );
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("The incoming server needs a host.");
     expect(onClose).not.toHaveBeenCalled();
   });
 
   it("is a dialog that can be left without saving", () => {
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     screen.getByRole("dialog");
-    screen.getByRole("heading", { name: "Add email config" });
+    screen.getByRole("heading", { name: "Add mail account" });
     type("Email address", "misha@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -149,7 +149,7 @@ describe("adding an email config", () => {
   });
 
   it("starts in the address field", () => {
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     expect(document.activeElement).toBe(field("Email address"));
   });
 
@@ -161,7 +161,7 @@ describe("adding an email config", () => {
         message: "smtp.example.com:465 refused the username or password.",
       },
     });
-    mount(<ConfigForm id={null} onClose={onClose} />);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText("Incoming: signed in.");
     screen.getByText(
@@ -173,7 +173,7 @@ describe("adding an email config", () => {
 describe("editing an email config", () => {
   // The form never has the saved password, so empty is how it says "the one I saved".
   it("leaves the saved passwords out", async () => {
-    mount(<ConfigForm id="ec_1" onClose={onClose} />);
+    mount(<ConfigForm open id="ec_1" onClose={onClose} />);
     await screen.findByDisplayValue("imap.example.com");
     screen.getByRole("heading", { name: "Edit Work" });
     type("Name", "Personal");
@@ -198,7 +198,7 @@ describe("editing an email config", () => {
       incoming: { ok: true, message: "" },
       outgoing: null,
     });
-    mount(<ConfigForm id="ec_1" onClose={onClose} />);
+    mount(<ConfigForm open id="ec_1" onClose={onClose} />);
     await screen.findByDisplayValue("imap.example.com");
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText("Incoming: signed in.");
@@ -207,7 +207,7 @@ describe("editing an email config", () => {
   });
 
   it("says so when there is no such config", async () => {
-    mount(<ConfigForm id="ec_gone" onClose={onClose} />);
-    await screen.findByText("There is no such email config.");
+    mount(<ConfigForm open id="ec_gone" onClose={onClose} />);
+    await screen.findByText("There is no such mail account.");
   });
 });

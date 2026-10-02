@@ -123,3 +123,47 @@ textarea {
   font-variant-caps: all-small-caps;
   letter-spacing: 0.04em;
 }
+
+/* A dialog fades and rises in, and fades out, where the browser can animate the top layer.
+   Dialog's FADE says the same duration. */
+dialog {
+  transition-property: opacity, translate, display, overlay;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+dialog:not([open]) {
+  opacity: 0;
+  translate: 0 0.5rem;
+}
+
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    translate: 0 0.5rem;
+  }
+}
+
+dialog::backdrop {
+  transition-property: background-color, display, overlay;
+  transition-duration: 150ms;
+  transition-behavior: allow-discrete;
+}
+
+dialog:not([open])::backdrop {
+  background-color: transparent;
+}
+
+@starting-style {
+  dialog[open]::backdrop {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog,
+  dialog::backdrop {
+    transition: none;
+  }
+}

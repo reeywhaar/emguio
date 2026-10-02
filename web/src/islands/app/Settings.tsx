@@ -28,15 +28,20 @@ export function Settings({
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
   });
+  // The form last opened stays while it fades out; each opening is a new one.
+  const [last, setLast] = useState({ editing, opened: 0 });
+  if (editing && editing !== last.editing) {
+    setLast({ editing, opened: last.opened + 1 });
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
       <h1 className="text-xl font-semibold">Settings</h1>
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="caps text-muted">Email configs</h2>
+          <h2 className="caps text-muted">Mail accounts</h2>
           <Link href={paths.newConfig} className={buttonLook("quiet", "bar")}>
-            Add email config
+            Add mail account
           </Link>
         </div>
         {!configs.data ? (
@@ -50,11 +55,12 @@ export function Settings({
         )}
       </section>
       <Account />
-      {editing ? (
+      {last.editing ? (
         <ConfigForm
-          id={editing.id}
+          id={last.editing.id}
+          open={editing !== null}
           onClose={() => go(paths.settings)}
-          key={editing.id ?? "new"}
+          key={last.opened}
         />
       ) : null}
     </main>

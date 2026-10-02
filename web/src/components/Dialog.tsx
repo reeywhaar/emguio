@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useRef,
+  useState,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -18,6 +19,9 @@ import { lockScroll } from "@app/components/scrollLock";
 const DialogContext = createContext<RefObject<HTMLDialogElement | null> | null>(
   null,
 );
+
+/** How long a dialog takes to fade in or out; main.css says the same. */
+const FADE = 150;
 
 /**
  * A modal on the native dialog element, at every size.
@@ -54,6 +58,16 @@ export function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const parent = useContext(DialogContext);
+
+  // Kept while it fades out, then unmounted, so a form starts empty rather than holding what was
+  // abandoned.
+  const [shown, setShown] = useState(open);
+  if (open && !shown) setShown(true);
+  useEffect(() => {
+    if (open) return;
+    const gone = setTimeout(() => setShown(false), FADE);
+    return () => clearTimeout(gone);
+  }, [open]);
 
   // A click that began on text inside and ended on the backdrop targets the dialog too, and is
   // somebody selecting, not leaving.
@@ -119,8 +133,7 @@ export function Dialog({
           : "sm:w-[min(28rem,calc(100vw-2rem))]"
       }`}
     >
-      {/* Unmounted while shut, so a form starts empty rather than holding what was abandoned. */}
-      {open ? (
+      {shown ? (
         <DialogContext.Provider value={ref}>
           {/* Outside the scroller, so what the dialog holds always has its name above it. A
               close always drawn, because a phone has no Escape and no backdrop to press. */}
