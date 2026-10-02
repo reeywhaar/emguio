@@ -6,19 +6,16 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 
-import {
-  deleteEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
-  getEmailConfigsByIdMailboxes,
-  patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage,
-  postEmailConfigsByIdMailboxesByMailboxMessagesByMessageMove,
-} from "@app/api/actions/emailConfigs";
+import { getEmailConfigsByIdMailboxes } from "@app/api/actions/emailConfigs";
+import { postJobs } from "@app/api/actions/jobs";
 import { mk, qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
 import type {
+  Job,
+  JobDraft,
   Mailbox,
   Message,
   MessagePage,
-  ReadMessage,
 } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
@@ -34,11 +31,13 @@ import {
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import { say } from "@app/islands/app/notices";
 import {
-  counted,
-  effects,
+  accepted,
+  draftOf,
+  failure,
+  labels,
   listWithPending,
+  nextRef,
   usePending,
-  type Change,
   type Pending,
 } from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
@@ -97,110 +96,32 @@ export function Actions({
   // The list it is in is this folder's, and only that one: an id names a message within its
   // folder, so another folder's list can hold the same one for a different message.
   const list = qk.messages(config, mailbox.id);
-  const reading = qk.message(config, mailbox.id, message);
-  const sidebar = qk.mailboxes(config);
   const pending = usePending(config);
 
-  /*
-   * What the server confirmed, written into what it last said: the pending layer stops drawing
-   * an action once it is answered, and this is what is drawn in its place. A read of the same
-   * data still in flight began before the server acted, so it is cancelled, the confirmation
-   * written, and the data read again.
-   */
-  const confirmed = async (
-    keys: readonly (readonly unknown[])[],
-    write: () => void,
-  ) => {
-    const stale = keys.filter(
-      (queryKey) => client.isFetching({ queryKey }) > 0,
-    );
-    await Promise.all(
-      keys.map((queryKey) => client.cancelQueries({ queryKey })),
-    );
-    write();
-    for (const queryKey of stale) client.invalidateQueries({ queryKey });
-  };
-  const rows = (
-    edit: (msgs: MessagePage["messages"]) => MessagePage["messages"],
-  ) =>
-    client.setQueryData<InfiniteData<MessagePage>>(
-      list,
-      (old) =>
-        old && {
-          ...old,
-          pages: old.pages.map((p) => ({ ...p, messages: edit(p.messages) })),
-        },
-    );
-  const recount = (done: Pending) =>
-    client.setQueryData<Mailbox[]>(
-      sidebar,
-      (old) => old && counted(old, effects(done)),
-    );
-
-  // Every action is drawn on the press by the pending layer and sent after, one at a time per
-  // config and in the order pressed; see docs/reading.md.
-  const queue = {
+  // Every action is a job: drawn on the press by the pending layer, sent to the server, which
+  // takes it at once and does it in the order asked whether or not this page is still open.
+  // Sent one at a time, so the server takes them in the order pressed; see docs/reading.md.
+  const send = useMutation({
     mutationKey: mk.actionsOf(config),
     scope: { id: `action:${config}` },
-  };
-
-  const flags = useMutation({
-    ...queue,
-    mutationFn: (p: Pending & { kind: "flags" }) =>
-      patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage(
-        config,
-        p.mailbox,
-        p.message,
-        p.change,
-      ),
-    onSuccess: (updated, p) =>
-      confirmed([list, reading, sidebar], () => {
-        client.setQueryData<ReadMessage>(
-          qk.message(config, p.mailbox, p.message),
-          (old) => old && { ...old, ...updated },
-        );
-        rows((msgs) =>
-          msgs.map((x) => (x.id === p.message ? { ...x, ...updated } : x)),
-        );
-        recount(p);
-      }),
-  });
-
-  const move = useMutation({
-    ...queue,
-    mutationFn: (p: Pending & { kind: "move" }) =>
-      p.to
-        ? postEmailConfigsByIdMailboxesByMailboxMessagesByMessageMove(
-            config,
-            p.mailbox,
-            p.message,
-            p.to,
-          )
-        : deleteEmailConfigsByIdMailboxesByMailboxMessagesByMessage(
-            config,
-            p.mailbox,
-            p.message,
-          ),
-    onSuccess: (_, p) =>
-      confirmed([list, sidebar], () => {
-        rows((msgs) => msgs.filter((x) => x.id !== p.message));
-        recount(p);
-        if (p.to)
-          client.invalidateQueries({ queryKey: qk.messages(config, p.to) });
-      }),
-    onError: (err, p) => {
-      const what = m?.subject ? `“${m.subject}”` : "The message";
-      say(`${what} was not ${p.to ? "moved" : "deleted"}: ${messageOf(err)}`);
+    mutationFn: (p: Pending) => postJobs(draftOf(p)),
+    onSuccess: (job, p) => {
+      if (m?.subject) labels.set(job.id, m.subject);
+      if (p.ref) accepted.set(p.ref, job.id);
+      client.setQueryData<Job[]>(qk.jobs, (old) => [...(old ?? []), job]);
     },
+    onError: (err, p) => say(failure(p, m?.subject, messageOf(err))),
   });
-
-  const setFlags = (change: Change) =>
-    flags.mutate({
-      kind: "flags",
+  const ask = (job: Pick<JobDraft, "kind"> & Partial<JobDraft>) =>
+    send.mutate({
+      email_config: config,
       mailbox: mailbox.id,
       message,
-      change,
+      value: false,
+      target: "",
       seen: m?.seen ?? true,
+      ...job,
+      ref: nextRef(),
     });
 
   // On the press: the pending layer takes the message out of the list, and the pane goes on to
@@ -215,32 +136,21 @@ export function Actions({
     );
     const at = drawn.findIndex((x) => x.id === message);
     const neighbor = at >= 0 ? (drawn[at + 1] ?? drawn[at - 1]) : undefined;
-    move.mutate({
-      kind: "move",
-      mailbox: mailbox.id,
-      message,
-      to: dest?.id ?? null,
-      seen: m?.seen ?? true,
-    });
+    ask(dest ? { kind: "move", target: dest.id } : { kind: "delete" });
     go(paths.mail(config, mailbox.id, neighbor?.id));
   };
 
   // Opening an unread message is reading it, once per opening: see docs/reading.md. Before the
   // first paint, so the pane never shows it unread for a moment and then not.
-  const { mutate } = flags;
+  const opened = useRef(ask);
+  opened.current = ask;
   const marked = useRef(false);
   const unread = m !== undefined && !m.seen;
   useLayoutEffect(() => {
     if (!unread || marked.current) return;
     marked.current = true;
-    mutate({
-      kind: "flags",
-      mailbox: mailbox.id,
-      message,
-      change: { seen: true },
-      seen: false,
-    });
-  }, [unread, mutate, mailbox.id, message]);
+    opened.current({ kind: "seen", value: true, seen: false });
+  }, [unread]);
 
   const seen = m?.seen ?? true;
   const starred = m?.flagged ?? false;
@@ -268,8 +178,8 @@ export function Actions({
     remove,
     spam: to.spam ? () => moveTo(to.spam!) : undefined,
     notSpam: to.notSpam ? () => moveTo(to.notSpam!) : undefined,
-    star: () => setFlags({ flagged: !starred }),
-    seen: () => setFlags({ seen: !seen }),
+    star: () => ask({ kind: "flagged", value: !starred }),
+    seen: () => ask({ kind: "seen", value: !seen }),
   };
 
   // Gmail's keys, which hands that know Gmail already reach for. Not while a field has the keys,
@@ -302,8 +212,6 @@ export function Actions({
   const others = (boxes.data ?? []).filter(
     (mb) => mb.selectable && mb.id !== mailbox.id,
   );
-  // A move's refusal is said by the notice, because the pane has already moved on.
-  const error = flags.error;
 
   return (
     <>
@@ -389,11 +297,6 @@ export function Actions({
           </label>
         ) : null}
       </div>
-      {error ? (
-        <p role="alert" className="text-sm text-accent">
-          {messageOf(error)}
-        </p>
-      ) : null}
     </>
   );
 }

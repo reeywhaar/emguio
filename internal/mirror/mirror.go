@@ -43,24 +43,42 @@ type Mirror struct {
 	mu       sync.Mutex
 	workers  map[string]*worker
 	fetchers map[string]*fetcher
+	runners  map[string]chan struct{}
 	kick     chan struct{}
+
+	// life bounds the job runners, which outlive any one request: Run's end ends it.
+	life    context.Context
+	end     context.CancelFunc
+	running sync.WaitGroup
 }
 
 func New(st *store.Store, conn *connect.Connector, log *slog.Logger) *Mirror {
+	life, end := context.WithCancel(context.Background())
 	return &Mirror{
 		store:    st,
 		conn:     conn,
 		log:      log,
 		workers:  map[string]*worker{},
 		fetchers: map[string]*fetcher{},
+		runners:  map[string]chan struct{}{},
 		kick:     make(chan struct{}, 1),
+		life:     life,
+		end:      end,
 	}
 }
 
-// Run keeps one worker per email config until ctx ends, and returns once every worker has.
+// Run keeps one worker per email config until ctx ends, and returns once every worker and job
+// runner has. Jobs left waiting by the last run are taken up again.
 func (m *Mirror) Run(ctx context.Context) {
 	tick := time.NewTicker(Reconcile)
 	defer tick.Stop()
+	if configs, err := m.store.JobConfigs(ctx); err != nil {
+		m.log.Error("mirror could not list waiting jobs", "err", err)
+	} else {
+		for _, id := range configs {
+			m.Kick(id)
+		}
+	}
 	for {
 		m.reconcile(ctx)
 		select {
@@ -73,6 +91,8 @@ func (m *Mirror) Run(ctx context.Context) {
 			fetchers := m.fetchers
 			m.fetchers = map[string]*fetcher{}
 			m.mu.Unlock()
+			m.end()
+			m.running.Wait()
 			for _, f := range fetchers {
 				f.shut()
 			}

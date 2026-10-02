@@ -4,6 +4,7 @@ import { useLive } from "@app/api/live";
 import { Boundary } from "@app/components/Boundary";
 import { Header } from "@app/islands/app/Header";
 import { Link } from "@app/islands/app/Link";
+import { Jobs } from "@app/islands/app/Jobs";
 import { Mail } from "@app/islands/app/Mail";
 import { Notice } from "@app/islands/app/Notice";
 import { paths, useRoute, type Route } from "@app/islands/app/route";
@@ -22,6 +23,7 @@ export function App() {
       <Boundary what="This page" key={route.page}>
         <Page route={route} />
       </Boundary>
+      <Jobs />
       <Notice />
     </div>
   );

@@ -1,4 +1,9 @@
-import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
+import {
+  MutationCache,
+  notifyManager,
+  QueryCache,
+  QueryClient,
+} from "@tanstack/react-query";
 
 import { ApiError } from "@app/api/transport";
 import { leaveFor } from "@app/leave";
@@ -24,6 +29,11 @@ function ended(error: unknown) {
   leaving = true;
   leaveFor("/login");
 }
+
+// What a press asks is drawn before the next paint: by default a query's news reaches the
+// screen on a timer, a frame after the press, and a message opened unread shows unread for that
+// frame before it is drawn read.
+notifyManager.setScheduler(queueMicrotask);
 
 /** The client for an island that requires a session. */
 export function sessionClient(): QueryClient {

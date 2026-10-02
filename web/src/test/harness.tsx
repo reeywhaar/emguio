@@ -15,9 +15,12 @@ export function mount(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <ConfirmProvider>{ui}</ConfirmProvider>
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={client}>
+        <ConfirmProvider>{ui}</ConfirmProvider>
+      </QueryClientProvider>,
+    ),
+    client,
+  };
 }

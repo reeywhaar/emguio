@@ -189,10 +189,7 @@ func TestAnotherUsersMessageIsNotFound(t *testing.T) {
 			t.Errorf("%s by another user = %s", p, resp.Status)
 		}
 	}
-	if resp := robin.do("PATCH", path, `{"seen":true}`); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("marking another user's message = %s", resp.Status)
-	}
-	if fake.fetched != 0 || len(fake.seen) != 0 {
+	if fake.fetched != 0 {
 		t.Error("the server was asked on another user's behalf")
 	}
 }
@@ -272,121 +269,5 @@ func TestTheProxyNeverReachesInside(t *testing.T) {
 	s.imageClient = imageClient(connect.New(nil).WithRoots(pool))
 	if resp := c.do("GET", s.proxyURL(srv.URL+"/p.gif"), ""); resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("a loopback image = %s, want refused", resp.Status)
-	}
-}
-
-func TestMarkingReadTellsTheServerAndThenTheList(t *testing.T) {
-	_, c, fake, cfg, path := reading(t)
-
-	resp := c.do("PATCH", path, `{"seen":true}`)
-	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["seen"] != true || got["id"] != "7-1" {
-		t.Fatalf("mark read = %s %v", resp.Status, got)
-	}
-	if len(fake.seen) != 1 || !fake.seen[0] {
-		t.Fatalf("the server was told %v", fake.seen)
-	}
-	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
-	if unseen := boxes[0].(map[string]any)["unseen"]; unseen != float64(0) {
-		t.Errorf("INBOX unseen after reading = %v", unseen)
-	}
-	inbox := boxes[0].(map[string]any)["id"].(string)
-	msg := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))["messages"].([]any)[0].(map[string]any)
-	if msg["seen"] != true {
-		t.Error("the kept row still says unread")
-	}
-
-	// Already read on the server: the count does not move again.
-	c.do("PATCH", path, `{"seen":true}`)
-	boxes = c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
-	if unseen := boxes[0].(map[string]any)["unseen"]; unseen != float64(0) || len(fake.seen) != 1 {
-		t.Errorf("unseen = %v, told %v", unseen, fake.seen)
-	}
-}
-
-// The server first: a flag it did not take must not show as taken.
-func TestAFlagTheServerRefusedIsNotRecorded(t *testing.T) {
-	_, c, fake, cfg, path := reading(t)
-	fake.err = &connect.Failure{Class: "network", Sentence: "imap.example.com:993 closed the connection."}
-	resp := c.do("PATCH", path, `{"seen":true}`)
-	if resp.StatusCode != http.StatusBadGateway {
-		t.Fatalf("status = %s", resp.Status)
-	}
-	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
-	inbox := boxes[0].(map[string]any)["id"].(string)
-	msg := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))["messages"].([]any)[0].(map[string]any)
-	if msg["seen"] != false {
-		t.Error("recorded as read though the server never took it")
-	}
-
-	fake.err = mirror.ErrGone
-	if resp := c.do("PATCH", path, `{"seen":true}`); resp.StatusCode != http.StatusNotFound {
-		t.Errorf("gone = %s", resp.Status)
-	}
-}
-
-func TestAFlagChangeSaysWhatToChange(t *testing.T) {
-	_, c, _, _, path := reading(t)
-	if resp := c.do("PATCH", path, `{}`); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("an empty change = %s", resp.Status)
-	}
-	if resp := c.do("PATCH", path, `{"answered":true}`); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("a flag this does not set = %s", resp.Status)
-	}
-}
-
-// A star is a flag on the server like read is, and the kept row follows it.
-func TestStarringTellsTheServerAndThenTheList(t *testing.T) {
-	_, c, fake, cfg, path := reading(t)
-	resp := c.do("PATCH", path, `{"flagged":true}`)
-	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["flagged"] != true || got["seen"] != false {
-		t.Fatalf("star = %s %v", resp.Status, got)
-	}
-	if len(fake.flagged) != 1 || len(fake.seen) != 0 {
-		t.Errorf("told flagged %v, seen %v", fake.flagged, fake.seen)
-	}
-	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
-	inbox := boxes[0].(map[string]any)["id"].(string)
-	msg := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))["messages"].([]any)[0].(map[string]any)
-	if msg["flagged"] != true || boxes[0].(map[string]any)["unseen"] != float64(1) {
-		t.Errorf("row = %v, unseen = %v", msg, boxes[0].(map[string]any)["unseen"])
-	}
-}
-
-// Archive, Trash, spam and back are each a move, to the mailbox the server says is for it.
-func TestMovingTellsTheServerAndLeavesTheList(t *testing.T) {
-	_, c, fake, cfg, path := reading(t)
-	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
-	inbox := boxes[0].(map[string]any)["id"].(string)
-	work := boxes[1].(map[string]any)["id"].(string)
-
-	for _, bad := range []string{`{"to":"` + inbox + `"}`, `{"to":"INBOX"}`, `{}`} {
-		if resp := c.do("POST", path+"/move", bad); resp.StatusCode != http.StatusBadRequest {
-			t.Errorf("move %s = %s", bad, resp.Status)
-		}
-	}
-	if resp := c.do("POST", path+"/move", `{"to":"`+work+`"}`); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("move = %s %v", resp.Status, c.json(resp))
-	}
-	if len(fake.moves) != 1 || fake.moves[0] != "Work" || len(fake.refreshed) != 1 {
-		t.Errorf("moved to %v, refreshed %v", fake.moves, fake.refreshed)
-	}
-	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))
-	boxes = c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
-	if n := len(page["messages"].([]any)); n != 0 || boxes[0].(map[string]any)["unseen"] != float64(0) || boxes[1].(map[string]any)["unseen"] != float64(1) {
-		t.Errorf("after the move: %d kept, inbox %v, work %v", n, boxes[0], boxes[1])
-	}
-}
-
-func TestDeletingForGoodTellsTheServer(t *testing.T) {
-	_, c, fake, _, path := reading(t)
-	if resp := c.do("DELETE", path, ""); resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("delete = %s", resp.Status)
-	}
-	if len(fake.moves) != 1 || fake.moves[0] != "" {
-		t.Errorf("moves = %v", fake.moves)
-	}
-	fake.err = mirror.ErrUnsupported
-	if resp := c.do("DELETE", path, ""); resp.StatusCode != http.StatusConflict {
-		t.Errorf("a server that cannot = %s", resp.Status)
 	}
 }

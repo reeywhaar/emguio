@@ -33,32 +33,25 @@ const box = (id: string, messages: number, unseen: number): Mailbox => ({
   unseen,
 });
 
-// What the server said stays as it said it; the pending actions are drawn over it.
+const job = (
+  p: Partial<Pending> & Pick<Pending, "kind" | "message">,
+): Pending => ({
+  email_config: "ec_1",
+  mailbox: "mb_in",
+  value: false,
+  target: "",
+  seen: false,
+  ...p,
+});
+
+// What the server said stays as it said it; the pending jobs are drawn over it.
 describe("the pending layer", () => {
   const server = [message("1-1"), message("1-2", true), message("1-3")];
   const pending: Pending[] = [
-    {
-      kind: "flags",
-      mailbox: "mb_in",
-      message: "1-1",
-      change: { seen: true },
-      seen: false,
-    },
-    {
-      kind: "flags",
-      mailbox: "mb_in",
-      message: "1-1",
-      change: { flagged: true },
-      seen: true,
-    },
-    {
-      kind: "move",
-      mailbox: "mb_in",
-      message: "1-2",
-      to: "mb_arc",
-      seen: true,
-    },
-    { kind: "move", mailbox: "mb_in", message: "1-3", to: null, seen: false },
+    job({ kind: "seen", message: "1-1", value: true, seen: false }),
+    job({ kind: "flagged", message: "1-1", value: true, seen: true }),
+    job({ kind: "move", message: "1-2", target: "mb_arc", seen: true }),
+    job({ kind: "delete", message: "1-3", seen: false }),
   ];
 
   it("draws a list with its moves gone and its flags changed, in the order pressed", () => {

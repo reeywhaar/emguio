@@ -72,10 +72,15 @@ func newWorldWith(t *testing.T, password string, caps imap.CapSet) *world {
 		t.Fatal(err)
 	}
 	conn := connect.New(connecttest.Loopback).WithRoots(cert.Pool)
+	m := New(st, conn, slog.New(slog.DiscardHandler))
+	t.Cleanup(func() {
+		m.end()
+		m.running.Wait()
+	})
 	return &world{
 		t:      t,
 		store:  st,
-		mirror: New(st, conn, slog.New(slog.DiscardHandler)),
+		mirror: m,
 		target: store.SyncTarget{ID: cfg.ID, UserID: u.ID, UpdatedAt: cfg.UpdatedAt},
 		server: connecttest.Admin(t, cert, port, "misha", "hunter2"),
 	}

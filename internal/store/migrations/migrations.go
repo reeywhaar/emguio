@@ -24,6 +24,7 @@ var all = []Migration{
 	mailboxes,
 	bodies,
 	window,
+	jobs,
 }
 
 // exec runs a statement block as one migration.

@@ -46,6 +46,7 @@ func Run(ctx context.Context, st *store.Store, log *slog.Logger) {
 func Once(ctx context.Context, st *store.Store, log *slog.Logger) {
 	run(ctx, log, "expired sessions", st.SweepSessions)
 	run(ctx, log, "invites", st.SweepInvites)
+	run(ctx, log, "failed jobs", st.SweepFailedJobs)
 }
 
 func run(ctx context.Context, log *slog.Logger, what string, f func(context.Context) (int64, error)) {

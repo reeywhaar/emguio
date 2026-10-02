@@ -18,14 +18,14 @@ Whether a message is read lives on the server, and emguio follows it: reading a 
 marks it read there, as any mail client does, and marking it unread clears the flag there.
 
 A sync only reads. It opens mailboxes with `EXAMINE` and fetches headers and bodies with
-`BODY.PEEK`, so a sync never changes a flag. What is written is what somebody asks for, on the
-reading session: a flag through `PATCH …/messages/{id}`, a move, a delete. The server is told
-first, and a kept row and the folders' counts only once the server has taken it.
+`BODY.PEEK`, so a sync never changes a flag. What is written is what somebody asks for, as a job:
+a flag, a move, a delete. The mail server is told first, and a kept row and the folders' counts
+only once it has taken it.
 
-Its own request rather than something reading does on the side: a GET that changes things is one
-a prefetch, or a link from anywhere, can make on somebody's behalf.
+A job of its own rather than something reading does on the side: a GET that changes things is
+one a prefetch, or a link from anywhere, can make on somebody's behalf.
 
-The reading pane sends it once per opening, as soon as it knows the message is unread — from its
+The reading pane asks for it once per opening, as soon as it knows the message is unread — from its
 row in the list, before the rest has arrived. A message marked unread again stays unread while it
 is open; the next opening marks it read.
 
@@ -35,38 +35,51 @@ the server.
 
 ## Archive, Trash and spam are moves to the server's own folders
 
-Each is `POST …/messages/{id}/move` to the folder the server's `SPECIAL-USE` — or its name —
+Each is a move job to the folder the server's `SPECIAL-USE` — or its name —
 says is for it: Archive, or Gmail's All Mail where there is none, which on Gmail is what
 archiving is; Trash; Junk, and from Junk back to INBOX. An action whose folder the server does
 not have, or that the message is already in, is not offered. Any other folder is a move too.
 
-Deleting moves to Trash. In Trash, or on a server with none, it is `DELETE …/messages/{id}`,
-for good, and asked about first.
+Deleting moves to Trash. In Trash, or on a server with none, it is a delete job, for good, and
+asked about first.
 
 A move is `MOVE` where the server has it. Without it, it is `COPY`, `\Deleted` and an `EXPUNGE`
 of that one UID, which needs `UIDPLUS`: a plain `EXPUNGE` would also remove whatever another
-client had marked deleted, so on a server with neither, moving and deleting are refused. A star
+client had marked deleted, so on a server with neither, moving and deleting fail. A star
 is `\Flagged`, set and cleared like `\Seen`.
 
 Gmail's keys work — `e` archive, `#` delete, `!` spam, `s` star, `u` read or unread — except
 while a field has the keys.
 
-## Every action is drawn before the server answers, over what the server said
+## Every action is a job, done by emguio whether or not the page is still open
+
+An action is `POST /api/jobs`, answered as soon as it is queued. emguio then does the jobs of each
+email config one at a time, in the order asked, on the reading session — whether or not the page
+that asked is still open, and across a restart, since a waiting job is a row. A try that could
+not reach the mail server is tried again, after five seconds, then thirty, two minutes and ten;
+an answer that refused, or the last try, fails the job.
+
+A failed job keeps its sentence until a page has shown it and let it go; one nobody comes back for
+is swept after a day. `GET /api/jobs` lists what waits and what failed, so a page opened later —
+a reload, another tab — draws them too.
+
+The only thing a closed tab can lose is a job not yet taken: the page asks before closing while
+one is on its way, which is the moment between a press and its answer. While any wait, a corner
+of the screen says how many.
+
+## Every action is drawn before it is done, over what the server said
 
 Read, star, archive, delete, spam and move change the screen on the press — the button, the
-list's row, the folders' counts — and the request goes after. What is drawn is two things: what
-the server last said, kept as it said it, and the actions pressed and not yet answered, applied
-over it as it is drawn. Nothing is written into the first until the server has confirmed it.
+list's row, the folders' counts — and the job goes after. What is drawn is two things: what the
+server last said, kept as it said it, and the jobs not yet done, on their way or waiting,
+applied over it as it is drawn. A done job is written into the first in the step that stops it
+being drawn as waiting, so it never shows undone in between.
 
-So a refusal has nothing to undo. The refused action stops being pending, and the screen is
-what the server said, with every action pressed after it still drawn; a pile of actions with a
-refusal at its end loses only that one. And a list read back while actions are queued — the
-event stream asks for one after each — is drawn with them still applied, rather than showing
-the messages they were pressed on as though nothing had been done.
-
-The requests go one at a time per email config, in the order pressed, so a star and its undoing
-reach the server as they were meant. A refused flag says why in the pane; a refused move, in a
-notice, since the pane has gone on by then.
+So a failure has nothing to undo. The failed job stops being pending, and the screen is what the
+server said, with every job asked after it still drawn; a pile of jobs with a failure at its end
+loses only that one, and the notice says why. And a list read back while jobs wait — the event
+stream asks for one after each — is drawn with them still applied, rather than showing the
+messages they were asked on as though nothing had been done.
 
 After a move or a delete the pane goes on to the message below it in the list, or else the one
 above, or else back to the folder. The mirror is asked for a look: the window has a place to
@@ -171,7 +184,7 @@ section. The list of attachments comes from the description; an attachment's byt
 when somebody downloads it, so a message with a large one opens as fast as one without.
 
 Both are fetched with `BODY.PEEK` after checking that the mailbox's UIDVALIDITY is still the one
-the message's id names. Neither changes anything; marking the message read is its own `PATCH`.
+the message's id names. Neither changes anything; marking the message read is its own job.
 One the server no longer has is a `404 gone`, and asks the mirror for a look, so it leaves the
 list too.
 

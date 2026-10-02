@@ -1,8 +1,17 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { EmailConfig, Mailbox, Message } from "@app/api/types";
+import { qk } from "@app/api/keys";
+import type {
+  EmailConfig,
+  Job,
+  JobDraft,
+  Mailbox,
+  Message,
+} from "@app/api/types";
+import { Jobs } from "@app/islands/app/Jobs";
 import { Mail } from "@app/islands/app/Mail";
+import { Notice } from "@app/islands/app/Notice";
 import { useRoute } from "@app/islands/app/route";
 import { mount } from "@app/test/harness";
 
@@ -11,7 +20,9 @@ const getEmailConfigsByIdMailboxes = vi.fn();
 const getMessages = vi.fn();
 const postEmailConfigsByIdSync = vi.fn();
 const getMessage = vi.fn();
-const moveMessage = vi.fn();
+const postJob = vi.fn();
+const getJobs = vi.fn();
+const dismissJob = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
@@ -28,22 +39,23 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     mailbox: string,
     message: string,
   ) => getMessage(id, mailbox, message),
-  patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage: async () => ({
-    id: "m_2",
-    seen: true,
-    flagged: false,
-    answered: false,
-    draft: false,
-  }),
-  postEmailConfigsByIdMailboxesByMailboxMessagesByMessageMove: (
-    id: string,
-    mailbox: string,
-    message: string,
-    to: string,
-  ) => moveMessage(id, mailbox, message, to),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
+vi.mock("@app/api/actions/jobs", () => ({
+  postJobs: (body: JobDraft) => postJob(body),
+  getJobs: () => getJobs(),
+  deleteJobsById: (id: string) => dismissJob(id),
+}));
+
+/** What the server answers a job with: taken, and waiting. */
+let taken = 0;
+const take = async (body: JobDraft): Promise<Job> => ({
+  ...body,
+  id: `j_${++taken}`,
+  error: "",
+  created_at: 0,
+});
 
 const work: EmailConfig = {
   id: "ec_1",
@@ -142,8 +154,8 @@ const opened = (id: string) => {
     held_images: 0,
     parts: [],
   });
-  // The server never answers here: what shows is what the press drew.
-  moveMessage.mockReturnValue(new Promise(() => {}));
+  // The server takes the job and never says it is done: what shows is what the press drew.
+  postJob.mockImplementation(take);
   return mount(<Mail named="ec_1" mailbox="mb_inbox" message={id} />);
 };
 const moveAway = async () => {
@@ -332,9 +344,10 @@ describe("the mail view", () => {
     });
   });
 
-  // A pile of actions goes to the server one at a time, in the order pressed, each drawn over
-  // what the server said. A refusal at the end takes back that one and nothing before it.
-  it("sends a pile of moves in order, and a refused last one undoes only itself", async () => {
+  // A pile of jobs is drawn as done on the press and taken by the server in the order pressed.
+  // When the server has done the first and failed the last, the first stays done and only the
+  // last comes back, with the reason.
+  it("draws a pile of moves, and a failed last one undoes only itself", async () => {
     three();
     getMessage.mockImplementation(
       async (_c: string, _mb: string, id: string) => ({
@@ -347,12 +360,22 @@ describe("the mail view", () => {
         parts: [],
       }),
     );
-    const answers: { ok: () => void; no: (err: Error) => void }[] = [];
-    moveMessage.mockImplementation(
-      () => new Promise<void>((ok, no) => answers.push({ ok: () => ok(), no })),
-    );
+    let server: Job[] = [];
+    postJob.mockImplementation(async (body: JobDraft) => {
+      const job = await take(body);
+      server = [...server, job];
+      return job;
+    });
+    getJobs.mockImplementation(async () => server);
+    dismissJob.mockResolvedValue(undefined);
     window.history.pushState({}, "", "/c/ec_1/mb_inbox/m_1");
-    mount(<Routed />);
+    const { client } = mount(
+      <>
+        <Routed />
+        <Jobs />
+        <Notice />
+      </>,
+    );
 
     await moveOpen("m_1");
     await waitFor(() =>
@@ -362,26 +385,39 @@ describe("the mail view", () => {
     await waitFor(() =>
       expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_3"),
     );
-
-    // Both drawn gone; only the first has been sent.
+    await waitFor(() =>
+      expect(
+        postJob.mock.calls
+          .map((c) => c[0] as JobDraft)
+          .filter((j) => j.kind === "move")
+          .map((j) => j.message),
+      ).toEqual(["m_1", "m_2"]),
+    );
     expect(subjectsListed().join()).not.toMatch(/First|Second/);
-    await waitFor(() => expect(answers).toHaveLength(1));
-    expect(moveMessage.mock.calls.map((c) => c[2])).toEqual(["m_1"]);
+    screen.getByRole("status");
 
-    answers[0]!.ok();
-    await waitFor(() => expect(answers).toHaveLength(2));
-    expect(moveMessage.mock.calls.map((c) => c[2])).toEqual(["m_1", "m_2"]);
-    answers[1]!.no(new Error("refused"));
+    // The server did the first move and refused the second.
+    const [first, second] = server.filter((j) => j.kind === "move");
+    server = server
+      .filter((j) => j.id !== first!.id && j.kind === "move")
+      .map((j) =>
+        j.id === second!.id ? { ...j, error: "The server refused: no." } : j,
+      );
+    await client.invalidateQueries({ queryKey: qk.jobs });
 
     await waitFor(() => expect(subjectsListed().join()).toMatch(/Second/));
     expect(subjectsListed().join()).not.toMatch(/First/);
+    within(screen.getByRole("alert")).getByText(
+      "“Open m_2” was not moved: The server refused: no.",
+    );
+    expect(dismissJob).toHaveBeenCalledWith(second!.id);
   });
 
   // Its row in the list is enough to draw who, what and when, and to act on it.
   it("acts on a message before the whole of it has arrived", async () => {
     three();
     getMessage.mockReturnValue(new Promise(() => {}));
-    moveMessage.mockReturnValue(new Promise(() => {}));
+    postJob.mockImplementation(take);
     mount(<Mail named="ec_1" mailbox="mb_inbox" message="m_2" />);
     const reader = await screen.findByRole("article", { name: "Message" });
     await within(reader).findByRole("heading", { name: "Second" });

@@ -5,6 +5,8 @@
  */
 export const qk = {
   me: ["me"] as const,
+  /** The user's jobs, across every config: what is drawn as still to be done. */
+  jobs: ["jobs"] as const,
   emailConfigs: ["email-configs"] as const,
   /** Everything read from every config's mail, for the event stream to invalidate at once. */
   mail: ["mail"] as const,

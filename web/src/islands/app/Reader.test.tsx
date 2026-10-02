@@ -2,16 +2,14 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@app/api/transport";
-import type { Flags, Mailbox, Message, ReadMessage } from "@app/api/types";
+import type { JobDraft, Mailbox, Message, ReadMessage } from "@app/api/types";
 import { Notice } from "@app/islands/app/Notice";
 import { Reader } from "@app/islands/app/Reader";
 import { mount } from "@app/test/harness";
 
 const getMessage = vi.fn();
-const patchMessage = vi.fn();
 const getMailboxes = vi.fn();
-const moveMessage = vi.fn();
-const deleteMessage = vi.fn();
+const postJob = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
@@ -19,26 +17,14 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     mailbox: string,
     message: string,
   ) => getMessage(id, mailbox, message),
-  patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
-    id: string,
-    mailbox: string,
-    message: string,
-    body: { seen: boolean },
-  ) => patchMessage(id, mailbox, message, body),
   getEmailConfigsByIdMailboxes: (id: string) => getMailboxes(id),
-  postEmailConfigsByIdMailboxesByMailboxMessagesByMessageMove: (
-    id: string,
-    mailbox: string,
-    message: string,
-    to: string,
-  ) => moveMessage(id, mailbox, message, to),
-  deleteEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
-    id: string,
-    mailbox: string,
-    message: string,
-  ) => deleteMessage(id, mailbox, message),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
+}));
+vi.mock("@app/api/actions/jobs", () => ({
+  postJobs: (body: JobDraft) => postJob(body),
+  getJobs: async () => [],
+  deleteJobsById: async () => undefined,
 }));
 
 const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({
@@ -82,15 +68,6 @@ const listed = (extra: Partial<Message> = {}): Message => ({
   ...extra,
 });
 
-/** What marking it read answers with: its flags on the server now. */
-const flags = (seen: boolean): Flags => ({
-  id: "m_1",
-  seen,
-  flagged: false,
-  answered: false,
-  draft: false,
-});
-
 const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   ...listed(),
   cc: [{ name: "Bob", email: "bob@example.com" }],
@@ -117,30 +94,28 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   ...extra,
 });
 
+let taken = 0;
 beforeEach(() => {
   window.history.pushState({}, "", "/c/ec_1/mb_inbox/m_1");
   getMailboxes.mockResolvedValue([inbox, archive, trash, junk, work]);
-  moveMessage.mockResolvedValue(undefined);
-  deleteMessage.mockResolvedValue(undefined);
   getMessage.mockResolvedValue(read());
-  // The server's flags, changed as it is asked to and sent back whole.
-  const now = { seen: false, flagged: false };
-  patchMessage.mockImplementation(
-    async (
-      _c: string,
-      _mb: string,
-      _m: string,
-      body: { seen?: boolean; flagged?: boolean },
-    ) => {
-      Object.assign(now, body);
-      return { ...flags(now.seen), flagged: now.flagged };
-    },
-  );
+  // The server takes every job at once, and does it later.
+  postJob.mockImplementation(async (body: JobDraft) => ({
+    ...body,
+    id: `j_${++taken}`,
+    error: "",
+    created_at: 0,
+  }));
 });
 afterEach(() => vi.clearAllMocks());
 
 const open = (mailbox = inbox) =>
-  mount(<Reader config="ec_1" mailbox={mailbox} message="m_1" />);
+  mount(
+    <>
+      <Reader config="ec_1" mailbox={mailbox} message="m_1" />
+      <Notice />
+    </>,
+  );
 
 /** A button, once the message and the folders it can go to have arrived. */
 const ready = async (name: string) => {
@@ -148,6 +123,9 @@ const ready = async (name: string) => {
   await waitFor(() => expect(button.disabled).toBe(false));
   return button;
 };
+
+/** Every job asked for, in order. */
+const asked = (): JobDraft[] => postJob.mock.calls.map((c) => c[0]);
 
 describe("the reading pane", () => {
   it("says who, to whom, and what", async () => {
@@ -160,7 +138,6 @@ describe("the reading pane", () => {
     screen.getByText("The numbers are in.");
   });
 
-  // An image the HTML already shows in place is not an attachment to anybody reading it.
   it("lists the attachments and not the images shown in place", async () => {
     open();
     const list = await screen.findByRole("list", { name: "Attachments" });
@@ -171,7 +148,6 @@ describe("the reading pane", () => {
     within(links[0]!).getByText("13 KB");
   });
 
-  // The frame is the second wall: no scripts, and images only from here.
   it("shows HTML in a frame that runs nothing and loads nothing from elsewhere", async () => {
     getMessage.mockResolvedValue(read({ html: "<p>Rich</p>" }));
     open();
@@ -184,7 +160,6 @@ describe("the reading pane", () => {
     );
   });
 
-  // Showing them swaps them in where they stand: the message is not fetched again.
   it("asks before loading images from elsewhere", async () => {
     getMessage.mockResolvedValue(
       read({
@@ -212,58 +187,39 @@ describe("the reading pane", () => {
     await screen.findByText("This message is no longer on the server.");
   });
 
-  it("marks an unread message read when it opens", async () => {
-    open();
-    await waitFor(() =>
-      expect(patchMessage).toHaveBeenCalledWith("ec_1", "mb_inbox", "m_1", {
-        seen: true,
-      }),
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByRole<HTMLButtonElement>("button", {
-          name: "Mark as unread",
-        }).disabled,
-      ).toBe(false),
-    );
-  });
-
   it("leaves a message that is read as it is", async () => {
     getMessage.mockResolvedValue(read({ seen: true }));
     open();
     await screen.findByRole("heading", { name: "Quarterly numbers" });
     screen.getByRole("button", { name: "Mark as unread" });
-    expect(patchMessage).not.toHaveBeenCalled();
+    expect(postJob).not.toHaveBeenCalled();
+  });
+
+  it("marks an unread message read when it opens", async () => {
+    open();
+    await waitFor(() =>
+      expect(asked()).toEqual([
+        expect.objectContaining({
+          email_config: "ec_1",
+          mailbox: "mb_inbox",
+          message: "m_1",
+          kind: "seen",
+          value: true,
+        }),
+      ]),
+    );
+    await ready("Mark as unread");
   });
 
   // Marked unread, it stays unread while it is open.
   it("marks it unread on asking, once and for good", async () => {
     open();
-    const button = await screen.findByRole<HTMLButtonElement>("button", {
-      name: "Mark as unread",
-    });
-    await waitFor(() => expect(button.disabled).toBe(false));
-    fireEvent.click(button);
-    await screen.findByRole("button", { name: "Mark as read" });
-    await waitFor(() =>
-      expect(
-        screen.getByRole<HTMLButtonElement>("button", { name: "Mark as read" })
-          .disabled,
-      ).toBe(false),
-    );
-    expect(patchMessage.mock.calls.map((c) => c[3])).toEqual([
-      { seen: true },
-      { seen: false },
+    fireEvent.click(await ready("Mark as unread"));
+    await ready("Mark as read");
+    expect(asked().map((j) => [j.kind, j.value])).toEqual([
+      ["seen", true],
+      ["seen", false],
     ]);
-  });
-
-  it("says what the server said when it would not take it", async () => {
-    patchMessage.mockRejectedValue(
-      new ApiError(502, "unreachable", "imap.example.com:993 timed out."),
-    );
-    open();
-    await screen.findByText("imap.example.com:993 timed out.");
-    screen.getByRole("button", { name: "Mark as read" });
   });
 
   // Archive, Trash and spam are each a move, to the folder the server says is for it; then the
@@ -272,11 +228,8 @@ describe("the reading pane", () => {
     open();
     fireEvent.click(await ready("Archive"));
     await waitFor(() =>
-      expect(moveMessage).toHaveBeenCalledWith(
-        "ec_1",
-        "mb_inbox",
-        "m_1",
-        "mb_archive",
+      expect(asked()).toContainEqual(
+        expect.objectContaining({ kind: "move", target: "mb_archive" }),
       ),
     );
     await waitFor(() =>
@@ -288,15 +241,12 @@ describe("the reading pane", () => {
     open();
     fireEvent.click(await ready("Delete"));
     await waitFor(() =>
-      expect(moveMessage).toHaveBeenCalledWith(
-        "ec_1",
-        "mb_inbox",
-        "m_1",
-        "mb_trash",
+      expect(asked()).toContainEqual(
+        expect.objectContaining({ kind: "move", target: "mb_trash" }),
       ),
     );
     screen.getByRole("button", { name: "Spam" });
-    expect(deleteMessage).not.toHaveBeenCalled();
+    expect(asked().some((j) => j.kind === "delete")).toBe(false);
   });
 
   // In Trash there is nowhere further to put it, and that cannot be taken back.
@@ -304,12 +254,14 @@ describe("the reading pane", () => {
     open(trash);
     fireEvent.click(await ready("Delete forever…"));
     const dialog = await screen.findByRole("dialog");
-    expect(deleteMessage).not.toHaveBeenCalled();
+    expect(asked().some((j) => j.kind === "delete")).toBe(false);
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Delete forever" }),
     );
     await waitFor(() =>
-      expect(deleteMessage).toHaveBeenCalledWith("ec_1", "mb_trash", "m_1"),
+      expect(asked()).toContainEqual(
+        expect.objectContaining({ kind: "delete", mailbox: "mb_trash" }),
+      ),
     );
   });
 
@@ -317,27 +269,31 @@ describe("the reading pane", () => {
     open(junk);
     fireEvent.click(await ready("Not spam"));
     await waitFor(() =>
-      expect(moveMessage).toHaveBeenCalledWith(
-        "ec_1",
-        "mb_junk",
-        "m_1",
-        "mb_inbox",
+      expect(asked()).toContainEqual(
+        expect.objectContaining({
+          kind: "move",
+          mailbox: "mb_junk",
+          target: "mb_inbox",
+        }),
       ),
     );
     expect(screen.queryByRole("button", { name: "Spam" })).toBeNull();
   });
 
-  it("stars it on the server", async () => {
+  // Drawn on the press, and still drawn while the server has it waiting.
+  it("stars it, and it stays starred while the server has the job", async () => {
     open();
     const star = await ready("Star");
     expect(star.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(star);
-    await waitFor(() =>
-      expect(patchMessage).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "m_1", {
-        flagged: true,
-      }),
-    );
     await waitFor(() => expect(star.getAttribute("aria-pressed")).toBe("true"));
+    await waitFor(() =>
+      expect(asked()).toContainEqual(
+        expect.objectContaining({ kind: "flagged", value: true }),
+      ),
+    );
+    await waitFor(() => expect(postJob).toHaveBeenCalledTimes(2));
+    expect(star.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("moves it to any other folder", async () => {
@@ -349,11 +305,8 @@ describe("the reading pane", () => {
     ).not.toContain("mb_inbox");
     fireEvent.change(select, { target: { value: "mb_work" } });
     await waitFor(() =>
-      expect(moveMessage).toHaveBeenCalledWith(
-        "ec_1",
-        "mb_inbox",
-        "m_1",
-        "mb_work",
+      expect(asked()).toContainEqual(
+        expect.objectContaining({ kind: "move", target: "mb_work" }),
       ),
     );
   });
@@ -364,55 +317,41 @@ describe("the reading pane", () => {
     await ready("Archive");
     const select = screen.getByLabelText("Move to folder");
     fireEvent.keyDown(select, { key: "e" });
-    expect(moveMessage).not.toHaveBeenCalled();
+    expect(asked().some((j) => j.kind === "move")).toBe(false);
     fireEvent.keyDown(document.body, { key: "e" });
     await waitFor(() =>
-      expect(moveMessage).toHaveBeenCalledWith(
-        "ec_1",
-        "mb_inbox",
-        "m_1",
-        "mb_archive",
+      expect(asked()).toContainEqual(
+        expect.objectContaining({ kind: "move", target: "mb_archive" }),
       ),
     );
   });
 
-  // Drawn on the press, before the server answers; put back, and said, when it refuses.
-  it("stars at once, and takes it back when the server refuses", async () => {
+  // Not taken by the server: drawn back as it was, and said.
+  it("takes a star back and says why when the server will not take it", async () => {
     getMessage.mockResolvedValue(read({ seen: true }));
-    let refuse: ((err: Error) => void) | undefined;
-    patchMessage.mockImplementation(
-      () => new Promise((_, reject) => (refuse = reject)),
+    postJob.mockRejectedValue(
+      new ApiError(503, "unreachable", "emguio cannot be reached right now."),
     );
     open();
     const star = await ready("Star");
     fireEvent.click(star);
-    await waitFor(() => expect(star.getAttribute("aria-pressed")).toBe("true"));
-
-    refuse!(
-      new ApiError(502, "unreachable", "imap.example.com:993 timed out."),
-    );
     await waitFor(() =>
       expect(star.getAttribute("aria-pressed")).toBe("false"),
     );
-    screen.getByText("imap.example.com:993 timed out.");
+    within(await screen.findByRole("alert")).getByText(
+      "“Quarterly numbers” was not starred: emguio cannot be reached right now.",
+    );
   });
 
-  // The pane has already gone on when a move is refused, so the notice says it.
-  it("says so when a move it already drew is refused", async () => {
+  it("says so when a move it already drew is not taken", async () => {
     getMessage.mockResolvedValue(read({ seen: true }));
-    moveMessage.mockRejectedValue(
-      new ApiError(502, "unreachable", "imap.example.com:993 timed out."),
+    postJob.mockRejectedValue(
+      new ApiError(503, "unreachable", "emguio cannot be reached right now."),
     );
-    mount(
-      <>
-        <Reader config="ec_1" mailbox={inbox} message="m_1" />
-        <Notice />
-      </>,
-    );
+    open();
     fireEvent.click(await ready("Archive"));
-    const notice = await screen.findByRole("alert");
-    within(notice).getByText(
-      "“Quarterly numbers” was not moved: imap.example.com:993 timed out.",
+    within(await screen.findByRole("alert")).getByText(
+      "“Quarterly numbers” was not moved: emguio cannot be reached right now.",
     );
   });
 });

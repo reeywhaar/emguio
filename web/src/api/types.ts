@@ -124,3 +124,25 @@ export type ReadMessage = Message & {
   held_images: number;
   parts: Part[];
 };
+
+/** Something asked to be done to a message, as the server is asked it. */
+export type JobDraft = {
+  email_config: string;
+  mailbox: string;
+  message: string;
+  kind: "seen" | "flagged" | "move" | "delete";
+  /** Set or cleared, for seen and flagged. */
+  value: boolean;
+  /** The mailbox a move goes to; empty otherwise. */
+  target: string;
+  /** Whether the message was read when asked, as drawn then: what its folders' counts move by. */
+  seen: boolean;
+};
+
+/** A job the server has taken: waiting to be done, or failed with the sentence that says why. */
+export type Job = JobDraft & {
+  id: string;
+  /** Empty while it waits. */
+  error: string;
+  created_at: number;
+};

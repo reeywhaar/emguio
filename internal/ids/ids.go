@@ -29,6 +29,7 @@ const (
 	Session     = "s_"
 	EmailConfig = "ec_"
 	Mailbox     = "mb_"
+	Job         = "j_"
 )
 
 const (

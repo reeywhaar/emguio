@@ -18,7 +18,10 @@ export function useLive() {
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
     const source = new EventSource("/api/events");
-    const refresh = () => {
+    // Jobs first: one the server has done is written into the lists before they are read
+    // again, so the counts it moved are not moved twice in between.
+    const refresh = async () => {
+      await client.invalidateQueries({ queryKey: qk.jobs });
       client.invalidateQueries({ queryKey: qk.emailConfigs });
       client.invalidateQueries({
         queryKey: qk.mail,

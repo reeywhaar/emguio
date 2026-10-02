@@ -105,11 +105,12 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
 
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.readMessage))
-	s.mux.Handle("PATCH /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.patchMessage))
-	s.mux.Handle("DELETE /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.deleteMessage))
-	s.mux.Handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/move", s.requireSession(s.moveMessage))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireSession(s.readPart))
 	s.mux.Handle("GET /api/proxy", s.requireSession(s.proxyImage))
+
+	s.mux.Handle("GET /api/jobs", s.requireSession(s.listJobs))
+	s.mux.Handle("POST /api/jobs", s.requireSession(s.postJob))
+	s.mux.Handle("DELETE /api/jobs/{job}", s.requireSession(s.dismissJob))
 
 	s.mux.Handle("GET /api/events", s.requireSession(s.events))
 

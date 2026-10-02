@@ -2,7 +2,6 @@ import { query, request } from "@app/api/transport";
 import type {
   EmailConfig,
   EmailConfigDraft,
-  Flags,
   Mailbox,
   MessagePage,
   ReadMessage,
@@ -70,37 +69,6 @@ export const getEmailConfigsByIdMailboxesByMailboxMessagesByMessage = (
   mailbox: string,
   message: string,
 ) => request<ReadMessage>(messagePath(id, mailbox, message));
-
-/** Sets or clears a message's flags — read, starred — on the server, and here once it has. */
-export const patchEmailConfigsByIdMailboxesByMailboxMessagesByMessage = (
-  id: string,
-  mailbox: string,
-  message: string,
-  body: { seen?: boolean; flagged?: boolean },
-) =>
-  request<Flags>(messagePath(id, mailbox, message), {
-    method: "PATCH",
-    body,
-  });
-
-/** Moves a message to another folder: archiving, Trash and spam are each a move. */
-export const postEmailConfigsByIdMailboxesByMailboxMessagesByMessageMove = (
-  id: string,
-  mailbox: string,
-  message: string,
-  to: string,
-) =>
-  request<void>(`${messagePath(id, mailbox, message)}/move`, {
-    method: "POST",
-    body: { to },
-  });
-
-/** Removes a message from the server for good. */
-export const deleteEmailConfigsByIdMailboxesByMailboxMessagesByMessage = (
-  id: string,
-  mailbox: string,
-  message: string,
-) => request<void>(messagePath(id, mailbox, message), { method: "DELETE" });
 
 /** Where a part of a message is downloaded from, by its section. */
 export const partURL = (
