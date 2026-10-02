@@ -61,7 +61,7 @@ describe("what is still being done", () => {
     new MutationObserver(client, {
       mutationKey: mk.actionsOf("ec_1"),
       mutationFn: () => new Promise<void>((done) => (reach = done)),
-    }).mutate({ ...waiting("j_3"), ref: "r1" } as never);
+    }).mutate([{ ...waiting("j_3"), ref: "r1" }] as never);
     await screen.findByText("Saving a change");
     expect(leave()).toBe(true);
 

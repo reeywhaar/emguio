@@ -126,3 +126,9 @@ export const FolderMark = () => (
     <path d="M1.5 3.5h4.5l1.5 1.5h7v8h-13zM7 9h4.5M9.5 7l2 2-2 2" />
   </Mark>
 );
+
+export const SelectMark = () => (
+  <Mark>
+    <path d="M2.5 2.5h11v11h-11zM5 8l2 2 4-4" />
+  </Mark>
+);

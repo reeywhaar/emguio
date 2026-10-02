@@ -109,7 +109,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 	s.mux.Handle("GET /api/proxy", s.requireSession(s.proxyImage))
 
 	s.mux.Handle("GET /api/jobs", s.requireSession(s.listJobs))
-	s.mux.Handle("POST /api/jobs", s.requireSession(s.postJob))
+	s.mux.Handle("POST /api/jobs", s.requireSession(s.postJobs))
 	s.mux.Handle("DELETE /api/jobs/{job}", s.requireSession(s.dismissJob))
 
 	s.mux.Handle("GET /api/events", s.requireSession(s.events))

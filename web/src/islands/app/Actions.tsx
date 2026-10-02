@@ -1,22 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import {
-  useMutation,
   useQuery,
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
 
 import { getEmailConfigsByIdMailboxes } from "@app/api/actions/emailConfigs";
-import { postJobs } from "@app/api/actions/jobs";
-import { mk, qk } from "@app/api/keys";
-import { messageOf } from "@app/api/transport";
-import type {
-  Job,
-  JobDraft,
-  Mailbox,
-  Message,
-  MessagePage,
-} from "@app/api/types";
+import { qk } from "@app/api/keys";
+import type { JobDraft, Mailbox, Message, MessagePage } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
 import {
@@ -28,18 +19,9 @@ import {
   StarMark,
   TrashMark,
 } from "@app/components/icons";
+import { useAsk } from "@app/islands/app/ask";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
-import { say } from "@app/islands/app/notices";
-import {
-  accepted,
-  draftOf,
-  failure,
-  labels,
-  listWithPending,
-  nextRef,
-  usePending,
-  type Pending,
-} from "@app/islands/app/pending";
+import { listWithPending, usePending } from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
 
 /**
@@ -98,31 +80,20 @@ export function Actions({
   const list = qk.messages(config, mailbox.id);
   const pending = usePending(config);
 
-  // Every action is a job: drawn on the press by the pending layer, sent to the server, which
-  // takes it at once and does it in the order asked whether or not this page is still open.
-  // Sent one at a time, so the server takes them in the order pressed; see docs/reading.md.
-  const send = useMutation({
-    mutationKey: mk.actionsOf(config),
-    scope: { id: `action:${config}` },
-    mutationFn: (p: Pending) => postJobs(draftOf(p)),
-    onSuccess: (job, p) => {
-      if (m?.subject) labels.set(job.id, m.subject);
-      if (p.ref) accepted.set(p.ref, job.id);
-      client.setQueryData<Job[]>(qk.jobs, (old) => [...(old ?? []), job]);
-    },
-    onError: (err, p) => say(failure(p, m?.subject, messageOf(err))),
-  });
+  const asked = useAsk(config);
   const ask = (job: Pick<JobDraft, "kind"> & Partial<JobDraft>) =>
-    send.mutate({
-      email_config: config,
-      mailbox: mailbox.id,
-      message,
-      value: false,
-      target: "",
-      seen: m?.seen ?? true,
-      ...job,
-      ref: nextRef(),
-    });
+    asked([
+      {
+        email_config: config,
+        mailbox: mailbox.id,
+        message,
+        value: false,
+        target: "",
+        seen: m?.seen ?? true,
+        label: m?.subject,
+        ...job,
+      },
+    ]);
 
   // On the press: the pending layer takes the message out of the list, and the pane goes on to
   // the one below it in the list as drawn, or else the one above, or else the folder.
@@ -209,10 +180,6 @@ export function Actions({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const others = (boxes.data ?? []).filter(
-    (mb) => mb.selectable && mb.id !== mailbox.id,
-  );
-
   return (
     <>
       <div className="flex flex-wrap items-center gap-1">
@@ -268,41 +235,19 @@ export function Actions({
         >
           <MailMark open={seen} />
         </Action>
-        {others.length > 0 ? (
-          // The platform's own list of folders, laid over a button that looks like the others,
-          // so on a phone it is the system's picker and in the row it is one more icon.
-          <label
-            title="Move to folder"
-            className={`${buttonLook("quiet", "bar")} relative focus-within:border-brand ${busy ? "opacity-50" : ""}`}
-          >
-            <FolderMark />
-            <select
-              aria-label="Move to folder"
-              className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default"
-              value=""
-              disabled={busy}
-              onChange={(e) => {
-                const dest = others.find((mb) => mb.id === e.target.value);
-                if (dest) moveTo(dest);
-              }}
-            >
-              <option value="">Move to…</option>
-              {others.map((mb) => (
-                <option key={mb.id} value={mb.id}>
-                  {" ".repeat(depthOf(mb))}
-                  {labelOfMailbox(mb)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
+        <MovePicker
+          boxes={boxes.data ?? []}
+          current={mailbox}
+          disabled={busy}
+          onMove={moveTo}
+        />
       </div>
     </>
   );
 }
 
 /** A button that is an icon, named for what it does, with its key in the tooltip. */
-function Action({
+export function Action({
   label,
   keyName,
   pressed,
@@ -326,5 +271,51 @@ function Action({
     >
       {children}
     </Button>
+  );
+}
+
+/**
+ * Every other folder a message can be moved to: the platform's own list, laid over a button
+ * that looks like the others, so on a phone it is the system's picker and in a row of actions it
+ * is one more icon.
+ */
+export function MovePicker({
+  boxes,
+  current,
+  disabled,
+  onMove,
+}: {
+  boxes: Mailbox[];
+  current: Mailbox;
+  disabled: boolean;
+  onMove: (to: Mailbox) => void;
+}) {
+  const others = boxes.filter((mb) => mb.selectable && mb.id !== current.id);
+  if (others.length === 0) return null;
+  return (
+    <label
+      title="Move to folder"
+      className={`${buttonLook("quiet", "bar")} relative focus-within:border-brand ${disabled ? "opacity-50" : ""}`}
+    >
+      <FolderMark />
+      <select
+        aria-label="Move to folder"
+        className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default"
+        value=""
+        disabled={disabled}
+        onChange={(e) => {
+          const dest = others.find((mb) => mb.id === e.target.value);
+          if (dest) onMove(dest);
+        }}
+      >
+        <option value="">Move to…</option>
+        {others.map((mb) => (
+          <option key={mb.id} value={mb.id}>
+            {" ".repeat(depthOf(mb))}
+            {labelOfMailbox(mb)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

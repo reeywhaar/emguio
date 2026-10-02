@@ -57,18 +57,35 @@ func scanJob(sc interface{ Scan(...any) error }) (*Job, error) {
 	return &j, nil
 }
 
-// AddJob queues a job, named and stamped here.
-func (s *Store) AddJob(ctx context.Context, j Job) (*Job, error) {
-	now := s.Now()
-	j.ID, j.CreatedAt, j.NextAt = ids.New(ids.Job, now.UnixMilli()), now, now
-	_, err := s.writer.ExecContext(ctx,
-		`INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?)`,
-		j.ID, j.UserID, j.EmailConfigID, j.MailboxID, j.Message, j.Kind, j.Value, j.Target, j.Seen,
-		unix(j.NextAt), unix(j.CreatedAt))
+// AddJobs queues jobs, named and stamped here, all or none, in the order given.
+func (s *Store) AddJobs(ctx context.Context, jobs []Job) ([]*Job, error) {
+	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("add job: %w", err)
+		return nil, fmt.Errorf("add jobs: %w", err)
 	}
-	return &j, nil
+	defer tx.Rollback()
+	now := s.Now()
+	out := make([]*Job, 0, len(jobs))
+	for _, j := range jobs {
+		j.ID, j.CreatedAt, j.NextAt = ids.New(ids.Job, now.UnixMilli()), now, now
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?)`,
+			j.ID, j.UserID, j.EmailConfigID, j.MailboxID, j.Message, j.Kind, j.Value, j.Target, j.Seen,
+			unix(j.NextAt), unix(j.CreatedAt)); err != nil {
+			return nil, fmt.Errorf("add jobs: %w", err)
+		}
+		out = append(out, &j)
+	}
+	return out, tx.Commit()
+}
+
+// AddJob queues one job.
+func (s *Store) AddJob(ctx context.Context, j Job) (*Job, error) {
+	added, err := s.AddJobs(ctx, []Job{j})
+	if err != nil {
+		return nil, err
+	}
+	return added[0], nil
 }
 
 // Jobs is a user's jobs, waiting and failed, oldest first.

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -11,12 +11,13 @@ import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
-import { Refresh } from "@app/components/icons";
+import { Refresh, SelectMark } from "@app/components/icons";
 import { ago } from "@app/format";
 import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
-import { MessageList } from "@app/islands/app/MessageList";
+import { MessageList, type Selecting } from "@app/islands/app/MessageList";
+import { Selection } from "@app/islands/app/Selection";
 import { countsWithPending, usePending } from "@app/islands/app/pending";
 import { Reader } from "@app/islands/app/Reader";
 import { go, paths } from "@app/islands/app/route";
@@ -106,6 +107,9 @@ function Folders({
   const boxes = {
     data: listed.data && countsWithPending(listed.data, pending),
   };
+  // While messages are being selected, the ones that are; null while they are not. A folder's
+  // own, so another folder starts with none.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
   const current = boxes.data
     ? mailbox
       ? boxes.data.find((mb) => mb.id === mailbox)
@@ -145,7 +149,17 @@ function Folders({
         className={`min-w-0 flex-col lg:flex lg:w-[26rem] lg:flex-none lg:border-r lg:border-line ${message ? "hidden" : "flex flex-1"}`}
       >
         <div className="flex items-center gap-2 border-b border-line bg-bg px-4 py-2">
-          {boxes.data && boxes.data.length > 0 ? (
+          {selected && current && boxes.data ? (
+            <Selection
+              config={config.id}
+              mailbox={current}
+              boxes={boxes.data}
+              selected={selected}
+              change={setSelected}
+              done={() => setSelected(null)}
+            />
+          ) : null}
+          {!selected && boxes.data && boxes.data.length > 0 ? (
             <Select
               aria-label="Folder"
               size="bar"
@@ -163,10 +177,28 @@ function Folders({
               ))}
             </Select>
           ) : null}
-          <h1 className="hidden min-w-0 flex-1 truncate font-semibold md:block">
-            {current ? labelOfMailbox(current) : ""}
-          </h1>
-          <SyncState config={config} />
+          {selected ? null : (
+            <>
+              <h1 className="hidden min-w-0 flex-1 truncate font-semibold md:block">
+                {current ? labelOfMailbox(current) : ""}
+              </h1>
+              {current?.selectable ? (
+                // Selecting is about the list: an open message is closed for it.
+                <Button
+                  size="bar"
+                  aria-label="Select messages"
+                  title="Select messages"
+                  onClick={() => {
+                    setSelected(new Set());
+                    go(paths.mail(config.id, current.id));
+                  }}
+                >
+                  <SelectMark />
+                </Button>
+              ) : null}
+              <SyncState config={config} />
+            </>
+          )}
         </div>
         {config.sync_error ? (
           <p
@@ -188,6 +220,7 @@ function Folders({
           current={current}
           named={mailbox}
           open={message}
+          select={selected ? { selected, change: setSelected } : undefined}
         />
       </section>
 
@@ -213,12 +246,14 @@ function Body({
   current,
   named,
   open,
+  select,
 }: {
   config: EmailConfig;
   boxes: Mailbox[] | undefined;
   current: Mailbox | undefined;
   named: string | null;
   open: string | null;
+  select?: Selecting;
 }) {
   if (!boxes) return <Rows />;
   if (boxes.length === 0) {
@@ -256,6 +291,7 @@ function Body({
       config={config.id}
       mailbox={current}
       open={open}
+      select={select}
       key={current.id}
     />
   );

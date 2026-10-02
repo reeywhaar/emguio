@@ -22,7 +22,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
 vi.mock("@app/api/actions/jobs", () => ({
-  postJobs: (body: JobDraft) => postJob(body),
+  postJobs: (jobs: JobDraft[]) =>
+    Promise.all(jobs.map((body) => postJob(body))),
   getJobs: async () => [],
   deleteJobsById: async () => undefined,
 }));

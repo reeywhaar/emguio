@@ -28,6 +28,8 @@ import type {
 export type Pending = JobDraft & {
   /** Names a job on its way, so it is drawn once when the server's list has it too. */
   ref?: string;
+  /** What the message is called, for the sentence should the job fail. */
+  label?: string;
 };
 
 /** Jobs on their way that the server has taken, by ref: drawn from its list from then on. */
@@ -55,8 +57,8 @@ export function usePending(config: string): Pending[] {
   const taken = useCached<Job[]>(qk.jobs) ?? [];
   const sending = useMutationState({
     filters: { mutationKey: mk.actionsOf(config), status: "pending" },
-    select: (m) => m.state.variables as Pending,
-  });
+    select: (m) => m.state.variables as Pending[],
+  }).flat();
   return [
     ...taken.filter((j) => j.email_config === config && !j.error),
     ...sending.filter((p) => !(p.ref && accepted.has(p.ref))),
@@ -178,14 +180,25 @@ export function commit(client: QueryClient, j: JobDraft) {
   );
 }
 
-/** The sentence for a job that was not done. */
-export function failure(j: JobDraft, label: string | undefined, why: string) {
-  const what = label ? `“${label}”` : "A message";
+/** The sentence for jobs that were not done: one by what it is called, more by how many. */
+export function failure(
+  jobs: JobDraft[],
+  label: string | undefined,
+  why: string,
+) {
+  const j = jobs[0]!;
+  const many = jobs.length > 1;
+  const was = many ? "were" : "was";
   const not = {
-    seen: j.value ? "was not marked read" : "was not marked unread",
-    flagged: j.value ? "was not starred" : "was not unstarred",
-    move: "was not moved",
-    delete: "was not deleted",
+    seen: j.value ? "marked read" : "marked unread",
+    flagged: j.value ? "starred" : "unstarred",
+    move: "moved",
+    delete: "deleted",
   }[j.kind];
-  return `${what} ${not}: ${why}`;
+  const what = many
+    ? `${jobs.length} messages`
+    : label
+      ? `“${label}”`
+      : "A message";
+  return `${what} ${was} not ${not}: ${why}`;
 }

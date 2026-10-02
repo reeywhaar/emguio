@@ -19,7 +19,7 @@ func jobs(t *testing.T) (*Server, *client, *fakeMirror, string, []string, func(k
 		boxes = append(boxes, b.(map[string]any)["id"].(string))
 	}
 	ask := func(kind, extra string) *http.Response {
-		return c.do("POST", "/api/jobs", fmt.Sprintf(`{"email_config":%q,"mailbox":%q,"message":"7-1","kind":%q%s}`, cfg, boxes[0], kind, extra))
+		return c.do("POST", "/api/jobs", fmt.Sprintf(`{"jobs":[{"email_config":%q,"mailbox":%q,"message":"7-1","kind":%q%s}]}`, cfg, boxes[0], kind, extra))
 	}
 	return s, c, fake, cfg, boxes, ask
 }
@@ -31,10 +31,10 @@ func TestAJobIsTakenAtOnceAndTheMirrorIsTold(t *testing.T) {
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("move = %s %v", resp.Status, c.json(resp))
 	}
-	var j jobJSON
-	json.NewDecoder(resp.Body).Decode(&j)
-	if j.Kind != "move" || j.Target != boxes[1] || !j.Seen || j.Message != "7-1" || j.Error != "" {
-		t.Errorf("job = %+v", j)
+	var got struct{ Jobs []jobJSON }
+	json.NewDecoder(resp.Body).Decode(&got)
+	if j := got.Jobs[0]; len(got.Jobs) != 1 || j.Kind != "move" || j.Target != boxes[1] || !j.Seen || j.Message != "7-1" || j.Error != "" {
+		t.Errorf("jobs = %+v", got.Jobs)
 	}
 	if len(fake.kicked) != 1 || fake.kicked[0] != cfg {
 		t.Errorf("kicked %v", fake.kicked)
@@ -54,7 +54,8 @@ func TestAJobSaysWhatIsWrongWithIt(t *testing.T) {
 		"unknown kind":        ask("answer", ""),
 		"move to here":        ask("move", fmt.Sprintf(`,"target":%q`, boxes[0])),
 		"move to nowhere":     ask("move", `,"target":"INBOX"`),
-		"not a message id":    c.do("POST", "/api/jobs", fmt.Sprintf(`{"email_config":"ec_x","mailbox":%q,"message":"m_1","kind":"seen"}`, boxes[0])),
+		"not a message id":    c.do("POST", "/api/jobs", fmt.Sprintf(`{"jobs":[{"email_config":"ec_x","mailbox":%q,"message":"m_1","kind":"seen"}]}`, boxes[0])),
+		"none":                c.do("POST", "/api/jobs", `{"jobs":[]}`),
 		"a field it does not": ask("seen", `,"draft":true`),
 	} {
 		if resp.StatusCode != http.StatusBadRequest {
@@ -68,7 +69,7 @@ func TestAnotherUsersMessageTakesNoJob(t *testing.T) {
 	user(t, s.store, "robin", "a good password")
 	robin := newClient(t, s)
 	robin.do("POST", "/api/auth/login", `{"username":"robin","password":"a good password"}`)
-	resp := robin.do("POST", "/api/jobs", fmt.Sprintf(`{"email_config":%q,"mailbox":%q,"message":"7-1","kind":"delete"}`, cfg, boxes[0]))
+	resp := robin.do("POST", "/api/jobs", fmt.Sprintf(`{"jobs":[{"email_config":%q,"mailbox":%q,"message":"7-1","kind":"delete"}]}`, cfg, boxes[0]))
 	if resp.StatusCode != http.StatusNotFound || len(fake.kicked) != 0 {
 		t.Errorf("another user's job = %s, kicked %v", resp.Status, fake.kicked)
 	}
@@ -81,8 +82,9 @@ func TestAnotherUsersMessageTakesNoJob(t *testing.T) {
 // server already.
 func TestOnlyAFailedJobIsDismissed(t *testing.T) {
 	s, c, _, _, _, ask := jobs(t)
-	var j jobJSON
-	json.NewDecoder(ask("delete", "").Body).Decode(&j)
+	var got struct{ Jobs []jobJSON }
+	json.NewDecoder(ask("delete", "").Body).Decode(&got)
+	j := got.Jobs[0]
 	if resp := c.do("DELETE", "/api/jobs/"+j.ID, ""); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("dismissing a waiting job = %s", resp.Status)
 	}
@@ -96,5 +98,27 @@ func TestOnlyAFailedJobIsDismissed(t *testing.T) {
 	}
 	if listed := c.json(c.do("GET", "/api/jobs", ""))["jobs"].([]any); len(listed) != 0 {
 		t.Errorf("after dismissal: %v", listed)
+	}
+}
+
+// A selection acted on is one request, queued whole or not at all.
+func TestASelectionIsQueuedWholeOrNotAtAll(t *testing.T) {
+	_, c, fake, cfg, boxes, _ := jobs(t)
+	one := func(message, kind, extra string) string {
+		return fmt.Sprintf(`{"email_config":%q,"mailbox":%q,"message":%q,"kind":%q%s}`, cfg, boxes[0], message, kind, extra)
+	}
+	resp := c.do("POST", "/api/jobs", `{"jobs":[`+one("7-1", "seen", `,"value":true`)+`,`+one("7-2", "move", fmt.Sprintf(`,"target":%q`, boxes[2]))+`]}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("two jobs = %s", resp.Status)
+	}
+	if len(fake.kicked) != 1 {
+		t.Errorf("kicked %v, want the config once", fake.kicked)
+	}
+	bad := c.do("POST", "/api/jobs", `{"jobs":[`+one("7-3", "seen", "")+`,`+one("7-4", "answer", "")+`]}`)
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Errorf("one bad job = %s", bad.Status)
+	}
+	if listed := c.json(c.do("GET", "/api/jobs", ""))["jobs"].([]any); len(listed) != 2 {
+		t.Errorf("jobs = %v, want the first two and nothing of the refused request", listed)
 	}
 }

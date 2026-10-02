@@ -53,7 +53,8 @@ while a field has the keys.
 
 ## Every action is a job, done by emguio whether or not the page is still open
 
-An action is `POST /api/jobs`, answered as soon as it is queued. emguio then does the jobs of each
+An action is `POST /api/jobs`, answered as soon as it is queued. It takes a list, up to 500, and
+queues all of it or none: one job that cannot be refuses the request. emguio then does the jobs of each
 email config one at a time, in the order asked, on the reading session — whether or not the page
 that asked is still open, and across a restart, since a waiting job is a row. A try that could
 not reach the mail server is tried again, after five seconds, then thirty, two minutes and ten;
@@ -84,6 +85,18 @@ messages they were asked on as though nothing had been done.
 After a move or a delete the pane goes on to the message below it in the list, or else the one
 above, or else back to the folder. The mirror is asked for a look: the window has a place to
 fill, and the counts are the server's to confirm.
+
+## A selection is acted on in one request
+
+The button beside the folder's name turns the list's rows into checkboxes; a Shift-click takes
+every row from the last one clicked. The folder's header becomes the selection's: how many,
+all or none, and the same actions as the reading pane, with the same keys. Escape, or the cross,
+goes back to opening messages.
+
+An action on a selection is one request, a job for each message, drawn and done like any other.
+Star and read follow the selection: a single unstarred or unread message makes the button star
+or mark read, and only the messages that need it are asked about. Deleting from Trash, or on a
+server with none, asks first how many go for good.
 
 ## A message is named by what the server calls it
 
@@ -135,6 +148,9 @@ from the server, fifty at a time and newest to arrive first. The first page is t
 by sequence number, which needs only the count the mailbox opens with. A later page asks the
 server which UIDs are below the last one shown, so mail arriving or leaving between two pages
 does not shift the second.
+
+The next page is asked for while the end of the list is still 200px below what shows of it, so
+scrolling down rarely reaches a row that says it is loading.
 
 A list shows the server's internal date — when the message arrived. The `Date` header is the
 sender's claim, which spam and misconfigured clients get wrong; it is kept beside it, as `sent`.

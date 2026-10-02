@@ -14,16 +14,28 @@ import { counterpart } from "@app/islands/app/mailbox";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
 
+/** How far before the end of the list the next run starts loading. */
+const AHEAD = 200;
+
+/** Messages being selected, and a way to change which. */
+export type Selecting = {
+  selected: Set<string>;
+  change: (next: Set<string>) => void;
+};
+
 /** One folder's messages, newest to arrive first, reaching further back as it is scrolled. */
 export function MessageList({
   config,
   mailbox,
   open,
+  select,
 }: {
   config: string;
   mailbox: Mailbox;
   /** The message open beside the list, if any. */
   open: string | null;
+  /** While selecting: a row is a checkbox rather than a way to open the message. */
+  select?: Selecting;
 }) {
   const pending = usePending(config);
   const pages = useInfiniteQuery({
@@ -38,21 +50,29 @@ export function MessageList({
     getNextPageParam: (last) => last.next_cursor,
   });
 
-  // The next run loads as the end of the list comes into view. Where the browser cannot say
-  // when that is, the button below does it instead.
+  // The next run loads before the end of the list comes into view, so scrolling seldom meets
+  // it. Measured on the list's own scroll box: a margin on the window would not reach past the
+  // box's edge. Where the browser cannot say, the button below does it instead.
+  const scroller = useRef<HTMLDivElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
   useEffect(() => {
     const node = end.current;
     if (!node || !hasNextPage || typeof IntersectionObserver === "undefined")
       return;
-    const watch = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage)
-        fetchNextPage();
-    });
+    const watch = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage)
+          fetchNextPage();
+      },
+      { root: scroller.current, rootMargin: `0px 0px ${AHEAD}px 0px` },
+    );
     watch.observe(node);
     return () => watch.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, pages.data]);
+
+  // Where a Shift-click's range starts: the last row toggled.
+  const anchor = useRef<string | null>(null);
 
   if (pages.error) {
     return <p className="p-4 text-sm text-accent">{messageOf(pages.error)}</p>;
@@ -78,11 +98,34 @@ export function MessageList({
     return <p className="p-4 text-sm text-muted">No messages here.</p>;
   }
 
+  // A click toggles one row; a Shift-click sets every row from the last one toggled to this one
+  // the way this one goes.
+  const toggle = (id: string, range: boolean) => {
+    if (!select) return;
+    const next = new Set(select.selected);
+    const on = !next.has(id);
+    const from =
+      range && anchor.current
+        ? messages.findIndex((m) => m.id === anchor.current)
+        : -1;
+    const to = messages.findIndex((m) => m.id === id);
+    const run =
+      from >= 0
+        ? messages.slice(Math.min(from, to), Math.max(from, to) + 1)
+        : [messages[to]!];
+    for (const m of run) {
+      if (on) next.add(m.id);
+      else next.delete(m.id);
+    }
+    anchor.current = id;
+    select.change(next);
+  };
+
   return (
     // relative, so what is absolutely positioned inside the list — the words only a screen
     // reader hears — is placed in the list rather than down the page, where it stretched the
     // window past the bottom of the screen.
-    <div className="relative min-h-0 flex-1 overflow-y-auto">
+    <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto">
       <ul aria-label="Messages">
         {messages.map((m) => (
           <Row
@@ -91,6 +134,8 @@ export function MessageList({
             mailbox={mailbox}
             message={m}
             open={m.id === open}
+            selected={select ? select.selected.has(m.id) : undefined}
+            onToggle={select ? (range) => toggle(m.id, range) : undefined}
           />
         ))}
       </ul>
@@ -114,56 +159,82 @@ function Row({
   mailbox,
   message: m,
   open,
+  selected,
+  onToggle,
 }: {
   config: string;
   mailbox: Mailbox;
   message: Message;
   open: boolean;
+  /** Set while selecting: whether this row is. */
+  selected?: boolean;
+  onToggle?: (range: boolean) => void;
 }) {
   const unread = !m.seen;
+  const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"}`;
+  const body = (
+    <div className="min-w-0 flex-1">
+      <div className="flex items-baseline gap-2">
+        {unread ? <span className="sr-only">Unread.</span> : null}
+        <span
+          className={`min-w-0 flex-1 truncate text-sm ${unread ? "font-semibold" : ""}`}
+        >
+          {counterpart(mailbox, m)}
+        </span>
+        {m.has_attachments ? (
+          <Paperclip className="shrink-0 self-center text-muted" />
+        ) : null}
+        {m.flagged ? <Star className="shrink-0 self-center text-warn" /> : null}
+        <time
+          dateTime={new Date(m.date * 1000).toISOString()}
+          title={full(m.date)}
+          className="shrink-0 text-xs text-muted"
+        >
+          {when(m.date)}
+        </time>
+      </div>
+      <p className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}>
+        {m.subject || "(no subject)"}
+      </p>
+      {m.preview ? (
+        <p className="truncate text-sm text-faint">{m.preview}</p>
+      ) : null}
+    </div>
+  );
   return (
     <li className="border-b border-line">
-      <Link
-        href={paths.mail(config, mailbox.id, m.id)}
-        aria-current={open ? "true" : undefined}
-        className={`flex items-start gap-3 px-4 py-2.5 ${open ? "bg-shade" : "bg-bg hover:bg-fill"}`}
-      >
-        <span
-          aria-hidden="true"
-          className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : ""}`}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            {unread ? <span className="sr-only">Unread.</span> : null}
-            <span
-              className={`min-w-0 flex-1 truncate text-sm ${unread ? "font-semibold" : ""}`}
-            >
-              {counterpart(mailbox, m)}
-            </span>
-            {m.has_attachments ? (
-              <Paperclip className="shrink-0 self-center text-muted" />
-            ) : null}
-            {m.flagged ? (
-              <Star className="shrink-0 self-center text-warn" />
-            ) : null}
-            <time
-              dateTime={new Date(m.date * 1000).toISOString()}
-              title={full(m.date)}
-              className="shrink-0 text-xs text-muted"
-            >
-              {when(m.date)}
-            </time>
-          </div>
-          <p
-            className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}
-          >
-            {m.subject || "(no subject)"}
-          </p>
-          {m.preview ? (
-            <p className="truncate text-sm text-faint">{m.preview}</p>
-          ) : null}
-        </div>
-      </Link>
+      {onToggle ? (
+        // The whole row is the checkbox's label; the click is taken here rather than as the
+        // checkbox's change, which does not say whether Shift was held.
+        <label
+          className={`${look} cursor-pointer select-none`}
+          onClick={(e) => {
+            e.preventDefault();
+            onToggle(e.shiftKey);
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            readOnly
+            aria-label={m.subject || "(no subject)"}
+            className="mt-1 size-4 shrink-0 accent-brand"
+          />
+          {body}
+        </label>
+      ) : (
+        <Link
+          href={paths.mail(config, mailbox.id, m.id)}
+          aria-current={open ? "true" : undefined}
+          className={look}
+        >
+          <span
+            aria-hidden="true"
+            className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : ""}`}
+          />
+          {body}
+        </Link>
+      )}
     </li>
   );
 }

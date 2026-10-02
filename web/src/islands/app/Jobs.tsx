@@ -37,10 +37,13 @@ export function Jobs() {
       for (const j of before) {
         if (!j.error && !still.has(j.id)) commit(client, j);
       }
-      for (const j of now) {
-        if (!j.error || before.some((b) => b.id === j.id && b.error)) continue;
-        say(failure(j, labels.get(j.id), j.error));
-        deleteJobsById(j.id).catch(() => {});
+      // Newly failed: said once, by what it is called or by how many, and let go.
+      const failed = now.filter(
+        (j) => j.error && !before.some((b) => b.id === j.id && b.error),
+      );
+      if (failed.length > 0) {
+        say(failure(failed, labels.get(failed[0]!.id), failed[0]!.error));
+        for (const j of failed) deleteJobsById(j.id).catch(() => {});
       }
       return now;
     },
@@ -51,8 +54,10 @@ export function Jobs() {
   // On their way: asked, and not yet taken by the server.
   const sending = useMutationState({
     filters: { mutationKey: mk.actions, status: "pending" },
-    select: (m) => (m.state.variables as Pending).ref,
-  }).filter((ref) => !(ref && accepted.has(ref))).length;
+    select: (m) => (m.state.variables as Pending[]).map((p) => p.ref),
+  })
+    .flat()
+    .filter((ref) => !(ref && accepted.has(ref))).length;
   const waiting = (jobs.data ?? []).filter((j) => !j.error).length + sending;
 
   // Only what has not reached the server is lost with the tab; what has is done regardless.

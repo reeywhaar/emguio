@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	"emguio/internal/ids"
@@ -42,60 +43,100 @@ type jobBody struct {
 	Seen        bool   `json:"seen"`
 }
 
-// postJob takes something to be done to a message — read or unread, starred or not, moved,
-// deleted for good — and answers as soon as it is queued. The mirror does it on the server in
+// jobsMax bounds one request: a page of messages selected and acted on at once.
+const jobsMax = 500
+
+type jobsBody struct {
+	Jobs []jobBody `json:"jobs"`
+}
+
+// postJobs takes what is to be done to messages — read or unread, starred or not, moved,
+// deleted for good — and answers as soon as it is queued. The mirror does each on the server in
 // the order asked, whether or not the page that asked is still open; see docs/reading.md.
-func (s *Server) postJob(w http.ResponseWriter, r *http.Request) {
-	var body jobBody
+//
+// A list, so a selection acted on is one request. All of it is queued or none: one job that
+// cannot be refuses the request.
+func (s *Server) postJobs(w http.ResponseWriter, r *http.Request) {
+	var body jobsBody
 	if !decode(w, r, &body) {
 		return
 	}
+	if len(body.Jobs) == 0 || len(body.Jobs) > jobsMax {
+		refuse(w, http.StatusBadRequest, CodeInvalid, fmt.Sprintf("Ask for between 1 and %d jobs at once.", jobsMax))
+		return
+	}
 	u := userOf(r)
-	switch body.Kind {
-	case store.JobSeen, store.JobFlagged, store.JobMove, store.JobDelete:
-	default:
-		refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to do: seen, flagged, move or delete.")
-		return
+	jobs := make([]store.Job, 0, len(body.Jobs))
+	configs := map[string]*store.EmailConfig{}
+	mailboxes := map[string]*store.Mailbox{}
+	mailbox := func(c *store.EmailConfig, id string) (*store.Mailbox, error) {
+		if mb := mailboxes[id]; mb != nil {
+			return mb, nil
+		}
+		mb, err := s.store.Mailbox(r.Context(), u.ID, c.ID, id)
+		if err == nil {
+			mailboxes[id] = mb
+		}
+		return mb, err
 	}
-	if _, _, ok := ids.ParseMessage(body.Message); !ok {
-		refuse(w, http.StatusBadRequest, CodeInvalid, "That is not a message id.")
-		return
-	}
-	c, err := s.store.EmailConfig(r.Context(), u.ID, body.EmailConfig)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	mb, err := s.store.Mailbox(r.Context(), u.ID, c.ID, body.Mailbox)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	j := store.Job{
-		UserID: u.ID, EmailConfigID: c.ID, MailboxID: mb.ID, Message: body.Message,
-		Kind: body.Kind, Value: body.Value, Seen: body.Seen,
-	}
-	if body.Kind == store.JobMove {
-		to, err := s.store.Mailbox(r.Context(), u.ID, c.ID, body.Target)
+	for _, b := range body.Jobs {
+		switch b.Kind {
+		case store.JobSeen, store.JobFlagged, store.JobMove, store.JobDelete:
+		default:
+			refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to do: seen, flagged, move or delete.")
+			return
+		}
+		if _, _, ok := ids.ParseMessage(b.Message); !ok {
+			refuse(w, http.StatusBadRequest, CodeInvalid, "That is not a message id.")
+			return
+		}
+		c := configs[b.EmailConfig]
+		if c == nil {
+			var err error
+			if c, err = s.store.EmailConfig(r.Context(), u.ID, b.EmailConfig); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			configs[c.ID] = c
+		}
+		mb, err := mailbox(c, b.Mailbox)
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
-		if to.ID == mb.ID || !to.Selectable {
-			refuse(w, http.StatusBadRequest, CodeInvalid, "Choose another folder to move it to.")
-			return
+		j := store.Job{
+			UserID: u.ID, EmailConfigID: c.ID, MailboxID: mb.ID, Message: b.Message,
+			Kind: b.Kind, Value: b.Value, Seen: b.Seen,
 		}
-		j.Target = to.ID
+		if b.Kind == store.JobMove {
+			to, err := mailbox(c, b.Target)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if to.ID == mb.ID || !to.Selectable {
+				refuse(w, http.StatusBadRequest, CodeInvalid, "Choose another folder to move it to.")
+				return
+			}
+			j.Target = to.ID
+		}
+		jobs = append(jobs, j)
 	}
-	added, err := s.store.AddJob(r.Context(), j)
+	added, err := s.store.AddJobs(r.Context(), jobs)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if s.mirror != nil {
-		s.mirror.Kick(c.ID)
+		for id := range configs {
+			s.mirror.Kick(id)
+		}
 	}
-	writeJSON(w, http.StatusAccepted, jobOut(added))
+	out := make([]jobJSON, len(added))
+	for i, j := range added {
+		out[i] = jobOut(j)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"jobs": out})
 }
 
 // listJobs is the user's jobs, waiting and failed, oldest first: what a page opened after they

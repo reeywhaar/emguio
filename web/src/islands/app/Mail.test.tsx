@@ -21,6 +21,7 @@ const getMessages = vi.fn();
 const postEmailConfigsByIdSync = vi.fn();
 const getMessage = vi.fn();
 const postJob = vi.fn();
+const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
 const dismissJob = vi.fn();
 
@@ -43,7 +44,10 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
 vi.mock("@app/api/actions/jobs", () => ({
-  postJobs: (body: JobDraft) => postJob(body),
+  postJobs: (jobs: JobDraft[]) => {
+    postJobsRequest(jobs);
+    return Promise.all(jobs.map((body) => postJob(body)));
+  },
   getJobs: () => getJobs(),
   deleteJobsById: (id: string) => dismissJob(id),
 }));
@@ -188,6 +192,17 @@ const moveOpen = async (id: string) => {
   await waitFor(() => expect(picker.disabled).toBe(false));
   fireEvent.change(picker, { target: { value: "mb_work" } });
 };
+
+// Opens the inbox and starts selecting; the list it gives is the rows.
+const start = async () => {
+  mount(<Mail named="ec_1" mailbox="mb_inbox" message={null} />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Select messages" }),
+  );
+  return within(await screen.findByRole("list", { name: "Messages" }));
+};
+const checkbox = (list: ReturnType<typeof within>, name: string) =>
+  list.getByRole("checkbox", { name }) as HTMLInputElement;
 
 describe("the mail view", () => {
   it("opens on the inbox and lists its messages", async () => {
@@ -428,5 +443,104 @@ describe("the mail view", () => {
     await waitFor(() =>
       expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_3"),
     );
+  });
+
+  describe("selecting", () => {
+    // A Shift-click takes every row from the last one clicked; the selection moved is one
+    // request of a job each.
+    it("selects a range and moves it in one request", async () => {
+      three();
+      postJob.mockImplementation(take);
+      const list = await start();
+      fireEvent.click(checkbox(list, "First").closest("label")!);
+      fireEvent.click(checkbox(list, "Third").closest("label")!, {
+        shiftKey: true,
+      });
+      expect(checkbox(list, "Second").checked).toBe(true);
+      expect(
+        screen.getByRole("checkbox", { name: "Select all" }).closest("label")!
+          .textContent,
+      ).toBe("3 selected");
+
+      fireEvent.change(screen.getByLabelText("Move to folder"), {
+        target: { value: "mb_work" },
+      });
+      await waitFor(() => expect(postJobsRequest).toHaveBeenCalledTimes(1));
+      expect(
+        (postJobsRequest.mock.calls[0]![0] as JobDraft[]).map((j) => [
+          j.message,
+          j.kind,
+          j.target,
+        ]),
+      ).toEqual([
+        ["m_1", "move", "mb_work"],
+        ["m_2", "move", "mb_work"],
+        ["m_3", "move", "mb_work"],
+      ]);
+      await screen.findByText("No messages here.");
+      expect(
+        screen.getByRole("checkbox", { name: "Select all" }).closest("label")!
+          .textContent,
+      ).toBe("0 selected");
+    });
+
+    // Read if any is unread: only the unread ones are asked about.
+    it("marks a mixed selection read, asking only for the unread", async () => {
+      getMessages.mockResolvedValue({
+        messages: [
+          message("m_1", "First", { seen: false }),
+          message("m_2", "Second"),
+        ],
+      });
+      postJob.mockImplementation(take);
+      const list = await start();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+      expect(
+        checkbox(list, "First").checked && checkbox(list, "Second").checked,
+      ).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Mark as read" }));
+      await waitFor(() => expect(postJobsRequest).toHaveBeenCalledTimes(1));
+      expect(postJobsRequest.mock.calls[0]![0]).toEqual([
+        expect.objectContaining({ message: "m_1", kind: "seen", value: true }),
+      ]);
+    });
+
+    it("leaves on Escape, and the rows open messages again", async () => {
+      three();
+      const list = await start();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await screen.findByRole("button", { name: "Select messages" });
+      expect(list.queryAllByRole("checkbox")).toHaveLength(0);
+      expect(list.getAllByRole("link")).toHaveLength(3);
+    });
+  });
+
+  // The next run starts loading 200px before the end of the list, measured on the list itself.
+  it("reaches further back before the end comes into view", async () => {
+    getMessages.mockResolvedValue({
+      messages: [message("m_1", "Newer")],
+      next_cursor: "c1",
+    });
+    const seen: IntersectionObserverInit[] = [];
+    const real = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = class {
+      constructor(
+        _: IntersectionObserverCallback,
+        init: IntersectionObserverInit,
+      ) {
+        seen.push(init);
+      }
+      observe() {}
+      disconnect() {}
+    } as unknown as typeof IntersectionObserver;
+    try {
+      mount(<Mail named="ec_1" mailbox={null} message={null} />);
+      const list = await screen.findByRole("list", { name: "Messages" });
+      await waitFor(() => expect(seen.length).toBeGreaterThan(0));
+      expect(seen.at(-1)!.rootMargin).toBe("0px 0px 200px 0px");
+      expect(seen.at(-1)!.root).toBe(list.parentElement);
+    } finally {
+      globalThis.IntersectionObserver = real;
+    }
   });
 });
