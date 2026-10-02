@@ -72,8 +72,9 @@ export function MessageList({
       (entries) => {
         // A read of the whole list underway is let finish rather than cut short: the next run
         // is asked for from what it brings.
-        if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage)
+        if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) {
           fetchNextPage({ cancelRefetch: false });
+        }
       },
       { root: scroller.current, rootMargin: `0px 0px ${AHEAD}px 0px` },
     );
@@ -89,6 +90,11 @@ export function MessageList({
 
   // Where a Shift-click's range starts: the last row toggled.
   const anchor = useRef<string | null>(null);
+
+  const selecting = Boolean(select);
+  useEffect(() => {
+    if (selecting) scroller.current?.querySelector("input")?.focus();
+  }, [selecting]);
 
   if (!pages.data) {
     if (pages.error) {

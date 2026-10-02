@@ -1,5 +1,14 @@
 {
-  "categories": { "correctness": "error", "suspicious": "warn" },
-  "env": { "browser": true, "es2022": true },
-  "ignorePatterns": ["dist"]
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2022": true
+  },
+  "ignorePatterns": ["dist"],
+  "rules": {
+    "curly": ["error", "multi-line"]
+  }
 }

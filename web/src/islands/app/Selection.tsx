@@ -71,6 +71,8 @@ export function Selection({
     label: m.subject,
     ...what,
   });
+  // The rows moved away had focus.
+  const allBox = useRef<HTMLInputElement | null>(null);
   const moveAll = (dest: Mailbox | null) => {
     ask(
       chosen.map((m) =>
@@ -78,6 +80,7 @@ export function Selection({
       ),
     );
     change(new Set());
+    allBox.current?.focus();
   };
   const remove = async () => {
     if (to.trash) return moveAll(to.trash);
@@ -165,6 +168,7 @@ export function Selection({
           aria-label="Select all"
           checked={all}
           ref={(el) => {
+            allBox.current = el;
             if (el) el.indeterminate = !all && !none;
           }}
           onChange={() =>

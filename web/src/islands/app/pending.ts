@@ -80,8 +80,9 @@ export function withPending<T extends Pick<Message, "id" | "seen" | "flagged">>(
 ): T {
   let out = m;
   for (const p of pending) {
-    if (p.mailbox === mailbox && p.message === m.id)
+    if (p.mailbox === mailbox && p.message === m.id) {
       out = { ...out, ...change(p) };
+    }
   }
   return out;
 }
@@ -161,15 +162,24 @@ export function commit(client: QueryClient, j: JobDraft) {
     );
   if (removes(j)) {
     rows((msgs) => msgs.filter((x) => x.id !== j.message));
-    if (j.target)
+    if (j.target) {
       client.invalidateQueries({
         queryKey: qk.folder(j.email_config, j.target),
       });
+    }
   } else {
-    client.setQueryData<ReadMessage>(
-      qk.message(j.email_config, j.mailbox, j.message),
-      (old) => old && { ...old, ...change(j) },
-    );
+    const reading = qk.message(j.email_config, j.mailbox, j.message);
+    // A read underway may answer with the message as it was before the job: it is read again.
+    if (client.getQueryState(reading)?.fetchStatus === "fetching") {
+      void client
+        .cancelQueries({ queryKey: reading })
+        .then(() => client.invalidateQueries({ queryKey: reading }));
+    } else {
+      client.setQueryData<ReadMessage>(
+        reading,
+        (old) => old && { ...old, ...change(j) },
+      );
+    }
     rows((msgs) =>
       msgs.map((x) => (x.id === j.message ? { ...x, ...change(j) } : x)),
     );

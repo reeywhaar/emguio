@@ -38,7 +38,7 @@ export class Boundary extends Component<
 
   render() {
     if (!this.state.failed) return this.props.children;
-    if (this.props.page)
+    if (this.props.page) {
       return (
         <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-4 text-center">
           <p className="text-sm text-accent">
@@ -47,6 +47,7 @@ export class Boundary extends Component<
           <Button onClick={() => window.location.reload()}>Reload</Button>
         </main>
       );
+    }
     return (
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-accent">

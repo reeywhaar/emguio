@@ -233,15 +233,15 @@ describe("the mail view", () => {
     expect(within(rows[1]!).queryByText("Unread.")).toBeNull();
   });
 
-  it("lists folders in the server's tree, with what is unread", async () => {
+  it("lists folders in the server's tree, with what is unread and how many", async () => {
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const nav = await screen.findByRole("navigation", { name: "Folders" });
     const links = await within(nav).findAllByRole("link");
     expect(links.map((l) => l.textContent)).toEqual([
-      "Inbox, unread: 2",
-      "Sent",
-      "Work",
-      "Clients, unread: 1",
+      "Inbox, unread: 2, messages: /10",
+      "Sent, messages: 10",
+      "Work, messages: 10",
+      "Clients, unread: 1, messages: /10",
     ]);
     expect(links[0]!.getAttribute("aria-current")).toBe("page");
   });
@@ -548,10 +548,11 @@ describe("the mail view", () => {
         ["m_3", "move", "mb_work"],
       ]);
       await screen.findByText("No messages here.");
-      expect(
-        screen.getByRole("checkbox", { name: "Select all" }).closest("label")!
-          .textContent,
-      ).toBe("0 selected");
+      expect(selectedCount()).toBe("0 selected");
+      // The rows that had focus are gone; the selection's own box has it.
+      expect(document.activeElement).toBe(
+        screen.getByRole("checkbox", { name: "Select all" }),
+      );
     });
 
     // Read if any is unread: only the unread ones are asked about.
@@ -615,6 +616,7 @@ describe("the mail view", () => {
     it("toggles a row by its checkbox as by the row", async () => {
       three();
       const list = await start();
+      expect(document.activeElement).toBe(checkbox(list, "First"));
       const tick = checkbox(list, "Second");
       fireEvent.click(tick);
       expect(tick.checked).toBe(true);
@@ -631,7 +633,9 @@ describe("the mail view", () => {
       three();
       const list = await start();
       fireEvent.keyDown(document.body, { key: "Escape" });
-      await screen.findByRole("button", { name: "Select messages" });
+      expect(document.activeElement).toBe(
+        await screen.findByRole("button", { name: "Select messages" }),
+      );
       expect(list.queryAllByRole("checkbox")).toHaveLength(0);
       expect(list.getAllByRole("link")).toHaveLength(3);
     });

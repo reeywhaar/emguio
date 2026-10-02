@@ -77,8 +77,13 @@ const same = (a: Address, b: Address) =>
 function only(list: Address[], not: Address[]): Address[] {
   const out: Address[] = [];
   for (const a of list) {
-    if (!a.email || not.some((n) => same(a, n)) || out.some((o) => same(a, o)))
+    if (
+      !a.email ||
+      not.some((n) => same(a, n)) ||
+      out.some((o) => same(a, o))
+    ) {
       continue;
+    }
     out.push(a);
   }
   return out;

@@ -46,8 +46,9 @@ export class Watcher {
           intersectionRatio: 1,
         }) as IntersectionObserverEntry,
     );
-    if (entries.length > 0)
+    if (entries.length > 0) {
       this.told(entries, this as unknown as IntersectionObserver);
+    }
   }
 }
 

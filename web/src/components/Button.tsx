@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ComponentProps } from "react";
 
 /**
  * Four variants, and choosing between them is the whole decision.
@@ -43,7 +43,7 @@ export function Button({
   size = "field",
   className = "",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: ComponentProps<"button"> & {
   variant?: Variant;
   size?: Size;
 }) {

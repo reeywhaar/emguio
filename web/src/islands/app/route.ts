@@ -44,9 +44,10 @@ export function parse(address: string): Route {
       : (new URLSearchParams(address.slice(at + 1)).get("q") ?? "").trim();
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
   const [first, second, third, fourth] = parts;
-  if (parts.length === 0)
+  if (parts.length === 0) {
     return { page: "mail", config: null, mailbox: null, message: null, q: "" };
-  if (first === "c" && parts.length >= 2 && parts.length <= 4)
+  }
+  if (first === "c" && parts.length >= 2 && parts.length <= 4) {
     return {
       page: "mail",
       config: second!,
@@ -54,13 +55,20 @@ export function parse(address: string): Route {
       message: fourth ?? null,
       q: third ? q : "",
     };
-  if (first === "settings" && parts.length === 1)
+  }
+  if (first === "settings" && parts.length === 1) {
     return { page: "settings", editing: null };
-  if (first === "settings" && second === "email-configs" && parts.length === 3)
+  }
+  if (
+    first === "settings" &&
+    second === "email-configs" &&
+    parts.length === 3
+  ) {
     return {
       page: "settings",
       editing: { id: third === "new" ? null : third! },
     };
+  }
   return { page: "missing" };
 }
 

@@ -86,8 +86,9 @@ function Writer({ start }: { start: Draft }) {
         confirm: "Discard",
         danger: true,
       }))
-    )
+    ) {
       return;
+    }
     stopWriting();
   };
 

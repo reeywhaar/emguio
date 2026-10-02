@@ -104,8 +104,9 @@ export function Dialog({
         startedOnBackdrop.current = e.target === e.currentTarget;
       }}
       onClick={(e) => {
-        if (startedOnBackdrop.current && e.target === e.currentTarget)
+        if (startedOnBackdrop.current && e.target === e.currentTarget) {
           onClose();
+        }
         startedOnBackdrop.current = false;
       }}
       // hidden until open, or flex beats the browser's dialog:not([open]) { display: none }.

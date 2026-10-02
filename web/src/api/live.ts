@@ -55,8 +55,9 @@ export function counts(client: QueryClient): Map<string, string> {
     predicate: ({ queryKey }) => queryKey[2] === "mailboxes",
   });
   for (const [key, boxes] of read) {
-    for (const mb of boxes ?? [])
+    for (const mb of boxes ?? []) {
       out.set(`${String(key[1])} ${mb.id}`, `${mb.messages} ${mb.unseen}`);
+    }
   }
   return out;
 }

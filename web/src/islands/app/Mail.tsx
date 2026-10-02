@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -122,8 +122,9 @@ function Folders({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "c" || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target instanceof HTMLElement ? e.target : null;
-      if (el?.closest("input, textarea, select, [contenteditable='true']"))
+      if (el?.closest("input, textarea, select, [contenteditable='true']")) {
         return;
+      }
       if (document.querySelector("dialog[open]")) return;
       e.preventDefault();
       write(blank(config.id));
@@ -135,6 +136,14 @@ function Folders({
   // While messages are being selected, the ones that are; null while they are not. A folder's
   // own, so another folder starts with none.
   const [selected, setSelected] = useState<Set<string> | null>(null);
+  // Leaving select mode takes away what had focus: it goes back to the button that started it.
+  const selectButton = useRef<HTMLButtonElement>(null);
+  const selecting = selected !== null;
+  const wasSelecting = useRef(selecting);
+  useEffect(() => {
+    if (wasSelecting.current && !selecting) selectButton.current?.focus();
+    wasSelecting.current = selecting;
+  }, [selecting]);
   const current = boxes.data
     ? mailbox
       ? boxes.data.find((mb) => mb.id === mailbox)
@@ -219,6 +228,7 @@ function Folders({
               {current?.selectable ? (
                 // Selecting is about the list: an open message is closed for it.
                 <Button
+                  ref={selectButton}
                   size="bar"
                   aria-label="Select messages"
                   title="Select messages"
@@ -372,10 +382,19 @@ function FolderLink({
       style={indent}
     >
       <span className="min-w-0 flex-1 truncate">{labelOfMailbox(mb)}</span>
-      {mb.unseen ? (
-        <span className="text-xs font-medium text-brand">
-          <span className="sr-only">, unread: </span>
-          {mb.unseen}
+      {mb.messages ? (
+        <span className="text-xs tabular-nums">
+          {mb.unseen ? (
+            <span className="font-medium text-brand">
+              <span className="sr-only">, unread: </span>
+              {mb.unseen.toLocaleString()}
+            </span>
+          ) : null}
+          <span className="text-faint">
+            <span className="sr-only">, messages: </span>
+            {mb.unseen ? <span aria-hidden="true">/</span> : null}
+            {mb.messages.toLocaleString()}
+          </span>
         </span>
       ) : null}
     </Link>

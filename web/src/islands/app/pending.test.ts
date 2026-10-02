@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { describe, expect, it, vi } from "vitest";
 
-import type { Mailbox, Message } from "@app/api/types";
+import { qk } from "@app/api/keys";
+import type { Mailbox, Message, ReadMessage } from "@app/api/types";
 import {
+  commit,
   countsWithPending,
   listWithPending,
   withPending,
@@ -81,4 +84,57 @@ describe("the pending layer", () => {
     expect(countsWithPending(boxes, [])).toBe(boxes);
     expect(listWithPending(server, "mb_in", [])).toEqual(server);
   });
+});
+
+// A message still being read when a job on it is done may answer with what it was before the
+// job: it is read again rather than patched, or the pane would keep the old flag for good.
+it("reads a message again when a job is done on it while it is being read", async () => {
+  const client = new QueryClient();
+  const key = qk.message("ec_1", "mb_in", "1-1");
+  const reads: ((m: ReadMessage) => void)[] = [];
+  const observer = new QueryObserver<ReadMessage>(client, {
+    queryKey: key,
+    queryFn: () => new Promise<ReadMessage>((resolve) => reads.push(resolve)),
+  });
+  const stop = observer.subscribe(() => {});
+  await Promise.resolve();
+  expect(reads).toHaveLength(1);
+
+  commit(client, {
+    email_config: "ec_1",
+    mailbox: "mb_in",
+    message: "1-1",
+    kind: "seen",
+    value: false,
+    target: "",
+    seen: true,
+  });
+  // The first read answers late, with the flag from before the job.
+  reads[0]!({
+    ...message("1-1", true),
+    cc: [],
+    mailbox: "mb_in",
+    reply_to: [],
+    text: "",
+    html_text: "",
+    html: "",
+    held_images: 0,
+    parts: [],
+  });
+  await vi.waitFor(() => expect(reads).toHaveLength(2));
+  reads[1]!({
+    ...message("1-1", false),
+    cc: [],
+    mailbox: "mb_in",
+    reply_to: [],
+    text: "",
+    html_text: "",
+    html: "",
+    held_images: 0,
+    parts: [],
+  });
+  await vi.waitFor(() =>
+    expect(client.getQueryData<ReadMessage>(key)?.seen).toBe(false),
+  );
+  stop();
 });

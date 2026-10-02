@@ -194,8 +194,9 @@ function Replies({ config, m }: { config: string; m: ReadMessage }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target instanceof HTMLElement ? e.target : null;
-      if (el?.closest("input, textarea, select, [contenteditable='true']"))
+      if (el?.closest("input, textarea, select, [contenteditable='true']")) {
         return;
+      }
       if (document.querySelector("dialog[open]")) return;
       const run = latest.current[e.key as "r" | "a" | "f"];
       if (!run) return;

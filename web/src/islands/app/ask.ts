@@ -38,7 +38,8 @@ export function useAsk(config: string) {
       say(failure(asked, asked[0]?.label, messageOf(err))),
   });
   return (asked: Omit<Pending, "ref">[]) => {
-    if (asked.length > 0)
+    if (asked.length > 0) {
       send.mutate(asked.map((p) => ({ ...p, ref: nextRef() })));
+    }
   };
 }
