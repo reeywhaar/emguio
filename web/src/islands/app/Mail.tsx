@@ -24,22 +24,25 @@ import {
 import { Selection } from "@app/islands/app/Selection";
 import { countsWithPending, usePending } from "@app/islands/app/pending";
 import { Reader } from "@app/islands/app/Reader";
+import { Search } from "@app/islands/app/Search";
 import { go, paths } from "@app/islands/app/route";
 
 /**
  * One email config's mail: its folders down the side and a folder's messages beside them.
  *
  * named, mailbox and message are what the address says: null for the usual config and folder,
- * and for no message open.
+ * and for no message open. q is what the folder is searched for, empty for none.
  */
 export function Mail({
   named,
   mailbox,
   message,
+  q = "",
 }: {
   named: string | null;
   mailbox: string | null;
   message: string | null;
+  q?: string;
 }) {
   const configs = useQuery({
     queryKey: qk.emailConfigs,
@@ -84,6 +87,7 @@ export function Mail({
       config={config}
       mailbox={mailbox}
       message={message}
+      q={q}
       key={config.id}
     />
   );
@@ -97,10 +101,12 @@ function Folders({
   config,
   mailbox,
   message,
+  q,
 }: {
   config: EmailConfig;
   mailbox: string | null;
   message: string | null;
+  q: string;
 }) {
   const listed = useQuery({
     queryKey: qk.mailboxes(config.id),
@@ -157,6 +163,7 @@ function Folders({
             <Selection
               config={config.id}
               mailbox={current}
+              q={q}
               boxes={boxes.data}
               selected={selected}
               change={setSelected}
@@ -194,7 +201,7 @@ function Folders({
                   title="Select messages"
                   onClick={() => {
                     setSelected(new Set());
-                    go(paths.mail(config.id, current.id));
+                    go(paths.mail(config.id, current.id, undefined, q));
                   }}
                 >
                   <SelectMark />
@@ -204,6 +211,14 @@ function Folders({
             </>
           )}
         </div>
+        {current?.selectable ? (
+          <Search
+            config={config.id}
+            mailbox={current}
+            q={q}
+            key={`${current.id} ${q}`}
+          />
+        ) : null}
         {config.sync_error ? (
           <p
             role="alert"
@@ -224,6 +239,7 @@ function Folders({
           current={current}
           named={mailbox}
           open={message}
+          q={q}
           select={selected ? { selected, change: setSelected } : undefined}
         />
       </section>
@@ -233,6 +249,7 @@ function Folders({
           config={config.id}
           mailbox={current}
           message={message}
+          q={q}
           key={message}
         />
       ) : (
@@ -250,6 +267,7 @@ function Body({
   current,
   named,
   open,
+  q,
   select,
 }: {
   config: EmailConfig;
@@ -257,6 +275,7 @@ function Body({
   current: Mailbox | undefined;
   named: string | null;
   open: string | null;
+  q: string;
   select?: Selecting;
 }) {
   if (!boxes) return <MessageDummies count={4} />;
@@ -295,8 +314,9 @@ function Body({
       config={config.id}
       mailbox={current}
       open={open}
+      q={q}
       select={select}
-      key={current.id}
+      key={`${current.id} ${q}`}
     />
   );
 }

@@ -22,9 +22,11 @@ type fakeMirror struct {
 	mu         sync.Mutex
 	reconciled int
 	refreshed  []string
-	// listing is what a list from the server gets, and listed the cursor of each one asked for.
-	listing *mirror.Listing
-	listed  []uint32
+	// listing is what a list from the server gets, listed the cursor of each one asked for, and
+	// searched the query of each that had one.
+	listing  *mirror.Listing
+	listed   []uint32
+	searched []string
 	// opened is the message on the server, and fetched how many times it was asked for.
 	opened  message.Structure
 	fetched int
@@ -41,10 +43,13 @@ func (f *fakeMirror) Refresh(id string) {
 	f.refreshed = append(f.refreshed, id)
 	f.mu.Unlock()
 }
-func (f *fakeMirror) List(_ context.Context, _ store.SyncTarget, _ string, _, before uint32, _ int) (*mirror.Listing, error) {
+func (f *fakeMirror) List(_ context.Context, _ store.SyncTarget, _ string, _, before uint32, _ int, q string) (*mirror.Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listed = append(f.listed, before)
+	if q != "" {
+		f.searched = append(f.searched, q)
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -189,6 +194,22 @@ func TestAnotherMailboxIsListedFromTheServer(t *testing.T) {
 	resp := c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+work+"/messages?cursor=9-2", "")
 	if resp.StatusCode != http.StatusNotFound || c.json(resp)["code"] != CodeGone || len(fake.refreshed) != 1 {
 		t.Errorf("renumbered = %s, refreshed %v", resp.Status, fake.refreshed)
+	}
+}
+
+// A search is the mail server's, in INBOX too: nothing is kept to search here.
+func TestASearchIsAskedOfTheServer(t *testing.T) {
+	s, _, c, cfg, inbox := withMail(t, 3)
+	fake := &fakeMirror{listing: &mirror.Listing{UIDValidity: 7, Headers: []store.Header{{UID: 2, Subject: "Message B"}}}}
+	s.mirror = fake
+	base := "/api/email-configs/" + cfg + "/mailboxes/" + inbox + "/messages"
+
+	found := c.json(c.do("GET", base+"?q=+from%3Aalice+lunch+", ""))
+	if got := subjectsOf(found); got != "Message B" || len(fake.searched) != 1 || fake.searched[0] != "from:alice lunch" {
+		t.Errorf("found %q, the server asked %q", got, fake.searched)
+	}
+	if resp := c.do("GET", base+"?q="+strings.Repeat("a", queryMax+1), ""); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a query too long = %s", resp.Status)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"emguio/internal/ids"
@@ -19,8 +20,9 @@ type Mirror interface {
 	Reconcile()
 	// Refresh looks at every mailbox of one email config now.
 	Refresh(id string)
-	// List is a run of a mailbox's messages from the server, newest first.
-	List(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, before uint32, limit int) (*mirror.Listing, error)
+	// List is a run of a mailbox's messages from the server, newest first; with q, of those
+	// the server finds for it.
+	List(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, before uint32, limit int, q string) (*mirror.Listing, error)
 	// Read is one message as the server holds it, or mirror.ErrGone.
 	Read(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Opened, error)
 	// Part is one part of a message, its MIME header and its body, or mirror.ErrGone.
@@ -107,9 +109,20 @@ const (
 	pageMax  = 200
 )
 
+// queryMax bounds what a mailbox is searched for, in bytes: a line typed into a field.
+const queryMax = 500
+
 // listMessages is one run of a mailbox, newest first. INBOX opens on the window kept of it, and
 // everything past it, like every other mailbox, comes from the server.
+//
+// With q, the run is what the mail server finds in the mailbox for it, INBOX's included: nothing
+// is kept to search here. See docs/reading.md.
 func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(q) > queryMax {
+		refuse(w, http.StatusBadRequest, CodeInvalid, fmt.Sprintf("Search for at most %d characters.", queryMax))
+		return
+	}
 	limit := pageSize
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
@@ -136,7 +149,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		msgs []*store.Message
 		more bool
 	)
-	if before == 0 && mb.SpecialUse == store.UseInbox && mb.SyncedAt != nil {
+	if q == "" && before == 0 && mb.SpecialUse == store.UseInbox && mb.SyncedAt != nil {
 		window, err := s.store.Window(r.Context(), mb)
 		if err != nil {
 			s.fail(w, r, err)
@@ -148,7 +161,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 			refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
 			return
 		}
-		listing, err := s.mirror.List(r.Context(), targetOf(userOf(r), c), mb.Name, uidValidity, before, limit)
+		listing, err := s.mirror.List(r.Context(), targetOf(userOf(r), c), mb.Name, uidValidity, before, limit, q)
 		if !s.serverError(w, r, c.ID, err, "This folder has changed on the server since the list was opened. Open it again.") {
 			return
 		}
@@ -163,7 +176,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		out[i] = messageOut(m)
 	}
 	body := map[string]any{"messages": out}
-	if more {
+	if more && len(msgs) > 0 {
 		body["next_cursor"] = msgs[len(msgs)-1].ID()
 	}
 	writeJSON(w, http.StatusOK, body)

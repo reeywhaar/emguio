@@ -31,10 +31,13 @@ export function Reader({
   config,
   mailbox,
   message,
+  q = "",
 }: {
   config: string;
   mailbox: Mailbox;
   message: string;
+  /** What the folder was searched for, if the message was opened from what it found. */
+  q?: string;
 }) {
   // Images the server held back, in Junk, wait to be asked for, each message afresh. Asking swaps
   // them in where they stand, without fetching the message again.
@@ -54,7 +57,7 @@ export function Reader({
   // What the list already knows of it — who, what, when, and its flags — drawn while the rest
   // is fetched, so the headers show and the actions work from the moment it is opened.
   const listed = useCached<InfiniteData<MessagePage>>(
-    qk.messages(config, mailbox.id),
+    qk.messages(config, mailbox.id, q),
   );
   const row = listed?.pages
     .flatMap((p) => p.messages)
@@ -74,10 +77,11 @@ export function Reader({
           config={config}
           mailbox={mailbox}
           message={message}
+          q={q}
           m={known}
           back={
             <Link
-              href={paths.mail(config, mailbox.id)}
+              href={paths.mail(config, mailbox.id, undefined, q)}
               className="text-sm text-muted lg:hidden"
             >
               ← {labelOfMailbox(mailbox)}

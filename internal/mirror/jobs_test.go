@@ -53,7 +53,7 @@ func TestJobsAreDoneOnTheServerInTheOrderAsked(t *testing.T) {
 	if got := subjects(kept); got != "Read me" || !kept[0].Flags.Seen || !kept[0].Flags.Flagged {
 		t.Errorf("INBOX keeps %q %+v", got, kept)
 	}
-	moved, err := w.mirror.List(context.Background(), w.target, "Archive", 0, 0, 10)
+	moved, err := w.mirror.List(context.Background(), w.target, "Archive", 0, 0, 10, "")
 	if err != nil || headers(moved.Headers) != "Archive me" {
 		t.Errorf("Archive = %v, %v", moved, err)
 	}
@@ -98,7 +98,7 @@ func TestARunOfTheSameJobIsOneCommand(t *testing.T) {
 	if !strings.HasSuffix(left.Message, "-4") || left.Error != "This message is no longer on the server." {
 		t.Errorf("left = %+v", left)
 	}
-	moved, err := w.mirror.List(context.Background(), w.target, "Archive", 0, 0, 10)
+	moved, err := w.mirror.List(context.Background(), w.target, "Archive", 0, 0, 10, "")
 	if err != nil || headers(moved.Headers) != "Three, Two, One" {
 		t.Errorf("Archive = %v, %v", moved, err)
 	}

@@ -13,7 +13,11 @@ export const qk = {
   mailboxes: (config: string) => ["mail", config, "mailboxes"] as const,
   /** Every folder's list of one config's messages. */
   lists: (config: string) => ["mail", config, "messages"] as const,
-  messages: (config: string, mailbox: string) =>
+  /** A folder's list, or with q what the folder was searched for. */
+  messages: (config: string, mailbox: string, q = "") =>
+    ["mail", config, "messages", mailbox, q] as const,
+  /** A folder's list and every search of it, for what changes them all. */
+  folder: (config: string, mailbox: string) =>
     ["mail", config, "messages", mailbox] as const,
   /** Every message read whole from one config. */
   readings: (config: string) => ["mail", config, "message"] as const,

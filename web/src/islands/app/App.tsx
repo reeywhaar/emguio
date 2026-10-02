@@ -37,6 +37,7 @@ function Page({ route }: { route: Route }) {
           named={route.config}
           mailbox={route.mailbox}
           message={route.message}
+          q={route.q}
         />
       );
     case "settings":

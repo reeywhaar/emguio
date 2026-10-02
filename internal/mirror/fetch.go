@@ -123,12 +123,14 @@ type Listing struct {
 }
 
 // List is a run of up to limit of a mailbox's messages, newest first: the newest, or with
-// before, the ones that arrived before that UID under uidValidity.
+// before, the ones that arrived before that UID under uidValidity. With q, only those the server
+// finds for it, see Criteria.
 //
 // The first run is the last messages by sequence number, which needs only the count the mailbox
-// opens with. A later one asks which UIDs are below the cursor, so mail arriving or leaving
-// between two runs does not shift the second.
-func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, before uint32, limit int) (*Listing, error) {
+// opens with. A later one, and every run of a search, asks the server which UIDs match below the
+// cursor, so mail arriving or leaving between two runs does not shift the second.
+func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, before uint32, limit int, q string) (*Listing, error) {
+	criteria := Criteria(q)
 	var out *Listing
 	err := m.use(ctx, t, func(f *fetcher) error {
 		have, n, err := f.open(mailbox, false, true)
@@ -137,7 +139,7 @@ func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, u
 		}
 		out = &Listing{UIDValidity: have}
 		var set imap.NumSet
-		if before == 0 {
+		if before == 0 && criteria == nil {
 			if n == 0 {
 				return nil
 			}
@@ -147,20 +149,26 @@ func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, u
 			}
 			set, out.More = seqRange(from, n), from > 1
 		} else {
-			if have != uidValidity {
-				return ErrGone
+			var search imap.SearchCriteria
+			if criteria != nil {
+				search = *criteria
 			}
-			if before == 1 {
-				return nil
+			if before > 0 {
+				if have != uidValidity {
+					return ErrGone
+				}
+				if before == 1 {
+					return nil
+				}
+				search.UID = []imap.UIDSet{{{Start: 1, Stop: imap.UID(before - 1)}}}
 			}
 			var opts *imap.SearchOptions
 			if caps := f.session.client.Caps(); caps.Has(imap.CapESearch) || caps.Has(imap.CapIMAP4rev2) {
 				opts = &imap.SearchOptions{ReturnAll: true}
 			}
-			below := imap.UIDSet{{Start: 1, Stop: imap.UID(before - 1)}}
-			found, err := f.session.client.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{below}}, opts).Wait()
+			found, err := f.session.client.UIDSearch(&search, opts).Wait()
 			if err != nil {
-				return err
+				return refused(err)
 			}
 			uids := found.AllUIDs()
 			slices.Sort(uids)

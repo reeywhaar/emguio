@@ -31,9 +31,12 @@ export function useLive() {
       // A list read from the mail server is read again once its folder's counts say the server
       // changed what is in it, so the list on screen never disagrees with the number beside
       // its folder — mail another client moved into Trash, say.
+      // Searches of a folder too, INBOX's included, which the server keeps nothing for.
       for (const [config, mailbox] of moved(before, counts(client))) {
-        const list = qk.messages(config, mailbox);
-        if (!kept(client, list)) client.invalidateQueries({ queryKey: list });
+        client.invalidateQueries({
+          queryKey: qk.folder(config, mailbox),
+          predicate: ({ queryKey }) => !kept(client, queryKey),
+        });
       }
     };
     source.addEventListener("changed", refresh);
@@ -70,13 +73,14 @@ export function moved(
 
 /**
  * Whether a query reads what the server keeps, which is what the stream announces: each
- * config's mailboxes, and INBOX's list. Every other list and every message is fetched from the
- * mail server, and asking again on each change would be a trip there every time.
+ * config's mailboxes, and INBOX's list. Every other list, every search and every message is
+ * fetched from the mail server, and asking again on each change would be a trip there every
+ * time.
  */
 export function kept(client: QueryClient, key: readonly unknown[]): boolean {
-  const [, config, kind, mailbox] = key;
+  const [, config, kind, mailbox, q] = key;
   if (kind === "mailboxes") return true;
-  if (kind !== "messages" || typeof config !== "string") return false;
+  if (kind !== "messages" || typeof config !== "string" || q) return false;
   return (
     client
       .getQueryData<Mailbox[]>(qk.mailboxes(config))

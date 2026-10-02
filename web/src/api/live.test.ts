@@ -28,8 +28,9 @@ describe("what a change refetches", () => {
     expect(kept(client, qk.messages("ec_1", "mb_inbox"))).toBe(true);
   });
 
-  it("is not another folder's list, nor any message", () => {
+  it("is not another folder's list, nor a search, nor any message", () => {
     expect(kept(client, qk.messages("ec_1", "mb_work"))).toBe(false);
+    expect(kept(client, qk.messages("ec_1", "mb_inbox", "lunch"))).toBe(false);
     expect(kept(client, qk.message("ec_1", "mb_inbox", "7-1"))).toBe(false);
     expect(kept(client, qk.messages("ec_2", "mb_inbox"))).toBe(false);
   });

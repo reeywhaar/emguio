@@ -345,7 +345,7 @@ func TestAMailboxRecreatedOnTheServerIsGoneToAnOldCursor(t *testing.T) {
 		w.deliver("Lists", i, "alice@example.com", fmt.Sprintf("Old %d", i))
 	}
 	ctx := context.Background()
-	first, err := w.mirror.List(ctx, w.target, "Lists", 0, 0, 2)
+	first, err := w.mirror.List(ctx, w.target, "Lists", 0, 0, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestAMailboxRecreatedOnTheServerIsGoneToAnOldCursor(t *testing.T) {
 	}
 	w.create("Lists")
 	w.deliver("Lists", 4, "alice@example.com", "New")
-	again, err := w.mirror.List(ctx, w.target, "Lists", 0, 0, 2)
+	again, err := w.mirror.List(ctx, w.target, "Lists", 0, 0, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestAMailboxRecreatedOnTheServerIsGoneToAnOldCursor(t *testing.T) {
 		t.Fatal("the server did not change UIDVALIDITY; the test proves nothing")
 	}
 	last := first.Headers[len(first.Headers)-1]
-	if _, err := w.mirror.List(ctx, w.target, "Lists", first.UIDValidity, last.UID, 2); !errors.Is(err, ErrGone) {
+	if _, err := w.mirror.List(ctx, w.target, "Lists", first.UIDValidity, last.UID, 2, ""); !errors.Is(err, ErrGone) {
 		t.Errorf("an old cursor = %v, want gone", err)
 	}
 }
@@ -573,7 +573,7 @@ func TestAListPagesTheServerNewestFirst(t *testing.T) {
 		w.deliver("Archive", i, "alice@example.com", fmt.Sprintf("a%d", i))
 	}
 	ctx := context.Background()
-	first, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 2)
+	first, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,14 +583,14 @@ func TestAListPagesTheServerNewestFirst(t *testing.T) {
 
 	w.deliver("Archive", 6, "alice@example.com", "a6")
 	cursor := first.Headers[1].UID
-	second, err := w.mirror.List(ctx, w.target, "Archive", first.UIDValidity, cursor, 2)
+	second, err := w.mirror.List(ctx, w.target, "Archive", first.UIDValidity, cursor, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := headers(second.Headers); got != "a3, a2" || !second.More {
 		t.Fatalf("second run = %q more %v", got, second.More)
 	}
-	last, err := w.mirror.List(ctx, w.target, "Archive", first.UIDValidity, second.Headers[1].UID, 2)
+	last, err := w.mirror.List(ctx, w.target, "Archive", first.UIDValidity, second.Headers[1].UID, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -599,11 +599,58 @@ func TestAListPagesTheServerNewestFirst(t *testing.T) {
 	}
 
 	w.create("Empty")
-	if empty, err := w.mirror.List(ctx, w.target, "Empty", 0, 0, 2); err != nil || len(empty.Headers) != 0 || empty.More {
+	if empty, err := w.mirror.List(ctx, w.target, "Empty", 0, 0, 2, ""); err != nil || len(empty.Headers) != 0 || empty.More {
 		t.Errorf("an empty mailbox = %+v, %v", empty, err)
 	}
-	if _, err := w.mirror.List(ctx, w.target, "Nowhere", 0, 0, 2); !errors.Is(err, ErrGone) {
+	if _, err := w.mirror.List(ctx, w.target, "Nowhere", 0, 0, 2, ""); !errors.Is(err, ErrGone) {
 		t.Errorf("a mailbox the server does not have = %v, want gone", err)
+	}
+}
+
+// A search is the server's: every word is somewhere in the message, an operator narrows one to
+// a header or a flag, and what is found pages by UID like the list.
+func TestASearchIsTheServers(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Archive")
+	put := func(n int, from, subject, body string, flags ...imap.Flag) {
+		raw := fmt.Sprintf("From: %s\nTo: misha@example.com\nCc: robin@example.com\nSubject: %s\nMIME-Version: 1.0\nContent-Type: text/plain; charset=utf-8\n\n%s\n", from, subject, body)
+		connecttest.Append(t, w.server, "Archive", raw, start.Add(time.Duration(n)*time.Minute), flags...)
+	}
+	put(1, "alice@example.com", "Lunch", "Pizza on Friday?")
+	put(2, "bob@example.com", "Report", "The quarterly pizza budget.", imap.FlagSeen)
+	put(3, "alice@example.com", "Счёт", "Оплата за октябрь.", imap.FlagSeen, imap.FlagFlagged)
+	put(4, "carol@example.com", "Lunch again", "Sushi this time.")
+	ctx := context.Background()
+
+	for q, want := range map[string]string{
+		"pizza":              "Report, Lunch",
+		"pizza from:alice":   "Lunch",
+		"subject:lunch":      "Lunch again, Lunch",
+		`"quarterly pizza"`:  "Report",
+		`"pizza budget" bob`: "Report",
+		"is:unread":          "Lunch again, Lunch",
+		"is:starred":         "Счёт",
+		"октябрь":            "Счёт",
+		"to:robin is:read":   "Счёт, Report",
+		"no-such-thing":      "",
+	} {
+		found, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 10, q)
+		if err != nil {
+			t.Errorf("%q: %v", q, err)
+			continue
+		}
+		if got := headers(found.Headers); got != want || found.More {
+			t.Errorf("%q found %q more %v, want %q", q, got, found.More, want)
+		}
+	}
+
+	first, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 1, "lunch")
+	if err != nil || headers(first.Headers) != "Lunch again" || !first.More {
+		t.Fatalf("first of a search = %+v, %v", first, err)
+	}
+	next, err := w.mirror.List(ctx, w.target, "Archive", first.UIDValidity, first.Headers[0].UID, 1, "lunch")
+	if err != nil || headers(next.Headers) != "Lunch" || next.More {
+		t.Errorf("next of a search = %+v, %v", next, err)
 	}
 }
 
@@ -825,7 +872,7 @@ func TestAMessageIsMovedAndDeletedOnTheServer(t *testing.T) {
 	if got := subjects(w.window()); got != "Keep" {
 		t.Errorf("INBOX keeps %q", got)
 	}
-	archived, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 10)
+	archived, err := w.mirror.List(ctx, w.target, "Archive", 0, 0, 10, "")
 	if err != nil || headers(archived.Headers) != "Archive me" {
 		t.Errorf("Archive = %v, %v", archived, err)
 	}

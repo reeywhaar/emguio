@@ -55,9 +55,10 @@ export const getEmailConfigsByIdMailboxesByMailboxMessages = (
   id: string,
   mailbox: string,
   cursor: string,
+  q = "",
 ) =>
   request<MessagePage>(
-    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages${query({ cursor })}`,
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/messages${query({ cursor, q })}`,
   );
 
 const messagePath = (id: string, mailbox: string, message: string) =>

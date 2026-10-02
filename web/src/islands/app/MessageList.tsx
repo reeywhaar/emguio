@@ -23,28 +23,34 @@ export type Selecting = {
   change: (next: Set<string>) => void;
 };
 
-/** One folder's messages, newest to arrive first, reaching further back as it is scrolled. */
+/**
+ * One folder's messages, newest to arrive first, reaching further back as it is scrolled; with
+ * q, those the mail server found in it for q.
+ */
 export function MessageList({
   config,
   mailbox,
   open,
+  q = "",
   select,
 }: {
   config: string;
   mailbox: Mailbox;
   /** The message open beside the list, if any. */
   open: string | null;
+  q?: string;
   /** While selecting: a row is a checkbox rather than a way to open the message. */
   select?: Selecting;
 }) {
   const pending = usePending(config);
   const pages = useInfiniteQuery({
-    queryKey: qk.messages(config, mailbox.id),
+    queryKey: qk.messages(config, mailbox.id, q),
     queryFn: ({ pageParam }) =>
       getEmailConfigsByIdMailboxesByMailboxMessages(
         config,
         mailbox.id,
         pageParam,
+        q,
       ),
     initialPageParam: "",
     getNextPageParam: (last) => last.next_cursor,
@@ -137,6 +143,7 @@ export function MessageList({
               config={config}
               mailbox={mailbox}
               message={m}
+              q={q}
               open={m.id === open}
               selected={select ? select.selected.has(m.id) : undefined}
               onToggle={select ? (range) => toggle(m.id, range) : undefined}
@@ -144,7 +151,9 @@ export function MessageList({
           ))}
         </ul>
       ) : hasNextPage ? null : (
-        <p className="p-4 text-sm text-muted">No messages here.</p>
+        <p className="p-4 text-sm text-muted">
+          {q ? "Nothing here matches." : "No messages here."}
+        </p>
       )}
       <div ref={end}>
         {pages.error ? (
@@ -205,6 +214,7 @@ function Row({
   config,
   mailbox,
   message: m,
+  q,
   open,
   selected,
   onToggle,
@@ -212,6 +222,7 @@ function Row({
   config: string;
   mailbox: Mailbox;
   message: Message;
+  q: string;
   open: boolean;
   /** Set while selecting: whether this row is. */
   selected?: boolean;
@@ -279,7 +290,7 @@ function Row({
         </label>
       ) : (
         <Link
-          href={paths.mail(config, mailbox.id, m.id)}
+          href={paths.mail(config, mailbox.id, m.id, q)}
           aria-current={open ? "true" : undefined}
           className={look}
         >

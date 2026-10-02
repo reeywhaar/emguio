@@ -26,6 +26,7 @@ import { listWithPending, usePending } from "@app/islands/app/pending";
 export function Selection({
   config,
   mailbox,
+  q,
   boxes,
   selected,
   change,
@@ -33,6 +34,8 @@ export function Selection({
 }: {
   config: string;
   mailbox: Mailbox;
+  /** What the folder is searched for: the rows to select are what was found. */
+  q: string;
   boxes: Mailbox[];
   selected: Set<string>;
   change: (next: Set<string>) => void;
@@ -42,7 +45,7 @@ export function Selection({
   const confirm = useConfirm();
   const pending = usePending(config);
   const listed = useCached<InfiniteData<MessagePage>>(
-    qk.messages(config, mailbox.id),
+    qk.messages(config, mailbox.id, q),
   );
   // The list as drawn: a message on its way out is not there to select.
   const rows = listWithPending(

@@ -57,12 +57,15 @@ export function Actions({
   config,
   mailbox,
   message,
+  q = "",
   m,
   back,
 }: {
   config: string;
   mailbox: Mailbox;
   message: string;
+  /** What the folder was searched for, if the message was opened from what it found. */
+  q?: string;
   /** The message as far as it is known: the list's row until the whole of it has arrived. */
   m: Message | undefined;
   back: ReactNode;
@@ -75,9 +78,10 @@ export function Actions({
   });
   const to = targets(boxes.data ?? [], mailbox);
 
-  // The list it is in is this folder's, and only that one: an id names a message within its
-  // folder, so another folder's list can hold the same one for a different message.
-  const list = qk.messages(config, mailbox.id);
+  // The list it is in is this folder's, or what it was searched for, and only that one: an id
+  // names a message within its folder, so another folder's list can hold the same one for a
+  // different message.
+  const list = qk.messages(config, mailbox.id, q);
   const pending = usePending(config);
 
   const asked = useAsk(config);
@@ -108,7 +112,7 @@ export function Actions({
     const at = drawn.findIndex((x) => x.id === message);
     const neighbor = at >= 0 ? (drawn[at + 1] ?? drawn[at - 1]) : undefined;
     ask(dest ? { kind: "move", target: dest.id } : { kind: "delete" });
-    go(paths.mail(config, mailbox.id, neighbor?.id));
+    go(paths.mail(config, mailbox.id, neighbor?.id, q));
   };
 
   // Opening an unread message is reading it, once per opening: see docs/reading.md. Before the

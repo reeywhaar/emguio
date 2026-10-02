@@ -182,6 +182,24 @@ cutting it short, and is then asked for from what the read brought.
 A list shows the server's internal date — when the message arrived. The `Date` header is the
 sender's claim, which spam and misconfigured clients get wrong; it is kept beside it, as `sent`.
 
+## A folder is searched on the mail server
+
+Nothing is kept here to search, so a search is the server's `UID SEARCH` in the folder open,
+INBOX included: `?q=` on the folder's list, paged like it, fifty at a time and newest first, each
+run asking which matching UIDs are below the last shown. A server's own index — Gmail's,
+Fastmail's, Dovecot's FTS — answers fast; one without searches every message and takes as long.
+One folder at a time because `SEARCH` is: across folders would be a search of each.
+
+What is typed is a few words. Every word has to be in the message, as `TEXT` — its headers or its
+body; quotes keep words together. `from:`, `to:` and `subject:` narrow a word to that header,
+`to:` taking Cc too; `is:unread`, `is:read` and `is:starred` are the flags. Anything else with a
+colon, a link say, is a word. A query that is not ASCII goes with `CHARSET UTF-8`.
+
+The search is in the address, `/c/ec_…/mb_…?q=…`, and stays there when a result is opened, so
+the results stay beside it, and a reload or Back lands on them. The field sits above the list;
+Enter searches, Escape or the cross goes back to the whole folder, and `/` reaches it from
+anywhere but a field. Actions on results, one or a selection, are what they are anywhere.
+
 ## What a special mailbox is for comes from the server, then from its name
 
 `SPECIAL-USE` flags name Sent, Drafts, Trash, Junk and Archive where the server has them. Where
@@ -200,11 +218,11 @@ must not take a list down with it.
 
 The mirror tells the store when a user's kept mail moved, and the store tells that user's open
 tabs over `/api/events`. The event carries nothing; the tab refetches the mailboxes and INBOX's
-list. A list read from the server, and the open message, are not refetched on every event: each
-would be a trip to the mail server on every change. A list is read again once its folder's
-counts, read on that event, are not what they were — the server changed what is in it, mail
-another client moved into Trash say, and the list would otherwise disagree with the number beside
-its folder. Fetch new mail asks for them again.
+list. A list read from the server, a search, and the open message, are not refetched on every
+event: each would be a trip to the mail server on every change. A list or a search is read again
+once its folder's counts, read on that event, are not what they were — the server changed what
+is in it, mail another client moved into Trash say, and the list would otherwise disagree with the
+number beside its folder. Fetch new mail asks for them again.
 
 Events are at least a second apart. Changes closer together than that are one event, sent when
 the second is up: INBOX's list past its window is read from the mail server, and a burst of

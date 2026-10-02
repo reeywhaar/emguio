@@ -40,7 +40,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     id: string,
     mailbox: string,
     cursor: string,
-  ) => getMessages(id, mailbox, cursor),
+    q: string,
+  ) => getMessages(id, mailbox, cursor, q),
   postEmailConfigsByIdSync: (id: string) => postEmailConfigsByIdSync(id),
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
@@ -186,7 +187,7 @@ const subjectsListed = () =>
 function Routed() {
   const r = useRoute();
   return r.page === "mail" ? (
-    <Mail named={r.config} mailbox={r.mailbox} message={r.message} />
+    <Mail named={r.config} mailbox={r.mailbox} message={r.message} q={r.q} />
   ) : null;
 }
 
@@ -215,7 +216,7 @@ describe("the mail view", () => {
   it("opens on the inbox and lists its messages", async () => {
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const list = await screen.findByRole("list", { name: "Messages" });
-    expect(getMessages).toHaveBeenCalledWith("ec_1", "mb_inbox", "");
+    expect(getMessages).toHaveBeenCalledWith("ec_1", "mb_inbox", "", "");
     const rows = within(list).getAllByRole("listitem");
     expect(rows).toHaveLength(2);
     within(rows[0]!).getByText("Unread.");
@@ -251,6 +252,53 @@ describe("the mail view", () => {
     await screen.findAllByText("To: Bob");
   });
 
+  // A search is the server's, in the folder open; the address keeps it, so a result opened has
+  // the results beside it, and Escape goes back to the whole folder.
+  it("searches the folder open", async () => {
+    getMessages.mockImplementation(
+      async (_c: string, _m: string, _cursor: string, q: string) => ({
+        messages: q
+          ? [message("m_2", "Lunch?")]
+          : [message("m_1", "Quarterly numbers"), message("m_2", "Lunch?")],
+      }),
+    );
+    window.history.pushState({}, "", "/c/ec_1/mb_inbox");
+    mount(<Routed />);
+    await screen.findByText("Quarterly numbers");
+
+    fireEvent.keyDown(document.body, { key: "/" });
+    const field = screen.getByRole("searchbox", { name: "Search Inbox" });
+    expect(document.activeElement).toBe(field);
+    fireEvent.change(field, { target: { value: " from:alice lunch " } });
+    fireEvent.submit(field.closest("form")!);
+    expect(window.location.search).toBe("?q=from%3Aalice+lunch");
+    const found = within(await screen.findByRole("list", { name: "Messages" }));
+    expect(found.getAllByRole("link")).toHaveLength(1);
+    expect(getMessages).toHaveBeenLastCalledWith(
+      "ec_1",
+      "mb_inbox",
+      "",
+      "from:alice lunch",
+    );
+
+    fireEvent.click(found.getByRole("link"));
+    expect(window.location.pathname + window.location.search).toBe(
+      "/c/ec_1/mb_inbox/m_2?q=from%3Aalice+lunch",
+    );
+    expect(
+      screen.getByRole<HTMLInputElement>("searchbox", { name: "Search Inbox" })
+        .value,
+    ).toBe("from:alice lunch");
+
+    fireEvent.keyDown(screen.getByRole("searchbox", { name: "Search Inbox" }), {
+      key: "Escape",
+    });
+    await screen.findByText("Quarterly numbers");
+    expect(window.location.pathname + window.location.search).toBe(
+      "/c/ec_1/mb_inbox",
+    );
+  });
+
   // The end of the list is rows still to come, drawn before they are here, and reaching it
   // brings them; past the last there is nothing more to draw.
   it("reaches further back as the end of the list comes into view", async () => {
@@ -267,7 +315,7 @@ describe("the mail view", () => {
 
     act(reach);
     await screen.findByText("Older");
-    expect(getMessages).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "c1");
+    expect(getMessages).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "c1", "");
     expect(screen.queryByText("Loading older messages.")).toBeNull();
   });
 
@@ -546,7 +594,12 @@ describe("the mail view", () => {
         await screen.findByRole("list", { name: "Messages" }),
       );
       expect(checkbox(list, "Third").checked).toBe(false);
-      expect(getMessages).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "c1");
+      expect(getMessages).toHaveBeenLastCalledWith(
+        "ec_1",
+        "mb_inbox",
+        "c1",
+        "",
+      );
     });
 
     it("leaves on Escape, and the rows open messages again", async () => {

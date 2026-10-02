@@ -149,10 +149,10 @@ export function countsWithPending(
  * being drawn as pending, so the screen does not show it undone in between.
  */
 export function commit(client: QueryClient, j: JobDraft) {
-  const list = qk.messages(j.email_config, j.mailbox);
+  // The folder's list and every search of it that shows the message.
   const rows = (edit: (msgs: Message[]) => Message[]) =>
-    client.setQueryData<InfiniteData<MessagePage>>(
-      list,
+    client.setQueriesData<InfiniteData<MessagePage>>(
+      { queryKey: qk.folder(j.email_config, j.mailbox) },
       (old) =>
         old && {
           ...old,
@@ -163,7 +163,7 @@ export function commit(client: QueryClient, j: JobDraft) {
     rows((msgs) => msgs.filter((x) => x.id !== j.message));
     if (j.target)
       client.invalidateQueries({
-        queryKey: qk.messages(j.email_config, j.target),
+        queryKey: qk.folder(j.email_config, j.target),
       });
   } else {
     client.setQueryData<ReadMessage>(
