@@ -119,7 +119,6 @@ export function Selection({
       ),
   };
 
-  // The reading pane's keys, for the selection; Escape leaves.
   const latest = useRef({ act, none, done });
   latest.current = { act, none, done };
   useEffect(() => {
@@ -172,7 +171,6 @@ export function Selection({
             change(all ? new Set() : new Set(rows.map((m) => m.id)))
           }
         />
-        {/* The number alone, so the actions fit one line on a phone and in the list pane. */}
         <span>{chosen.length}</span>
         <span className="sr-only"> selected</span>
       </label>

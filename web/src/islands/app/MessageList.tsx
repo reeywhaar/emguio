@@ -56,10 +56,7 @@ export function MessageList({
     getNextPageParam: (last) => last.next_cursor,
   });
 
-  // The next run loads before the end of the list comes into view, so scrolling seldom meets
-  // it. Measured on the list's own scroll box: a margin on the window would not reach past the
-  // box's edge. The end is the same node whether rows are drawn above it or not, so rows taken
-  // away by a selection acted on bring it into view, and what is further back loads.
+  // Measured on the list's own scroll box: a margin on the window would not reach past its edge.
   const scroller = useRef<HTMLDivElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const {
@@ -169,8 +166,6 @@ export function MessageList({
             </Button>
           </div>
         ) : hasNextPage ? (
-          // What is further back, drawn before it is here: it is asked for as this nears the
-          // view, so by the time it is seen it is mostly on its way.
           <div role="status">
             <span className="sr-only">Loading older messages.</span>
             <MessageDummies count={2} />
@@ -268,23 +263,15 @@ function Row({
   return (
     <li className="border-b border-line">
       {onToggle ? (
-        // The whole row is the checkbox's label; the click is taken here rather than as the
-        // checkbox's change, which does not say whether Shift was held.
-        <label
-          className={`${look} cursor-pointer select-none`}
-          onClick={(e) => {
-            e.preventDefault();
-            onToggle(e.shiftKey);
-          }}
-        >
+        <label className={`${look} cursor-pointer select-none`}>
           <input
             type="checkbox"
             checked={selected}
             readOnly
+            onClick={(e) => onToggle(e.shiftKey)}
             aria-label={m.subject || "(no subject)"}
             className="mt-1 size-4 shrink-0 accent-brand"
           />
-          {/* Kept while selecting: read or unread is often what a selection is made by. */}
           {dot}
           {body}
         </label>

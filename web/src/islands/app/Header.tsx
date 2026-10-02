@@ -40,7 +40,7 @@ export function Header({ route }: { route: Route }) {
         <Select
           aria-label="Email config"
           size="bar"
-          className="min-w-0 max-w-64 flex-1 sm:flex-none"
+          className="min-w-0 max-w-64"
           value={current?.id ?? ""}
           onChange={(e) => go(paths.mail(e.target.value))}
         >

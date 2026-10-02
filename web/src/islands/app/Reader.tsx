@@ -173,10 +173,7 @@ export function Reader({
   );
 }
 
-/**
- * The ways to answer it, along the bottom of the pane: under a frame that scrolls itself, and
- * kept in view while a plain message scrolls the pane. Gmail's keys too: r, a and f.
- */
+/** Reply, reply all and forward, with Gmail's keys r, a and f. */
 function Replies({ config, m }: { config: string; m: ReadMessage }) {
   const configs = useQuery({
     queryKey: qk.emailConfigs,

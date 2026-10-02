@@ -118,7 +118,6 @@ function Folders({
   const boxes = {
     data: listed.data && countsWithPending(listed.data, pending),
   };
-  // Gmail's key for a new message, from anywhere but a field or a dialog.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "c" || e.metaKey || e.ctrlKey || e.altKey) return;

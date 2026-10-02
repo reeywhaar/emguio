@@ -6,14 +6,7 @@ import { fieldLook } from "@app/components/TextField";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { go, paths } from "@app/islands/app/route";
 
-/**
- * The folder's search. What is typed goes to the mail server on Enter, and the list becomes what
- * it found; Escape, or the cross, goes back to the whole folder. The query is in the address, so
- * a result opened and closed, a reload or Back lands on the same results. "/" reaches it from
- * anywhere but a field, as in Gmail.
- *
- * Keyed by the query where it is drawn: another query is another field, with that query in it.
- */
+/** The folder's search field. Keyed by the query where it is drawn, so it starts with it. */
 export function Search({
   config,
   mailbox,

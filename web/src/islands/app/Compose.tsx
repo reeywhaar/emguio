@@ -64,7 +64,6 @@ function Writer({ start }: { start: Draft }) {
     draft.text !== start.text ||
     draft.files.length > 0;
 
-  // Closing the tab on something written loses it: the browser asks first.
   useEffect(() => {
     if (!changed || send.isSuccess) return;
     const stay = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -72,7 +71,6 @@ function Writer({ start }: { start: Draft }) {
     return () => window.removeEventListener("beforeunload", stay);
   }, [changed, send.isSuccess]);
 
-  // A reply is written above what it quotes: the cursor starts at the top.
   const text = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (start.reply) text.current?.setSelectionRange(0, 0);

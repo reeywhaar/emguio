@@ -212,6 +212,10 @@ const start = async () => {
   );
   return within(await screen.findByRole("list", { name: "Messages" }));
 };
+/** What the selection's header says of how many are selected. */
+const selectedCount = () =>
+  screen.getByRole("checkbox", { name: "Select all" }).closest("label")!
+    .textContent;
 const checkbox = (list: ReturnType<typeof within>, name: string) =>
   list.getByRole("checkbox", { name }) as HTMLInputElement;
 
@@ -520,10 +524,8 @@ describe("the mail view", () => {
       three();
       postJob.mockImplementation(take);
       const list = await start();
-      fireEvent.click(checkbox(list, "First").closest("label")!);
-      fireEvent.click(checkbox(list, "Third").closest("label")!, {
-        shiftKey: true,
-      });
+      fireEvent.click(checkbox(list, "First").parentElement!);
+      fireEvent.click(checkbox(list, "Third"), { shiftKey: true });
       expect(checkbox(list, "Second").checked).toBe(true);
       expect(
         screen.getByRole("checkbox", { name: "Select all" }).closest("label")!
@@ -607,6 +609,22 @@ describe("the mail view", () => {
         "c1",
         "",
       );
+    });
+
+    // The box itself takes a tap as the row does: once, and it shows what is selected.
+    it("toggles a row by its checkbox as by the row", async () => {
+      three();
+      const list = await start();
+      const tick = checkbox(list, "Second");
+      fireEvent.click(tick);
+      expect(tick.checked).toBe(true);
+      expect(selectedCount()).toBe("1 selected");
+      fireEvent.click(tick);
+      expect(tick.checked).toBe(false);
+      expect(selectedCount()).toBe("0 selected");
+      fireEvent.click(tick.parentElement!);
+      expect(tick.checked).toBe(true);
+      expect(selectedCount()).toBe("1 selected");
     });
 
     it("leaves on Escape, and the rows open messages again", async () => {
