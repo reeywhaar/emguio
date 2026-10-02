@@ -23,10 +23,18 @@ export function useLive() {
     const refresh = async () => {
       await client.invalidateQueries({ queryKey: qk.jobs });
       client.invalidateQueries({ queryKey: qk.emailConfigs });
-      client.invalidateQueries({
+      const before = counts(client);
+      await client.invalidateQueries({
         queryKey: qk.mail,
         predicate: ({ queryKey }) => kept(client, queryKey),
       });
+      // A list read from the mail server is read again once its folder's counts say the server
+      // changed what is in it, so the list on screen never disagrees with the number beside
+      // its folder — mail another client moved into Trash, say.
+      for (const [config, mailbox] of moved(before, counts(client))) {
+        const list = qk.messages(config, mailbox);
+        if (!kept(client, list)) client.invalidateQueries({ queryKey: list });
+      }
     };
     source.addEventListener("changed", refresh);
     // A reconnection means the stream was down, and whatever happened meanwhile was not said.
@@ -34,6 +42,30 @@ export function useLive() {
     source.addEventListener("open", refresh);
     return () => source.close();
   }, [client]);
+}
+
+/** Every config's mailboxes' counts as last read, by config and mailbox. */
+export function counts(client: QueryClient): Map<string, string> {
+  const out = new Map<string, string>();
+  const read = client.getQueriesData<Mailbox[]>({
+    queryKey: qk.mail,
+    predicate: ({ queryKey }) => queryKey[2] === "mailboxes",
+  });
+  for (const [key, boxes] of read) {
+    for (const mb of boxes ?? [])
+      out.set(`${String(key[1])} ${mb.id}`, `${mb.messages} ${mb.unseen}`);
+  }
+  return out;
+}
+
+/** The mailboxes, as [config, mailbox], whose counts are not what they were. */
+export function moved(
+  before: Map<string, string>,
+  after: Map<string, string>,
+): [string, string][] {
+  return [...after]
+    .filter(([at, now]) => before.has(at) && before.get(at) !== now)
+    .map(([at]) => at.split(" ") as [string, string]);
 }
 
 /**

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"emguio/internal/ids"
@@ -107,19 +108,38 @@ func (s *Store) Jobs(ctx context.Context, userID string) ([]*Job, error) {
 	return out, rows.Err()
 }
 
-// NextJob is the job an email config does next: its oldest waiting one, whether or not it may
-// be tried yet. Nil when there is none. One at a time and in order, so a job asked after
-// another is never done before it.
-func (s *Store) NextJob(ctx context.Context, configID string) (*Job, error) {
-	j, err := scanJob(s.reader.QueryRowContext(ctx,
-		`SELECT `+jobColumns+` FROM jobs WHERE email_config_id = ? AND error = '' ORDER BY rowid LIMIT 1`, configID))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
+// NextJobs is what an email config does next: its oldest waiting job, whether or not it may be
+// tried yet, and the waiting jobs straight after it that do the same to messages of the same
+// mailbox, up to max — what one command to the mail server can do at once, as a selection acted
+// on asks for. Empty when nothing waits. In order, so a job asked after another is never done
+// before it.
+func (s *Store) NextJobs(ctx context.Context, configID string, max int) ([]*Job, error) {
+	rows, err := s.reader.QueryContext(ctx,
+		`SELECT `+jobColumns+` FROM jobs WHERE email_config_id = ? AND error = '' ORDER BY rowid LIMIT ?`, configID, max)
 	if err != nil {
-		return nil, fmt.Errorf("next job: %w", err)
+		return nil, fmt.Errorf("next jobs: %w", err)
 	}
-	return j, nil
+	defer rows.Close()
+	var out []*Job
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, fmt.Errorf("next jobs: %w", err)
+		}
+		if len(out) > 0 && !together(out[0], j) {
+			break
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// together is whether two jobs are one command: the same done to messages the same mailbox
+// names by the same UIDVALIDITY.
+func together(a, b *Job) bool {
+	av, _, _ := strings.Cut(a.Message, "-")
+	bv, _, _ := strings.Cut(b.Message, "-")
+	return a.MailboxID == b.MailboxID && a.Kind == b.Kind && a.Value == b.Value && a.Target == b.Target && av == bv
 }
 
 // JobConfigs is every email config with a job waiting, for picking the queues up again after a

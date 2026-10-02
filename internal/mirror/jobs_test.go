@@ -63,6 +63,51 @@ func TestJobsAreDoneOnTheServerInTheOrderAsked(t *testing.T) {
 	}
 }
 
+// A selection acted on is one command to the mail server rather than one a message, and each
+// job is settled by what became of its own message: one another client took away fails alone.
+func TestARunOfTheSameJobIsOneCommand(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Archive")
+	w.deliver("INBOX", 1, "alice@example.com", "One")
+	w.deliver("INBOX", 2, "alice@example.com", "Two", imap.FlagSeen)
+	w.deliver("INBOX", 3, "alice@example.com", "Three")
+	w.deliver("INBOX", 4, "alice@example.com", "Four")
+	w.sync()
+	archive := w.mailbox("Archive")
+	if _, err := w.server.Select("INBOX", nil).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.server.Store(imap.UIDSetNum(4), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.server.Expunge().Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	before := w.said.commands("UID MOVE")
+	for uid := uint32(1); uid <= 4; uid++ {
+		w.job(store.JobMove, uid, false, archive.ID)
+	}
+	w.mirror.Kick(w.target.ID)
+	eventually(t, func() bool { return len(w.jobs()) == 1 })
+
+	if n := w.said.commands("UID MOVE") - before; n != 1 {
+		t.Errorf("%d moves sent, want 1", n)
+	}
+	left := w.jobs()[0]
+	if !strings.HasSuffix(left.Message, "-4") || left.Error != "This message is no longer on the server." {
+		t.Errorf("left = %+v", left)
+	}
+	moved, err := w.mirror.List(context.Background(), w.target, "Archive", 0, 0, 10)
+	if err != nil || headers(moved.Headers) != "Three, Two, One" {
+		t.Errorf("Archive = %v, %v", moved, err)
+	}
+	// Counted by what each had on the server: two of the three unread.
+	if got := w.mailbox("Archive"); got.Messages != 3 || got.Unseen != 2 {
+		t.Errorf("Archive counts %d, %d unread", got.Messages, got.Unseen)
+	}
+}
+
 // A run of jobs is told to its user once it is over: every page watching reads its lists again
 // on each telling, and a selection acted on would otherwise be a read for each message in it.
 func TestARunOfJobsIsToldOnceItIsOver(t *testing.T) {

@@ -95,6 +95,13 @@ func IMAP(t testing.TB, cert *Cert, mode, username, password string) int {
 // IMAPWith is IMAP offering caps.
 func IMAPWith(t testing.TB, cert *Cert, mode, username, password string, caps imap.CapSet) int {
 	t.Helper()
+	return IMAPSaying(t, cert, mode, username, password, caps, nil)
+}
+
+// IMAPSaying is IMAPWith writing what passes between it and its clients to said, for a test
+// that cares how many commands something took.
+func IMAPSaying(t testing.TB, cert *Cert, mode, username, password string, caps imap.CapSet, said io.Writer) int {
+	t.Helper()
 	mem := imapmemserver.New()
 	user := imapmemserver.NewUser(username, password)
 	if err := user.Create("INBOX", nil); err != nil {
@@ -109,6 +116,7 @@ func IMAPWith(t testing.TB, cert *Cert, mode, username, password string, caps im
 		Caps:         caps,
 		Logger:       log.New(io.Discard, "", 0),
 		InsecureAuth: mode == "",
+		DebugWriter:  said,
 	}
 	if mode == "starttls" {
 		opts.TLSConfig = cert.Config

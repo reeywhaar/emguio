@@ -44,7 +44,7 @@ Deleting moves to Trash. In Trash, or on a server with none, it is a delete job,
 asked about first.
 
 A move is `MOVE` where the server has it. Without it, it is `COPY`, `\Deleted` and an `EXPUNGE`
-of that one UID, which needs `UIDPLUS`: a plain `EXPUNGE` would also remove whatever another
+of those UIDs alone, which needs `UIDPLUS`: a plain `EXPUNGE` would also remove whatever another
 client had marked deleted, so on a server with neither, moving and deleting fail. A star
 is `\Flagged`, set and cleared like `\Seen`.
 
@@ -55,10 +55,18 @@ while a field has the keys.
 
 An action is `POST /api/jobs`, answered as soon as it is queued. It takes a list, up to 500, and
 queues all of it or none: one job that cannot be refuses the request. emguio then does the jobs of each
-email config one at a time, in the order asked, on the reading session — whether or not the page
-that asked is still open, and across a restart, since a waiting job is a row. A try that could
-not reach the mail server is tried again, after five seconds, then thirty, two minutes and ten;
-an answer that refused, or the last try, fails the job.
+email config in the order asked, on the reading session — whether or not the page that asked is
+still open, and across a restart, since a waiting job is a row. A try that could not reach the
+mail server is tried again, after five seconds, then thirty, two minutes and ten; an answer that
+refused, or the last try, fails the job.
+
+Jobs that follow one another and do the same to messages of one mailbox — what a selection asks
+for — are done together, up to 500: one `UID FETCH` of their flags, which tells the messages
+still there from those gone and says which were unread, then one `UID STORE` of those whose flag
+changes, one `UID MOVE`, or one `UID STORE` of `\Deleted` and one `UID EXPUNGE`. A hundred
+messages archived cost the mail server two commands rather than two hundred. Anything else asked
+in between ends the run, so nothing is done out of order. A refusal or a lost connection is every
+job's in it; a message another client took away first fails alone.
 
 A failed job keeps its sentence until a page has shown it and let it go; one nobody comes back for
 is swept after a day. `GET /api/jobs` lists what waits and what failed, so a page opened later —
@@ -99,7 +107,8 @@ every row from the last one clicked. The folder's header becomes the selection's
 all or none, and the same actions as the reading pane, with the same keys. Escape, or the cross,
 goes back to opening messages.
 
-An action on a selection is one request, a job for each message, drawn and done like any other.
+An action on a selection is one request, a job for each message, drawn like any other and done
+together on the server.
 Star and read follow the selection: a single unstarred or unread message makes the button star
 or mark read, and only the messages that need it are asked about. Deleting from Trash, or on a
 server with none, asks first how many go for good.
@@ -184,8 +193,11 @@ must not take a list down with it.
 
 The mirror tells the store when a user's kept mail moved, and the store tells that user's open
 tabs over `/api/events`. The event carries nothing; the tab refetches the mailboxes and INBOX's
-list. A list read from the server, and the open message, are not refetched on an event: each
-would be a trip to the mail server on every change. Fetch new mail asks for them again.
+list. A list read from the server, and the open message, are not refetched on every event: each
+would be a trip to the mail server on every change. A list is read again once its folder's
+counts, read on that event, are not what they were — the server changed what is in it, mail
+another client moved into Trash say, and the list would otherwise disagree with the number beside
+its folder. Fetch new mail asks for them again.
 
 Events are at least a second apart. Changes closer together than that are one event, sent when
 the second is up: INBOX's list past its window is read from the mail server, and a burst of

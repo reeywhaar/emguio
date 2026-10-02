@@ -54,7 +54,7 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 		moved bool
 	)
 	for {
-		j, err := m.store.NextJob(ctx, configID)
+		batch, err := m.store.NextJobs(ctx, configID, batchMax)
 		if err != nil && ctx.Err() == nil {
 			m.log.Error("mirror could not read the next job", "email_config", configID, "err", err)
 		}
@@ -62,13 +62,13 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 		switch {
 		case err != nil:
 			later = time.After(30 * time.Second)
-		case j == nil:
-		case time.Until(j.NextAt) > 0:
-			later = time.After(time.Until(j.NextAt))
+		case len(batch) == 0:
+		case time.Until(batch[0].NextAt) > 0:
+			later = time.After(time.Until(batch[0].NextAt))
 		default:
-			m.do(ctx, j)
-			done = j.UserID
-			moved = moved || j.Kind == store.JobMove || j.Kind == store.JobDelete
+			m.do(ctx, batch)
+			done = batch[0].UserID
+			moved = moved || batch[0].Kind == store.JobMove || batch[0].Kind == store.JobDelete
 			continue
 		}
 		if done != "" {
@@ -88,68 +88,130 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 	}
 }
 
-// do tries one job, and finishes it, fails it, or puts it off.
-func (m *Mirror) do(ctx context.Context, j *store.Job) {
-	t, err := m.store.JobTarget(ctx, j.EmailConfigID)
+// batchMax bounds the jobs done in one command to the mail server: a page's selection.
+const batchMax = 500
+
+// do tries a batch of jobs as one, and finishes, fails or puts off each by what became of its
+// message.
+func (m *Mirror) do(ctx context.Context, batch []*store.Job) {
+	t, err := m.store.JobTarget(ctx, batch[0].EmailConfigID)
+	outcome := make([]error, len(batch))
 	if err != nil {
-		m.settle(ctx, j, err)
-		return
+		for i := range outcome {
+			outcome[i] = err
+		}
+	} else {
+		try, cancel := context.WithTimeout(ctx, JobTimeout)
+		outcome = m.attempt(try, t, batch)
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
 	}
-	try, cancel := context.WithTimeout(ctx, JobTimeout)
-	defer cancel()
-	err = m.attempt(try, t, j)
-	if ctx.Err() != nil {
-		return
+	for i, j := range batch {
+		m.settle(ctx, j, outcome[i])
 	}
-	m.settle(ctx, j, err)
 }
 
-// attempt does a job on the server and records what the server then holds.
-func (m *Mirror) attempt(ctx context.Context, t store.SyncTarget, j *store.Job) error {
-	mb, err := m.store.MirrorMailbox(ctx, j.MailboxID)
+// attempt does a batch of jobs on the server — the same done to messages of one mailbox, see
+// NextJobs — in one command, and records what the server then holds. It says how each job went,
+// nil for done: a refusal or a lost connection is every job's, a message gone is its own.
+func (m *Mirror) attempt(ctx context.Context, t store.SyncTarget, batch []*store.Job) []error {
+	out := make([]error, len(batch))
+	every := func(err error) []error {
+		for i := range out {
+			if out[i] == nil {
+				out[i] = err
+			}
+		}
+		return out
+	}
+	head := batch[0]
+	mb, err := m.store.MirrorMailbox(ctx, head.MailboxID)
 	if err != nil {
-		return err
+		return every(err)
 	}
-	uidValidity, uid, ok := ids.ParseMessage(j.Message)
-	if !ok {
-		return store.Invalid("%q is not a message id.", j.Message)
+	var (
+		uidValidity uint32
+		uids        = make([]uint32, len(batch))
+		asked       []uint32
+	)
+	for i, j := range batch {
+		v, uid, ok := ids.ParseMessage(j.Message)
+		if !ok {
+			out[i] = store.Invalid("%q is not a message id.", j.Message)
+			continue
+		}
+		uidValidity, uids[i] = v, uid
+		asked = append(asked, uid)
 	}
-	switch j.Kind {
+	if len(asked) == 0 {
+		return out
+	}
+
+	var (
+		had  Had
+		flag imap.Flag
+		to   string
+	)
+	switch head.Kind {
 	case store.JobSeen, store.JobFlagged:
-		flag := imap.Flag(Seen)
-		if j.Kind == store.JobFlagged {
+		flag = Seen
+		if head.Kind == store.JobFlagged {
 			flag = Flagged
 		}
-		flags, moved, err := m.SetFlag(ctx, t, mb.Name, uidValidity, uid, flag, j.Value)
-		if err != nil {
-			return err
-		}
-		step := 0
-		if moved && flag == Seen {
-			step = 1
-			if j.Value {
-				step = -1
-			}
-		}
-		return m.store.SetMessageFlags(ctx, mb.ID, uid, flags, step)
-	case store.JobMove, store.JobDelete:
-		to := ""
-		var flags store.Flags
-		if j.Kind == store.JobMove {
-			dest, err := m.store.MirrorMailbox(ctx, j.Target)
-			if err != nil {
-				return err
-			}
+		had, err = m.SetFlag(ctx, t, mb.Name, uidValidity, asked, flag, head.Value)
+	case store.JobMove:
+		var dest *store.Mailbox
+		if dest, err = m.store.MirrorMailbox(ctx, head.Target); err == nil {
 			to = dest.ID
-			if flags, err = m.Move(ctx, t, mb.Name, uidValidity, uid, dest.Name); err != nil {
-				return err
-			}
-		} else if flags, err = m.Delete(ctx, t, mb.Name, uidValidity, uid); err != nil {
-			return err
+			had, err = m.Move(ctx, t, mb.Name, uidValidity, asked, dest.Name)
 		}
-		return m.store.MessageMoved(ctx, mb.ID, to, uid, flags.Seen)
+	case store.JobDelete:
+		had, err = m.Delete(ctx, t, mb.Name, uidValidity, asked)
+	default:
+		err = store.Invalid("%q is not something a job does.", head.Kind)
 	}
-	return store.Invalid("%q is not something a job does.", j.Kind)
+	if err != nil {
+		return every(err)
+	}
+
+	// What the server now holds, message by message; one named twice is recorded once.
+	record := func(uid uint32) error {
+		before, ok := had[uid]
+		switch {
+		case !ok:
+			return ErrGone
+		case flag == "":
+			return m.store.MessageMoved(ctx, mb.ID, to, uid, before.Seen)
+		}
+		now, step := before, 0
+		if flag == Seen {
+			now.Seen = head.Value
+			if before.Seen != head.Value {
+				step = 1
+				if head.Value {
+					step = -1
+				}
+			}
+		} else {
+			now.Flagged = head.Value
+		}
+		return m.store.SetMessageFlags(ctx, mb.ID, uid, now, step)
+	}
+	recorded := map[uint32]error{}
+	for i := range batch {
+		if out[i] != nil {
+			continue
+		}
+		e, ok := recorded[uids[i]]
+		if !ok {
+			e = record(uids[i])
+			recorded[uids[i]] = e
+		}
+		out[i] = e
+	}
+	return out
 }
 
 // settle ends a try: done, failed with a sentence for its user, or put off until the server
