@@ -34,19 +34,22 @@ type emailConfigJSON struct {
 	// SyncError is why the latest try did not, and empty when it did.
 	SyncedAt  *int64 `json:"synced_at"`
 	SyncError string `json:"sync_error"`
+	// InboxUnseen is how many messages in its INBOX are unread.
+	InboxUnseen uint32 `json:"inbox_unseen"`
 }
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
 	out := emailConfigJSON{
-		ID:         c.ID,
-		Name:       c.Name,
-		Email:      c.Email,
-		SenderName: c.SenderName,
-		Incoming:   serverJSON(c.Incoming),
-		CreatedAt:  c.CreatedAt.Unix(),
-		UpdatedAt:  c.UpdatedAt.Unix(),
-		SyncedAt:   unixOrNil(c.SyncedAt),
-		SyncError:  c.SyncError,
+		ID:          c.ID,
+		Name:        c.Name,
+		Email:       c.Email,
+		SenderName:  c.SenderName,
+		Incoming:    serverJSON(c.Incoming),
+		CreatedAt:   c.CreatedAt.Unix(),
+		UpdatedAt:   c.UpdatedAt.Unix(),
+		SyncedAt:    unixOrNil(c.SyncedAt),
+		SyncError:   c.SyncError,
+		InboxUnseen: c.InboxUnseen,
 	}
 	if c.Outgoing != nil {
 		o := serverJSON(*c.Outgoing)

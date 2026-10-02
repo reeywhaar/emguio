@@ -34,6 +34,8 @@ export type EmailConfig = {
   synced_at: number | null;
   /** Why the latest try did not, in a sentence; empty when it did. */
   sync_error: string;
+  /** How many messages in its INBOX are unread. */
+  inbox_unseen: number;
 };
 
 /** A whole email config as the form sends it. An empty password is the one already saved. */

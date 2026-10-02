@@ -86,6 +86,7 @@ const work: EmailConfig = {
   updated_at: 0,
   synced_at: Math.round(Date.now() / 1000) - 120,
   sync_error: "",
+  inbox_unseen: 0,
 };
 
 const box = (

@@ -130,6 +130,15 @@ func withMail(t *testing.T, n int) (*Server, *store.Store, *client, string, stri
 	return s, st, c, made.ID, boxes[0].ID
 }
 
+// A config says how much of its INBOX is unread, for the switcher to mark the ones with mail.
+func TestAConfigSaysWhatIsUnreadInItsInbox(t *testing.T) {
+	_, _, c, _, _ := withMail(t, 3)
+	got := c.json(c.do("GET", "/api/email-configs", ""))["email_configs"].([]any)[0].(map[string]any)
+	if got["inbox_unseen"] != float64(3) {
+		t.Errorf("inbox_unseen = %v", got["inbox_unseen"])
+	}
+}
+
 func TestMailboxesAreListedInSidebarOrder(t *testing.T) {
 	_, _, c, cfg, _ := withMail(t, 0)
 	got := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))

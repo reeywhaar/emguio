@@ -46,6 +46,7 @@ const config = (id: string, name: string): EmailConfig => ({
   updated_at: 0,
   synced_at: null,
   sync_error: "",
+  inbox_unseen: 0,
 });
 
 beforeEach(() => {
@@ -93,27 +94,12 @@ describe("the application", () => {
     within(dialog).getByRole("heading", { name: "Add mail account" });
   });
 
-  // One config at a time, chosen in the header, and the address says which.
-  it("switches email config from the header", async () => {
+  // One config at a time, chosen in the header from a list that marks those with unread mail,
+  // and the address says which.
+  it("switches mail account from the header", async () => {
     getEmailConfigs.mockResolvedValue([
       config("ec_1", "Work"),
-      config("ec_2", "Home"),
-    ]);
-    mount(<App />);
-    await screen.findByRole("heading", { name: "Inbox of ec_1" });
-
-    fireEvent.change(screen.getByLabelText("Mail account"), {
-      target: { value: "ec_2" },
-    });
-    expect(window.location.pathname).toBe("/c/ec_2");
-    await screen.findByRole("heading", { name: "Inbox of ec_2" });
-  });
-
-  // On a phone the switcher is a button, and the configs a list in a dialog.
-  it("on a phone, switches email config from a list", async () => {
-    getEmailConfigs.mockResolvedValue([
-      config("ec_1", "Work"),
-      config("ec_2", "Home"),
+      { ...config("ec_2", "Home"), inbox_unseen: 2 },
     ]);
     mount(<App />);
     await screen.findByRole("heading", { name: "Inbox of ec_1" });
@@ -122,6 +108,11 @@ describe("the application", () => {
     );
     const dialog = within(await screen.findByRole("dialog"));
     dialog.getByRole("heading", { name: "Mail accounts" });
+    expect(dialog.getAllByRole("link").map((l) => l.textContent)).toEqual([
+      "Workwork@example.com",
+      "Home, unread mailhome@example.com",
+      "Add mail account",
+    ]);
     fireEvent.click(dialog.getByRole("link", { name: /^Home/ }));
     expect(window.location.pathname).toBe("/c/ec_2");
     await screen.findByRole("heading", { name: "Inbox of ec_2" });

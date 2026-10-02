@@ -8,11 +8,11 @@ import type { EmailConfig } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
-import { Select } from "@app/components/Field";
 import { PickerButton } from "@app/components/PickerButton";
+import { Wordmark } from "@app/components/Wordmark";
 import { labelOf, pick } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
-import { go, paths, type Route } from "@app/islands/app/route";
+import { paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
 
 /**
@@ -38,26 +38,10 @@ export function Header({ route }: { route: Route }) {
   return (
     <header className="flex items-center gap-2 border-b border-line bg-bg px-4 py-2 sm:gap-3">
       <Link href={paths.mail()} className="font-semibold">
-        emguio
+        <Wordmark />
       </Link>
       {configs.data && configs.data.length > 0 ? (
-        <>
-          <ConfigPicker configs={configs.data} current={current} />
-          <Select
-            aria-label="Mail account"
-            size="bar"
-            className="hidden min-w-0 max-w-64 md:block"
-            value={current?.id ?? ""}
-            onChange={(e) => go(paths.mail(e.target.value))}
-          >
-            {current ? null : <option value="">Choose one</option>}
-            {configs.data.map((c) => (
-              <option key={c.id} value={c.id}>
-                {labelOf(c)}
-              </option>
-            ))}
-          </Select>
-        </>
+        <ConfigPicker configs={configs.data} current={current} />
       ) : null}
       <span className="flex-1" />
       {/* Who is signed in is worth the room only where there is room. */}
@@ -90,7 +74,7 @@ export function Header({ route }: { route: Route }) {
   );
 }
 
-/** On a phone, the email config open, which opens the list of them to choose another. */
+/** The mail account open, which opens the list of them to choose another. */
 function ConfigPicker({
   configs,
   current,
@@ -104,7 +88,7 @@ function ConfigPicker({
     <>
       <PickerButton
         name="Mail account"
-        className="max-w-64 md:hidden"
+        className="max-w-64"
         onClick={() => setOpen(true)}
       >
         <span className="min-w-0 flex-1 truncate">
@@ -134,7 +118,14 @@ function ConfigPicker({
                 className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${c.id === current?.id ? "bg-shade font-medium" : "hover:bg-shade"}`}
                 onClick={close}
               >
+                <span
+                  aria-hidden="true"
+                  className={`size-2 shrink-0 rounded-full ${c.inbox_unseen ? "bg-brand" : ""}`}
+                />
                 <span className="min-w-0 flex-1 truncate">{labelOf(c)}</span>
+                {c.inbox_unseen ? (
+                  <span className="sr-only">, unread mail</span>
+                ) : null}
                 {c.name ? (
                   <span className="truncate text-xs text-faint">{c.email}</span>
                 ) : null}

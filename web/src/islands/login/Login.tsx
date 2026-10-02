@@ -8,6 +8,7 @@ import {
 import { messageOf } from "@app/api/transport";
 import { Button } from "@app/components/Button";
 import { TextField } from "@app/components/TextField";
+import { Wordmark } from "@app/components/Wordmark";
 import { leaveFor } from "@app/leave";
 
 /**
@@ -47,7 +48,7 @@ function SignIn() {
   };
 
   return (
-    <Shell title="emguio">
+    <Shell title={<Wordmark />}>
       <form className="flex flex-col gap-3" onSubmit={submit}>
         <TextField
           name="username"
@@ -100,7 +101,7 @@ function Accept({ token }: { token: string }) {
 
   if (live === false) {
     return (
-      <Shell title="emguio">
+      <Shell title={<Wordmark />}>
         <p className="text-sm text-muted">
           That invitation has been used or has expired. Ask for another.
         </p>
@@ -156,7 +157,7 @@ function Accept({ token }: { token: string }) {
   );
 }
 
-function Shell({ title, children }: { title: string; children: ReactNode }) {
+function Shell({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-6 px-4">
       <h1 className="text-2xl font-semibold">{title}</h1>

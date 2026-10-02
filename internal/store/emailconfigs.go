@@ -49,6 +49,8 @@ type EmailConfig struct {
 	// did not, or empty when it did.
 	SyncedAt  *time.Time
 	SyncError string
+	// InboxUnseen is how many messages in its INBOX are unread, as last counted.
+	InboxUnseen uint32
 }
 
 // Login is a server and the password to sign in to it.
@@ -87,9 +89,11 @@ const emailConfigColumns = `id, user_id, name, email, sender_name,
   outgoing_host, outgoing_port, outgoing_tls, outgoing_username, outgoing_secret,
   created_at, updated_at`
 
-// emailConfigSelect is what a read takes: every written column, and the sync state the mirror
-// keeps beside them.
-const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error`
+// emailConfigSelect is what a read takes: every written column, the sync state the mirror
+// keeps beside them, and what is unread in INBOX.
+const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error,
+  (SELECT COALESCE(SUM(unseen), 0) FROM mailboxes
+    WHERE mailboxes.email_config_id = email_configs.id AND special_use = 'inbox')`
 
 func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error) {
 	var (
@@ -102,7 +106,7 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email, &r.SenderName,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
-		&created, &updated, &synced, &r.SyncError)
+		&created, &updated, &synced, &r.SyncError, &r.InboxUnseen)
 	if err != nil {
 		return nil, err
 	}
