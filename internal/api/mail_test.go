@@ -91,6 +91,50 @@ func (f *fakeMirror) CreateMailbox(ctx context.Context, t store.SyncTarget, pare
 	}
 	return full, listed, nil
 }
+
+// listedAs is the config's folders as the server would list them, each name passed through rename.
+func (f *fakeMirror) listedAs(ctx context.Context, t store.SyncTarget, rename func(string) (string, bool)) ([]store.Listed, error) {
+	known, err := f.store.MirrorMailboxes(ctx, t.ID)
+	if err != nil {
+		return nil, err
+	}
+	var listed []store.Listed
+	for _, mb := range known {
+		name, keep := rename(mb.Name)
+		if keep {
+			listed = append(listed, store.Listed{Name: name, Delimiter: mb.Delimiter, SpecialUse: mb.SpecialUse, Selectable: mb.Selectable})
+		}
+	}
+	return listed, nil
+}
+
+func (f *fakeMirror) RenameMailbox(ctx context.Context, t store.SyncTarget, from string, parent *store.Mailbox, name string) (string, []store.Listed, error) {
+	if f.err != nil {
+		return "", nil, f.err
+	}
+	full := name
+	if parent != nil {
+		full = parent.Name + parent.Delimiter + name
+	}
+	listed, err := f.listedAs(ctx, t, func(n string) (string, bool) {
+		if n == from {
+			return full, true
+		}
+		if rest, ok := strings.CutPrefix(n, from+"/"); ok {
+			return full + "/" + rest, true
+		}
+		return n, true
+	})
+	return full, listed, err
+}
+
+func (f *fakeMirror) DeleteMailbox(ctx context.Context, t store.SyncTarget, name string) ([]store.Listed, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.listedAs(ctx, t, func(n string) (string, bool) { return n, n != name })
+}
+
 func (f *fakeMirror) WakeDrafts() { f.mu.Lock(); f.woken++; f.mu.Unlock() }
 func (f *fakeMirror) WriteDraft(_ context.Context, id string) error {
 	f.mu.Lock()

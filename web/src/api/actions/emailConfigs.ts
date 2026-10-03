@@ -48,6 +48,27 @@ export const postEmailConfigsByIdMailboxes = (
     body,
   });
 
+/** Renames a folder, or moves it inside parent or to the top; what is inside goes with it. */
+export const putEmailConfigsByIdMailboxesByMailbox = (
+  id: string,
+  mailbox: string,
+  body: { name: string; parent: string },
+) =>
+  request<Mailbox>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}`,
+    { method: "PUT", body },
+  );
+
+/** Deletes an empty folder from the mail server. */
+export const deleteEmailConfigsByIdMailboxesByMailbox = (
+  id: string,
+  mailbox: string,
+) =>
+  request<void>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}`,
+    { method: "DELETE" },
+  );
+
 /** Chooses the folder a config archives to; empty for the one the server names. */
 export const putEmailConfigsByIdArchive = (id: string, mailbox: string) =>
   request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}/archive`, {

@@ -571,3 +571,33 @@ func (s *Store) MessageMoved(ctx context.Context, from, to string, uid uint32, s
 	}
 	return tx.Commit()
 }
+
+// RenameMailboxes renames a mailbox here as the server renamed it, and every mailbox inside it
+// with it, keeping their ids: what names one — a link, a job, the folder chosen to archive to —
+// goes on naming it.
+func (s *Store) RenameMailboxes(ctx context.Context, configID, from, to, delimiter string) error {
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("rename mailboxes: %w", err)
+	}
+	defer tx.Rollback()
+	known, err := s.MirrorMailboxes(ctx, configID)
+	if err != nil {
+		return err
+	}
+	for _, m := range known {
+		var name string
+		switch {
+		case m.Name == from:
+			name = to
+		case delimiter != "" && strings.HasPrefix(m.Name, from+delimiter):
+			name = to + strings.TrimPrefix(m.Name, from)
+		default:
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE mailboxes SET name = ? WHERE id = ?`, name, m.ID); err != nil {
+			return fmt.Errorf("rename mailboxes: %w", err)
+		}
+	}
+	return tx.Commit()
+}

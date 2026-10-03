@@ -30,7 +30,7 @@ import {
 } from "@app/components/icons";
 import { useAsk } from "@app/islands/app/ask";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
-import { NewFolder } from "@app/islands/app/NewFolder";
+import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
 
@@ -368,14 +368,14 @@ export function MovePicker({
         </select>
       </label>
       {/* Beside the picker rather than in it: a click inside the dialog would be the label's. */}
-      <NewFolder
+      <FolderDialog
         key={opened}
         config={config}
         boxes={boxes}
         moving
         open={making}
         onClose={() => setMaking(false)}
-        onMade={(made) => {
+        onDone={(made) => {
           setMaking(false);
           onMove(made);
         }}

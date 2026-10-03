@@ -12,9 +12,18 @@ import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Dialog } from "@app/components/Dialog";
 import {
-  NewFolderMark,
+  AllMailMark,
+  ArchiveMark,
+  DraftMark,
+  InboxMark,
+  PlainFolderMark,
+  PlusMark,
   Refresh,
   SelectMark,
+  SentMark,
+  SpamMark,
+  StarMark,
+  TrashMark,
   WriteMark,
 } from "@app/components/icons";
 import { PickerButton } from "@app/components/PickerButton";
@@ -22,7 +31,8 @@ import { ago } from "@app/format";
 import { blank, write } from "@app/islands/app/drafts";
 import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
-import { NewFolder } from "@app/islands/app/NewFolder";
+import { FolderDialog } from "@app/islands/app/FolderDialog";
+import { FolderMenu } from "@app/islands/app/FolderMenu";
 import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
 import {
   MessageDummies,
@@ -178,9 +188,8 @@ function Folders({
             </div>
           )}
         </nav>
-        <div className="flex gap-2 border-t border-line px-3 py-2">
+        <div className="flex border-t border-line px-3 py-2">
           <SyncState config={config} />
-          <MakeFolder config={config.id} boxes={boxes.data ?? []} />
         </div>
       </aside>
 
@@ -211,6 +220,13 @@ function Folders({
               <h1 className="hidden min-w-0 flex-1 truncate font-semibold md:block">
                 {current ? labelOfMailbox(current) : ""}
               </h1>
+              {current && current.special_use === "" && boxes.data ? (
+                <FolderMenu
+                  config={config.id}
+                  boxes={boxes.data}
+                  folder={current}
+                />
+              ) : null}
               <Button
                 size="bar"
                 aria-label="Write a message"
@@ -234,10 +250,6 @@ function Folders({
                   <SelectMark />
                 </Button>
               ) : null}
-              {/* Hidden on a wrapper, because a button's own display would win over hidden. */}
-              <span className="md:hidden">
-                <FetchMail config={config} />
-              </span>
             </>
           )}
         </div>
@@ -351,7 +363,10 @@ function Body({
   );
 }
 
-/** The folders as a tree; onPick is told when one is chosen, for a list that closes then. */
+/**
+ * The folders as a tree, and a way to make one; onPick is told when one is chosen or made, for a
+ * list that closes then.
+ */
 function FolderList({
   config,
   boxes,
@@ -375,6 +390,9 @@ function FolderList({
           />
         </li>
       ))}
+      <li>
+        <MakeFolder config={config} boxes={boxes} onMade={onPick} />
+      </li>
     </ul>
   );
 }
@@ -406,16 +424,7 @@ function FolderPicker({
         open={open}
         onClose={() => setOpen(false)}
         title="Folders"
-        footer={
-          <>
-            <SyncState config={config} />
-            <MakeFolder
-              config={config.id}
-              boxes={boxes}
-              onMade={() => setOpen(false)}
-            />
-          </>
-        }
+        footer={<SyncState config={config} />}
       >
         <FolderList
           config={config.id}
@@ -463,9 +472,10 @@ function FolderLink({
   if (!mb.selectable) {
     return (
       <span
-        className="flex min-h-8 items-center px-3 text-sm text-faint"
+        className="flex min-h-8 items-center gap-2 px-3 text-sm text-faint"
         style={indent}
       >
+        <FolderIcon mb={mb} />
         {labelOfMailbox(mb)}
       </span>
     );
@@ -478,10 +488,37 @@ function FolderLink({
       style={indent}
       onClick={onPick}
     >
+      <span className="shrink-0 text-muted">
+        <FolderIcon mb={mb} />
+      </span>
       <span className="min-w-0 flex-1 truncate">{labelOfMailbox(mb)}</span>
       <Counts mb={mb} />
     </Link>
   );
+}
+
+/** What a folder is for, drawn: the server's own each by its use, the rest alike. */
+function FolderIcon({ mb }: { mb: Mailbox }) {
+  switch (mb.special_use) {
+    case "inbox":
+      return <InboxMark />;
+    case "drafts":
+      return <DraftMark />;
+    case "sent":
+      return <SentMark />;
+    case "archive":
+      return <ArchiveMark />;
+    case "all":
+      return <AllMailMark />;
+    case "flagged":
+      return <StarMark filled={false} />;
+    case "junk":
+      return <SpamMark />;
+    case "trash":
+      return <TrashMark />;
+    default:
+      return <PlainFolderMark />;
+  }
 }
 
 /** When the mail was last brought up to date, and a way to ask for it now. */
@@ -500,7 +537,7 @@ function SyncState({ config }: { config: EmailConfig }) {
   );
 }
 
-/** A new folder on the mail server, opened once it is made. */
+/** A new folder on the mail server, opened once it is made: last in the list, quieter than it. */
 function MakeFolder({
   config,
   boxes,
@@ -515,24 +552,25 @@ function MakeFolder({
   const [opened, setOpened] = useState(0);
   return (
     <>
-      <Button
-        size="bar"
+      <button
+        type="button"
         aria-label="New folder"
-        title="New folder"
+        className="flex min-h-8 w-full items-center gap-2 rounded-md px-3 text-sm text-faint hover:bg-shade hover:text-muted"
         onClick={() => {
           setOpened((n) => n + 1);
           setMaking(true);
         }}
       >
-        <NewFolderMark />
-      </Button>
-      <NewFolder
+        <PlusMark />
+        New
+      </button>
+      <FolderDialog
         key={opened}
         config={config}
         boxes={boxes}
         open={making}
         onClose={() => setMaking(false)}
-        onMade={(made) => {
+        onDone={(made) => {
           setMaking(false);
           onMade?.();
           go(paths.mail(config, made.id));

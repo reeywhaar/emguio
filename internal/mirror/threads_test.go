@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"emguio/internal/connect/connecttest"
+	"emguio/internal/store"
 )
 
 // Conversations are the server's THREAD, read once while the mailbox holds what it held, and
@@ -97,5 +98,43 @@ func TestAFolderIsMadeAndListed(t *testing.T) {
 	}
 	if _, _, err := w.mirror.CreateMailbox(ctx, w.target, nil, "Projects"); err == nil {
 		t.Error("made the same folder twice")
+	}
+}
+
+// A folder is renamed and moved on the server, and deleted once empty; one that holds mail is not
+// deleted. What is inside a folder moves with it on a real server; the one here leaves it.
+func TestAFolderIsRenamedMovedAndDeleted(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Notification", "Notification/Newsletter", "Work")
+	w.deliver("Work", 1, "alice@example.com", "Plans")
+	w.sync()
+	ctx := context.Background()
+	names := func(listed []store.Listed) string {
+		var out []string
+		for _, l := range listed {
+			out = append(out, l.Name)
+		}
+		slices.Sort(out)
+		return strings.Join(out, ", ")
+	}
+
+	full, listed, err := w.mirror.RenameMailbox(ctx, w.target, "Notification/Newsletter", nil, "Letters")
+	if err != nil || full != "Letters" {
+		t.Fatalf("to the top = %q, %v", full, err)
+	}
+	if got := names(listed); got != "INBOX, Letters, Notification, Work" {
+		t.Errorf("listed %s", got)
+	}
+	full, _, err = w.mirror.RenameMailbox(ctx, w.target, "Letters", w.mailbox("Work"), "Letters")
+	if err != nil || full != "Work/Letters" {
+		t.Fatalf("inside = %q, %v", full, err)
+	}
+
+	listed, err = w.mirror.DeleteMailbox(ctx, w.target, "Notification")
+	if err != nil || strings.Contains(names(listed), "Notification") {
+		t.Errorf("delete = %s, %v", names(listed), err)
+	}
+	if _, err := w.mirror.DeleteMailbox(ctx, w.target, "Work"); !errors.Is(err, ErrNotEmpty) {
+		t.Errorf("a folder with mail = %v", err)
 	}
 }

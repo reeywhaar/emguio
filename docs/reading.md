@@ -45,14 +45,22 @@ server that names none, or names one other than the one wanted. Saved with
 `PUT /api/email-configs/{id}/archive` and nothing else about the account, so its sessions go on as
 they are; a folder the server later drops goes back to the server's.
 
-A folder is made from the sidebar — New folder, beside Fetch new mail, and in the folder list on a
-phone — which opens it once made, and from the folder picker, which then moves to it: New folder…,
-a name, and where it goes — at the top of the user's own folders, under the server's personal
-namespace (`INBOX.` on servers that keep everything under INBOX), or inside another. `POST
-/api/email-configs/{id}/mailboxes` sends `CREATE` on the session for changes, lists the folders
-again so the new one is kept like the rest, and answers with it; the move then goes to it as to
-any other. A name holding the server's delimiter is refused rather than read as nesting, which is
-what choosing where it goes is for, and so is one a sibling already has.
+A folder is made from New, last in the folder list, which opens it once made, and from the folder
+picker's New folder…, which then moves to it: a name, and where it goes — at the top of the user's
+own folders, under the server's personal namespace (`INBOX.` on servers that keep everything under
+INBOX), or inside another. `POST /api/email-configs/{id}/mailboxes` sends `CREATE` on the session
+for changes, lists the folders again so the new one is kept like the rest, and answers with it;
+the move then goes to it as to any other. A name holding the server's delimiter is refused rather
+than read as nesting, which is what choosing where it goes is for, and so is one a sibling already
+has.
+
+A folder of the user's own — none of the server's, which keep their names and places — has a menu
+beside its name above the list: rename or move, in the same dialog, and delete. Renaming is
+`RENAME`, and so is moving, into another folder or to the top: what is inside goes with it. Here
+the folder and those inside it are renamed in place before the folders are listed again, so each
+keeps its id, and a link, a waiting job or the folder chosen to archive to goes on naming it.
+Nothing goes inside itself. Deleting is `DELETE`, of an empty folder only: one holding mail, which
+the server would delete with it, or other folders, is refused, with what to do first.
 
 Deleting moves to Trash. In Trash, or on a server with none, it is a delete job, for good, and
 asked about first.

@@ -29,6 +29,10 @@ type Mirror interface {
 	Part(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, section []int) ([]byte, []byte, error)
 	// Kick says an email config has a job waiting.
 	Kick(configID string)
+	// RenameMailbox renames or moves a folder, DeleteMailbox deletes an empty one; each says the
+	// folders listed then.
+	RenameMailbox(ctx context.Context, t store.SyncTarget, from string, parent *store.Mailbox, name string) (string, []store.Listed, error)
+	DeleteMailbox(ctx context.Context, t store.SyncTarget, name string) ([]store.Listed, error)
 	// CreateMailbox makes a folder on the server, and says its name and the folders listed then.
 	CreateMailbox(ctx context.Context, t store.SyncTarget, parent *store.Mailbox, name string) (string, []store.Listed, error)
 	// Origin is what a reply needs of the message it answers, or mirror.ErrGone.

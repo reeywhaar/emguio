@@ -88,7 +88,7 @@ func (m *Mirror) on(ctx context.Context, f *fetcher, do func(f *fetcher) error) 
 	defer stop()
 	err := do(f)
 	var no *connect.Failure
-	if err != nil && !errors.Is(err, ErrGone) && !errors.Is(err, ErrUnsupported) && !errors.As(err, &no) {
+	if err != nil && !errors.Is(err, ErrGone) && !errors.Is(err, ErrUnsupported) && !errors.Is(err, ErrNotEmpty) && !errors.As(err, &no) {
 		f.close()
 	}
 	return err
@@ -550,13 +550,8 @@ func (m *Mirror) CreateMailbox(ctx context.Context, t store.SyncTarget, parent *
 		listed []store.Listed
 	)
 	err := m.change(ctx, t, func(f *fetcher) error {
-		client := f.session.client
-		if parent != nil {
-			full = parent.Name + parent.Delimiter + name
-		} else {
-			full = personal(client) + name
-		}
-		if err := client.Create(full, nil).Wait(); err != nil {
+		full = nameFor(f.session.client, parent, name)
+		if err := f.session.client.Create(full, nil).Wait(); err != nil {
 			return refused(err)
 		}
 		var err error
@@ -564,6 +559,84 @@ func (m *Mirror) CreateMailbox(ctx context.Context, t store.SyncTarget, parent *
 		return err
 	})
 	return full, listed, err
+}
+
+// nameFor is what the server calls a folder named name inside parent, or at the top of the
+// user's own folders for nil.
+func nameFor(c *imapclient.Client, parent *store.Mailbox, name string) string {
+	if parent != nil {
+		return parent.Name + parent.Delimiter + name
+	}
+	return personal(c) + name
+}
+
+// RenameMailbox gives a folder on the server another name, inside parent or at the top for nil
+// — a move, when the place changes — and says its new name and every folder as the server then
+// lists them. What is inside it goes with it.
+func (m *Mirror) RenameMailbox(ctx context.Context, t store.SyncTarget, from string, parent *store.Mailbox, name string) (string, []store.Listed, error) {
+	var (
+		full   string
+		listed []store.Listed
+	)
+	err := m.change(ctx, t, func(f *fetcher) error {
+		full = nameFor(f.session.client, parent, name)
+		if f.mailbox != "" {
+			f.mailbox = ""
+			f.session.unselect()
+		}
+		if full != from {
+			if err := f.session.client.Rename(from, full, nil).Wait(); err != nil {
+				return refused(err)
+			}
+		}
+		var err error
+		listed, err = f.session.list()
+		return err
+	})
+	if err == nil {
+		m.forgetOpened(t)
+	}
+	return full, listed, err
+}
+
+// ErrNotEmpty is a folder that still holds messages, which deleting it would delete too.
+var ErrNotEmpty = errors.New("mirror: not empty")
+
+// DeleteMailbox deletes an empty folder from the server, and says the folders it then lists. One
+// that holds messages is ErrNotEmpty: deleting it would delete them.
+func (m *Mirror) DeleteMailbox(ctx context.Context, t store.SyncTarget, name string) ([]store.Listed, error) {
+	var listed []store.Listed
+	err := m.change(ctx, t, func(f *fetcher) error {
+		if f.mailbox != "" {
+			f.mailbox = ""
+			f.session.unselect()
+		}
+		st, err := f.session.client.Status(name, &imap.StatusOptions{NumMessages: true}).Wait()
+		if err != nil {
+			return refused(err)
+		}
+		if st.NumMessages != nil && *st.NumMessages > 0 {
+			return ErrNotEmpty
+		}
+		if err := f.session.client.Delete(name).Wait(); err != nil {
+			return refused(err)
+		}
+		listed, err = f.session.list()
+		return err
+	})
+	if err == nil {
+		m.forgetOpened(t)
+	}
+	return listed, err
+}
+
+// forgetOpened has the config's reading session open its mailbox afresh next time: the one it had
+// open may be another name now, or none.
+func (m *Mirror) forgetOpened(t store.SyncTarget) {
+	f := m.fetcherFor(t, false)
+	f.mu.Lock()
+	f.mailbox = ""
+	f.mu.Unlock()
 }
 
 // personal is where the user's own folders begin, said by NAMESPACE: "INBOX." on servers that

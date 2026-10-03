@@ -29,6 +29,8 @@ const postEmailConfigsByIdSync = vi.fn();
 const getMessage = vi.fn();
 const getThreads = vi.fn();
 const postMailbox = vi.fn();
+const putMailbox = vi.fn();
+const deleteMailbox = vi.fn();
 const postJob = vi.fn();
 const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
@@ -47,6 +49,13 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   postEmailConfigsByIdSync: (id: string) => postEmailConfigsByIdSync(id),
   postEmailConfigsByIdMailboxes: (id: string, body: unknown) =>
     postMailbox(id, body),
+  putEmailConfigsByIdMailboxesByMailbox: (
+    id: string,
+    mailbox: string,
+    body: unknown,
+  ) => putMailbox(id, mailbox, body),
+  deleteEmailConfigsByIdMailboxesByMailbox: (id: string, mailbox: string) =>
+    deleteMailbox(id, mailbox),
   getEmailConfigsByIdMailboxesByMailboxThreads: (
     id: string,
     mailbox: string,
@@ -280,6 +289,60 @@ describe("the mail view", () => {
         expect.objectContaining({ kind: "move", target: "mb_clients" }),
       ),
     );
+  });
+
+  // A folder of one's own is renamed or moved, never inside itself.
+  it("renames and moves a folder of one's own", async () => {
+    putMailbox.mockResolvedValue(box("mb_work", ["Projects"]));
+    window.history.pushState({}, "", "/c/ec_1/mb_work");
+    mount(<Routed />);
+    const menu = await screen.findByRole<HTMLSelectElement>("combobox", {
+      name: "Folder",
+    });
+    fireEvent.change(menu, { target: { value: "edit" } });
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Rename or move folder" });
+    const name = dialog.getByLabelText<HTMLInputElement>("Name");
+    expect(name.value).toBe("Work");
+    expect(
+      [...dialog.getByLabelText<HTMLSelectElement>("Inside").options].map((o) =>
+        o.textContent?.trim(),
+      ),
+    ).toEqual(["No folder, at the top", "Inbox", "Sent"]);
+    fireEvent.change(name, { target: { value: "Projects" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(putMailbox).toHaveBeenCalledWith("ec_1", "mb_work", {
+        name: "Projects",
+        parent: "",
+      }),
+    );
+  });
+
+  it("deletes a folder of one's own, after asking", async () => {
+    deleteMailbox.mockResolvedValue(undefined);
+    window.history.pushState({}, "", "/c/ec_1/mb_work");
+    mount(<Routed />);
+    fireEvent.change(
+      await screen.findByRole<HTMLSelectElement>("combobox", {
+        name: "Folder",
+      }),
+      { target: { value: "delete" } },
+    );
+    await screen.findByText("Delete Work?");
+    const sure = screen.getAllByRole("button", { name: "Delete" });
+    fireEvent.click(sure[sure.length - 1]!);
+    await waitFor(() =>
+      expect(deleteMailbox).toHaveBeenCalledWith("ec_1", "mb_work"),
+    );
+    await waitFor(() => expect(window.location.pathname).toBe("/c/ec_1"));
+  });
+
+  it("offers nothing of the kind for the server's own folders", async () => {
+    window.history.pushState({}, "", "/c/ec_1/mb_sent");
+    mount(<Routed />);
+    await screen.findAllByText("To: Bob");
+    expect(screen.queryByRole("combobox", { name: "Folder" })).toBeNull();
   });
 
   // From the sidebar a folder is made on its own, nothing moved, and opened.

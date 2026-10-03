@@ -115,9 +115,39 @@ export const FolderMark = () => (
   </Mark>
 );
 
-export const NewFolderMark = () => (
+export const PlainFolderMark = () => (
   <Mark>
-    <path d="M1.5 3.5h4.5l1.5 1.5h7v8h-13zM8 7v4M6 9h4" />
+    <path d="M1.5 3.5h4.5l1.5 1.5h7v8h-13z" />
+  </Mark>
+);
+
+export const SentMark = () => (
+  <Mark>
+    <path d="M14.5 1.5 1.5 6.5l5.5 2.5 2.5 5.5zM7 9l7.5-7.5" />
+  </Mark>
+);
+
+export const DraftMark = () => (
+  <Mark>
+    <path d="M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3M5.5 8h5M5.5 10.5h3" />
+  </Mark>
+);
+
+export const AllMailMark = () => (
+  <Mark>
+    <path d="M1.5 5.5h11v8h-11zM1.5 5.5 7 9.5l5.5-4M3.5 3.5V2.5h11v8h-2" />
+  </Mark>
+);
+
+export const MoreMark = () => (
+  <Mark>
+    <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth={2.25} />
+  </Mark>
+);
+
+export const PlusMark = () => (
+  <Mark>
+    <path d="M8 3.5v9M3.5 8h9" />
   </Mark>
 );
 

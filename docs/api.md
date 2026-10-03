@@ -307,6 +307,24 @@ compared without regard to case, `409 conflict`. A server that refuses answers
 `502 unreachable` with its reason.
 
 ```
+PUT /api/email-configs/{id}/mailboxes/{mailbox}
+```
+
+Renames a folder, or moves it — inside another, or to the top — or both, with the body that makes
+one: `{"name": "…", "parent": "mb_…" or ""}`. What is inside it goes with it, and every folder
+keeps its id, so links and waiting jobs go on naming them. The answer is `200` with the folder.
+The same name rules apply, and a folder cannot go inside itself or a folder inside it
+(`400 invalid`). INBOX and the server's own folders — any with a `special_use` — keep their names
+and places: `409 conflict`.
+
+```
+DELETE /api/email-configs/{id}/mailboxes/{mailbox}
+```
+
+Deletes an empty folder from the mail server. One that holds messages, or other folders, answers
+`409 conflict` rather than taking them with it, as does one of the server's own. `204`.
+
+```
 GET /api/email-configs/{id}/mailboxes/{mailbox}/messages
 ```
 
