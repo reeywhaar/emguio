@@ -79,10 +79,13 @@ describe("the application", () => {
     await screen.findByText("misha");
   });
 
-  it("signs out and goes to the sign-in page", async () => {
+  it("signs out from Settings and goes to the sign-in page", async () => {
     postAuthLogout.mockResolvedValue(undefined);
     mount(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByText("misha");
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(leaveFor).toHaveBeenCalledWith("/login"));
   });
 

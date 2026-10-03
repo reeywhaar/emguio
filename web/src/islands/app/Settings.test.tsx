@@ -110,7 +110,6 @@ describe("settings", () => {
     screen.getByText("None");
   });
 
-  // On a phone the header has no room for it, so this is where signing out is.
   it("says who is signed in and offers a way out", async () => {
     mount(<Settings editing={null} />);
     await screen.findByText("misha");

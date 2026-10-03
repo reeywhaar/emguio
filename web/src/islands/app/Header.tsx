@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { getAuthMe, postAuthLogout } from "@app/api/actions/auth";
+import { getAuthMe } from "@app/api/actions/auth";
 import { getEmailConfigs } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import type { EmailConfig } from "@app/api/types";
-import { Button, buttonLook } from "@app/components/Button";
+import { buttonLook } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
 import { PickerButton } from "@app/components/PickerButton";
@@ -13,10 +13,9 @@ import { Wordmark } from "@app/components/Wordmark";
 import { labelOf, pick } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { paths, type Route } from "@app/islands/app/route";
-import { leaveFor } from "@app/leave";
 
 /**
- * The bar across the top: which email config is open, who is signed in, and the ways out.
+ * The bar across the top: which email config is open, who is signed in, and Settings.
  *
  * One config at a time, chosen here. Nothing anywhere shows two at once.
  */
@@ -26,11 +25,6 @@ export function Header({ route }: { route: Route }) {
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
   });
-  const signOut = useMutation({
-    mutationFn: postAuthLogout,
-    onSuccess: () => leaveFor("/login"),
-  });
-
   const current = configs.data
     ? pick(configs.data, route.page === "mail" ? route.config : null)
     : undefined;
@@ -58,18 +52,6 @@ export function Header({ route }: { route: Route }) {
       >
         Settings
       </Link>
-      {/* On a phone the switcher needs the room more, and Settings has a way out of its own.
-          Hidden on a wrapper, because a button's own display would win over hidden. */}
-      <span className="hidden shrink-0 sm:inline-flex">
-        <Button
-          size="bar"
-          className="whitespace-nowrap"
-          disabled={signOut.isPending}
-          onClick={() => signOut.mutate()}
-        >
-          Sign out
-        </Button>
-      </span>
     </header>
   );
 }
