@@ -156,6 +156,12 @@ export const AllMailMark = () => (
   </Mark>
 );
 
+export const ProfileMark = () => (
+  <Mark>
+    <path d="M8 8a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 8 8ZM2.5 14c.5-3 2.75-4.5 5.5-4.5s5 1.5 5.5 4.5" />
+  </Mark>
+);
+
 export const MoreMark = () => (
   <Mark>
     <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth={2.25} />

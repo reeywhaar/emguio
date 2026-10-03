@@ -84,7 +84,9 @@ describe("the application", () => {
     mount(<App />);
     await screen.findByText("misha");
     expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
-    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    fireEvent.click(
+      screen.getByRole("link", { name: "Settings, signed in as misha" }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(leaveFor).toHaveBeenCalledWith("/login"));
   });
