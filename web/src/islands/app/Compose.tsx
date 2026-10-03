@@ -9,13 +9,20 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import {
+  deleteEmailConfigsByIdDraftsByDraft,
   getEmailConfigs,
   postEmailConfigsByIdDrafts,
   postEmailConfigsByIdSend,
+  putEmailConfigsByIdDraftsByDraft,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { ApiError, messageOf } from "@app/api/transport";
-import type { EmailConfig, Outgoing } from "@app/api/types";
+import type {
+  ClosedDraft,
+  EmailConfig,
+  KeptDraft,
+  Outgoing,
+} from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
 import { Dialog } from "@app/components/Dialog";
@@ -39,8 +46,11 @@ import { paths } from "@app/islands/app/route";
 /** What most mail servers take, attachments and all; the server says the same. */
 const LIMIT = 25 * 1024 * 1024;
 
-/** How long writing pauses before what is written is kept in Drafts. */
+/** How long writing pauses before what is written is kept in emguio. */
 const AUTOSAVE = 2000;
+
+/** How closing went: put in Drafts or kept to be, nowhere to keep it, or emguio not reached. */
+type Ending = ClosedDraft | { nowhere: true } | { failed: true };
 
 /** The compose window, over whatever is open, while something is being written. */
 export function Compose() {
@@ -72,10 +82,10 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
   // What is written, for saves that finish after the render they started in.
   const latest = useRef(draft);
   latest.current = draft;
-  // As Drafts has it, or as it was opened while nothing has been kept.
+  // As emguio keeps it, or as it was opened while nothing has been kept.
   const kept = useRef(start);
-  // One at a time, so each replaces the one before it.
-  const saves = useRef(Promise.resolve(true));
+  // One at a time, so each knows the draft the last one made.
+  const saves = useRef<Promise<unknown>>(Promise.resolve());
   // False once the account turns out to have nowhere to keep drafts.
   const keeps = useRef(true);
   // Set while sending or discarding, when another save would be one too many.
@@ -84,41 +94,59 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
   const [saving, setSaving] = useState(false);
   const [unsaved, setUnsaved] = useState("");
 
-  /** Keeps what is written, once any save on its way is done; says whether all of it is kept. */
-  const keep = useCallback(() => {
-    saves.current = saves.current.then(async () => {
+  /**
+   * Keeps what is written in emguio, once any save on its way is done; closing, has it written
+   * to Drafts now. Says how a closing went; null for nothing to keep.
+   */
+  const keep = useCallback((close: boolean) => {
+    const next = saves.current.then(async (): Promise<Ending | null> => {
       const now = latest.current;
-      if (stopped.current || !differs(now, kept.current)) return true;
-      if (!keeps.current) return false;
+      const untouched = !differs(now, kept.current);
+      if (stopped.current || (untouched && (!close || !now.id))) return null;
+      if (!keeps.current) return { nowhere: true };
       setSaving(true);
       try {
-        const at = await postEmailConfigsByIdDrafts(
-          now.config,
-          await outgoing(now),
-        );
-        kept.current = settled(now, now, at);
-        latest.current = settled(latest.current, now, at);
-        setDraft((d) => settled(d, now, at));
-        setUnsaved("");
-        return true;
+        const body = await outgoing(now, close);
+        if (close) {
+          return now.id
+            ? await putEmailConfigsByIdDraftsByDraft<ClosedDraft>(
+                now.config,
+                now.id,
+                body,
+              )
+            : await postEmailConfigsByIdDrafts<ClosedDraft>(now.config, body);
+        }
+        const res = now.id
+          ? await putEmailConfigsByIdDraftsByDraft<KeptDraft>(
+              now.config,
+              now.id,
+              body,
+            )
+          : await postEmailConfigsByIdDrafts<KeptDraft>(now.config, body);
+        kept.current = settled(now, now, res);
+        latest.current = settled(latest.current, now, res);
+        setDraft((d) => settled(d, now, res));
+        setUnsaved(res.problem && `Not in Drafts yet. ${res.problem}`);
+        return null;
       } catch (err) {
         if (err instanceof ApiError && err.code === "conflict") {
           keeps.current = false;
-        } else {
-          setUnsaved(messageOf(err));
+          return { nowhere: true };
         }
-        return false;
+        setUnsaved(`Not saved. ${messageOf(err)}`);
+        return { failed: true };
       } finally {
         setSaving(false);
       }
     });
-    return saves.current;
+    saves.current = next;
+    return next;
   }, []);
 
   const changed = differs(draft, kept.current);
   useEffect(() => {
     if (!open || !changed) return;
-    const timer = setTimeout(keep, AUTOSAVE);
+    const timer = setTimeout(() => keep(false), AUTOSAVE);
     return () => clearTimeout(timer);
   }, [open, changed, draft, keep]);
 
@@ -127,7 +155,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
       stopped.current = true;
       await saves.current;
       const d = latest.current;
-      return postEmailConfigsByIdSend(d.config, await outgoing(d));
+      return postEmailConfigsByIdSend(d.config, await outgoing(d, false));
     },
     onSuccess: () => {
       stopWriting();
@@ -150,17 +178,23 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     if (start.reply) text.current?.setSelectionRange(0, 0);
   }, [start.reply]);
 
-  // Closing keeps what is written, and asks only when it could not be.
+  // Closing has what is written put in Drafts, and asks only when it cannot be kept at all.
   const close = async () => {
     if (send.isPending || closing.current) return;
     closing.current = true;
     try {
-      if (await keep()) {
+      const end = await keep(true);
+      if (!end || "closed" in end) {
         stopWriting();
-        if (kept.current !== start) say("Saved to Drafts.");
+        if (end?.closed) say("Saved to Drafts.");
+        if (end && !end.closed) {
+          say(
+            `Saved. It goes in Drafts once the mail server takes it: ${end.problem ?? ""}`,
+          );
+        }
         return;
       }
-      const has = kept.current.draft !== null;
+      const has = "failed" in end && latest.current.id !== null;
       if (
         await confirm({
           title: has ? "Close without saving?" : "Discard this message?",
@@ -171,6 +205,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
           danger: true,
         })
       ) {
+        if ("nowhere" in end) await forget();
         stopWriting();
       }
     } finally {
@@ -178,9 +213,39 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     }
   };
 
+  /** Discards what emguio keeps, and has the mail server's copy deleted. */
+  const forget = async () => {
+    stopped.current = true;
+    await saves.current;
+    let copy = latest.current.id ? null : start.draft;
+    const id = latest.current.id;
+    if (id) {
+      try {
+        copy = (await deleteEmailConfigsByIdDraftsByDraft(start.config, id))
+          .kept;
+      } catch (err) {
+        say(`The draft was not discarded: ${messageOf(err)}`);
+      }
+    }
+    if (copy) {
+      ask([
+        {
+          email_config: start.config,
+          mailbox: copy.mailbox,
+          message: copy.message,
+          kind: "delete",
+          value: false,
+          target: "",
+          seen: true,
+          label: latest.current.subject || "(no subject)",
+        },
+      ]);
+    }
+  };
+
   const discard = async () => {
     if (send.isPending || closing.current) return;
-    const has = kept.current.draft !== null || saving;
+    const has = latest.current.id !== null || start.draft !== null || saving;
     if (
       (has || differs(latest.current, start)) &&
       !(await confirm({
@@ -194,23 +259,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     ) {
       return;
     }
-    stopped.current = true;
-    await saves.current;
-    const d = kept.current.draft;
-    if (d) {
-      ask([
-        {
-          email_config: start.config,
-          mailbox: d.mailbox,
-          message: d.message,
-          kind: "delete",
-          value: false,
-          target: "",
-          seen: true,
-          label: kept.current.subject || "(no subject)",
-        },
-      ]);
-    }
+    await forget();
     stopWriting();
   };
 
@@ -218,6 +267,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     e?.preventDefault();
     const total =
       draft.files.reduce((n, f) => n + f.size, 0) +
+      draft.held.reduce((n, h) => n + h.size, 0) +
       (draft.carry?.parts ?? []).reduce((n, p) => n + p.size, 0);
     if (total > LIMIT) {
       setProblem(
@@ -255,10 +305,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     );
   }
 
-  const error =
-    problem ||
-    (send.error ? messageOf(send.error) : "") ||
-    (unsaved ? `Not saved. ${unsaved}` : "");
+  const error = problem || (send.error ? messageOf(send.error) : "") || unsaved;
   return (
     <Dialog
       open={open}
@@ -292,7 +339,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
             </span>
           </label>
           <span aria-live="polite" className="mr-auto text-xs text-faint">
-            {saving ? "Saving…" : kept.current.draft && !changed ? "Saved" : ""}
+            {saving ? "Saving…" : draft.id && !changed ? "Saved" : ""}
           </span>
           <Button onClick={discard} disabled={send.isPending}>
             Discard
@@ -370,6 +417,9 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
         </label>
         <Attached
           draft={draft}
+          onForgetHeld={(id) =>
+            setDraft((d) => ({ ...d, held: d.held.filter((h) => h.id !== id) }))
+          }
           onForgetPart={(section) =>
             setDraft((d) => ({
               ...d,
@@ -400,20 +450,33 @@ function From({ config }: { config: EmailConfig }) {
   );
 }
 
-/** What goes with it: what it carries from another message, and files from this device. */
+/**
+ * What goes with it: what emguio holds, what it carries from a message on the mail server, and
+ * files from this device.
+ */
 function Attached({
   draft,
+  onForgetHeld,
   onForgetPart,
   onForgetFile,
 }: {
   draft: Draft;
+  onForgetHeld: (id: string) => void;
   onForgetPart: (section: string) => void;
   onForgetFile: (index: number) => void;
 }) {
   const parts = draft.carry?.parts ?? [];
-  if (parts.length === 0 && draft.files.length === 0) return null;
+  if (draft.held.length + parts.length + draft.files.length === 0) return null;
   return (
     <ul aria-label="Attachments" className="flex flex-wrap gap-2">
+      {draft.held.map((h) => (
+        <Chip
+          key={`held ${h.id}`}
+          name={h.name}
+          bytes={h.size}
+          onForget={() => onForgetHeld(h.id)}
+        />
+      ))}
       {parts.map((p) => (
         <Chip
           key={`part ${p.section}`}
@@ -460,7 +523,7 @@ function Chip({
 }
 
 /** A draft as the server is asked to send or keep it, files read into base64. */
-async function outgoing(d: Draft): Promise<Outgoing> {
+async function outgoing(d: Draft, close: boolean): Promise<Outgoing> {
   return {
     to: d.to,
     cc: d.cc,
@@ -481,6 +544,9 @@ async function outgoing(d: Draft): Promise<Outgoing> {
       parts: d.carry.parts.map((p) => p.section),
     },
     draft: d.draft,
+    draft_id: d.id,
+    parts: d.held.map((h) => h.id),
+    close,
   };
 }
 

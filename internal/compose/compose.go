@@ -63,7 +63,7 @@ func Build(m Mail) (*Built, error) {
 		ToAddrs(m.To).
 		CCAddrs(m.Cc).
 		BCCAddrs(m.Bcc).
-		Subject(m.Subject).
+		Subject(strings.Join(strings.Fields(m.Subject), " ")).
 		Date(m.Date).
 		// Text lines end in CRLF on the wire, whatever the browser sent.
 		Text([]byte(strings.ReplaceAll(strings.ReplaceAll(m.Text, "\r\n", "\n"), "\n", "\r\n"))).
@@ -131,6 +131,30 @@ func messageID(from string) (string, error) {
 		return "", fmt.Errorf("compose: %w", err)
 	}
 	return "<" + hex.EncodeToString(b[:]) + "@" + domain + ">", nil
+}
+
+// SetAddresses reads the address fields as typed into m. One that is not addresses refuses a
+// message to send, and a draft keeps it as typed.
+func (m *Mail) SetAddresses(to, cc, bcc string) error {
+	for _, f := range []struct {
+		name  string
+		typed string
+		into  *[]mail.Address
+	}{{"To", to, &m.To}, {"Cc", cc, &m.Cc}, {"Bcc", bcc, &m.Bcc}} {
+		list, err := Addresses(f.name, f.typed)
+		switch {
+		case err == nil:
+			*f.into = list
+		case m.Draft:
+			if m.Typed == nil {
+				m.Typed = map[string]string{}
+			}
+			m.Typed[f.name] = strings.Join(strings.Fields(f.typed), " ")
+		default:
+			return err
+		}
+	}
+	return nil
 }
 
 // Addresses reads a field as typed — addresses apart by commas, each with a name or without —

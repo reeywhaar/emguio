@@ -76,6 +76,20 @@ func newWorldWith(t *testing.T, password string, caps imap.CapSet) *world {
 	cert := connecttest.NewCert(t)
 	said := &transcript{}
 	port := connecttest.IMAPSaying(t, cert, connect.Implicit, "misha", "hunter2", caps, said)
+	return newWorldAt(t, password, cert, port, said)
+}
+
+// newNotifyingWorld is a world whose server has NOTIFY, and says unasked what a test tells it to.
+func newNotifyingWorld(t *testing.T) (*world, *connecttest.Notifier) {
+	t.Helper()
+	cert := connecttest.NewCert(t)
+	said := &transcript{}
+	port, n := connecttest.IMAPNotifying(t, cert, "misha", "hunter2", said)
+	return newWorldAt(t, "hunter2", cert, port, said), n
+}
+
+func newWorldAt(t *testing.T, password string, cert *connecttest.Cert, port int, said *transcript) *world {
+	t.Helper()
 
 	sealer, _ := seal.New(bytes.Repeat([]byte{7}, seal.KeySize))
 	st, err := store.Open(t.TempDir(), sealer)

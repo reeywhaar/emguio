@@ -30,6 +30,8 @@ const (
 	EmailConfig = "ec_"
 	Mailbox     = "mb_"
 	Job         = "j_"
+	Draft       = "d_"
+	DraftPart   = "dp_"
 )
 
 const (

@@ -55,7 +55,7 @@ while a field has the keys.
 
 An action is `POST /api/jobs`, answered as soon as it is queued. It takes a list, up to 500, and
 queues all of it or none: one job that cannot be refuses the request. emguio then does the jobs of each
-email config in the order asked, on the reading session — whether or not the page that asked is
+email config in the order asked, on a session for changes — whether or not the page that asked is
 still open, and across a restart, since a waiting job is a row. A try that could not reach the
 mail server is tried again, after five seconds, then thirty, two minutes and ten; an answer that
 refused, or the last try, fails the job.
@@ -151,10 +151,31 @@ another client changed — ends the wait with a quick pass, so new mail is in th
 arrives rather than up to a minute later. go-imap sends `IDLE` again before a server's
 inactivity timeout. On a server without `IDLE`, INBOX is looked at every minute instead.
 
+Mail that arrives while a pass is under way is said before anybody waits for it. So the wait,
+opening INBOX, compares its count and `UIDNEXT` with what the pass found, and looks again when
+they differ rather than waiting for the next message to say so.
+
 The window is opened on every pass rather than only when `STATUS` has moved: a flag changed
 elsewhere — a star — moves no number `STATUS` reports, and the newest 30 messages' flags cost
 one short `FETCH`. A message that left the window, by being expunged or by newer mail pushing it
 out, is dropped; one that entered it has its header fetched.
+
+## Every folder as it changes, on a server with NOTIFY
+
+On a server with `NOTIFY` (RFC 5465) — Dovecot has it — the worker asks, once per connection, to
+be told about every mailbox in the personal namespace and not only the one it waits in:
+`NOTIFY SET (SELECTED (MessageNew MessageExpunge FlagChange)) (PERSONAL (MessageNew MessageExpunge
+FlagChange MailboxName))`. A mailbox that moves is then said with a `STATUS` in the middle of the
+wait, and the worker asks that mailbox for its counts and nothing more. One made, renamed or
+deleted is said with a `LIST`, and the mailboxes are listed again. Mail another client or a
+server's filter puts in a folder is in the sidebar within a second, rather than at the next full
+pass.
+
+A change of flags elsewhere is asked for first, which some servers will not say without
+CONDSTORE; refused, the worker asks for the rest, and refused again it waits as it would without
+NOTIFY. A server that gives up saying (`NOTIFICATIONOVERFLOW`) is asked again, after a full pass
+for what it stopped saying. The full pass every five minutes stays, for whatever a server did
+not say. go-imap has NOTIFY only on its main branch so far, which emguio follows.
 
 ## UIDVALIDITY changing drops the window
 
@@ -248,8 +269,9 @@ text.
 
 ## A message is opened without its attachments
 
-On a second session of its own, so opening a message never waits behind a pass. That session is
-opened on demand, closed after five idle minutes, and serves one request at a time.
+On a session of its own, so opening a message never waits behind a pass, nor behind a long run of
+jobs, which have another session for changes: jobs, drafts and filing in Sent. Each is opened on
+demand, closed after five idle minutes, and serves one request at a time.
 
 Opening is two requests: the headers and `BODYSTRUCTURE`, the server's description of every part
 — its type, name, size and section — and then the text alone, its plain and HTML parts by

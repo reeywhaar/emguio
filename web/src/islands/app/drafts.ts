@@ -1,6 +1,12 @@
 import { useSyncExternalStore } from "react";
 
-import type { Address, Kept, Part, ReadMessage } from "@app/api/types";
+import type {
+  Address,
+  Held,
+  KeptDraft,
+  Part,
+  ReadMessage,
+} from "@app/api/types";
 import { full } from "@app/format";
 
 /**
@@ -15,14 +21,20 @@ export type Draft = {
   bcc: string;
   subject: string;
   text: string;
-  /** Files from this device. */
+  /** Files from this device, not yet kept in emguio. */
   files: File[];
   /** The message it answers. */
   reply: Ref | null;
-  /** A message some of whose parts go with it: the one it forwards, or the draft it was saved as. */
+  /**
+   * A message on the mail server some of whose parts go with it — the one it forwards, or the
+   * draft it was opened from — until emguio keeps them.
+   */
   carry: (Ref & { parts: Part[] }) | null;
-  /** The draft it was last saved as. */
+  /** The draft on the mail server it was opened from. */
   draft: Ref | null;
+  /** The draft kept in emguio, once saved, and the attachments it holds. */
+  id: string | null;
+  held: Held[];
 };
 
 type Ref = { mailbox: string; message: string };
@@ -64,6 +76,8 @@ export const blank = (config: string): Draft => ({
   reply: null,
   carry: null,
   draft: null,
+  id: null,
+  held: [],
 });
 
 /** An address as typed into a field: quoted where its name holds what would split it. */
@@ -179,8 +193,13 @@ export function resumed(m: ReadMessage, config: string): Draft {
 
 /** Whether a has anything b does not, or b anything a does not. */
 export function differs(a: Draft, b: Draft): boolean {
-  const sections = (d: Draft) =>
-    d.carry ? [d.carry.message, ...d.carry.parts.map((p) => p.section)] : [];
+  const parts = (d: Draft) =>
+    [
+      ...d.held.map((h) => h.id),
+      ...(d.carry
+        ? [d.carry.message, ...d.carry.parts.map((p) => p.section)]
+        : []),
+    ].join(" ");
   return (
     a.to !== b.to ||
     a.cc !== b.cc ||
@@ -189,39 +208,29 @@ export function differs(a: Draft, b: Draft): boolean {
     a.text !== b.text ||
     a.files.length !== b.files.length ||
     a.files.some((f, i) => f !== b.files[i]) ||
-    sections(a).join(" ") !== sections(b).join(" ")
+    parts(a) !== parts(b)
   );
 }
 
 /**
- * now, once saved was kept as at: its files and what it carried are the new draft's parts from
- * then on. What was removed while it was being kept stays removed, and files added meanwhile
- * wait for the next save.
+ * now, once saved was kept in emguio as kept: what it held, what it carried and its files are
+ * held there from then on, in that order. What was removed while it was being kept stays
+ * removed, and files added meanwhile wait for the next save.
  */
-export function settled(now: Draft, saved: Draft, at: Kept): Draft {
-  const carried = saved.carry?.parts ?? [];
-  const parts: Part[] = [];
-  carried.forEach((p, i) => {
-    if (now.carry?.parts.some((q) => q.section === p.section)) {
-      parts.push({ ...p, section: at.parts[i] ?? p.section });
-    }
-  });
-  saved.files.forEach((f, i) => {
-    if (now.files.includes(f)) {
-      parts.push({
-        section: at.parts[carried.length + i] ?? "",
-        name: f.name,
-        type: f.type || "application/octet-stream",
-        size: f.size,
-        listed: true,
-      });
-    }
-  });
-  const ref = { mailbox: at.mailbox, message: at.message };
+export function settled(now: Draft, saved: Draft, kept: KeptDraft): Draft {
+  const still = [
+    ...saved.held.map((h) => now.held.some((x) => x.id === h.id)),
+    ...(saved.carry?.parts ?? []).map(
+      (p) => now.carry?.parts.some((q) => q.section === p.section) ?? false,
+    ),
+    ...saved.files.map((f) => now.files.includes(f)),
+  ];
   return {
     ...now,
+    id: kept.id,
+    held: kept.parts.filter((_, i) => still[i]),
+    carry: null,
+    draft: null,
     files: now.files.filter((f) => !saved.files.includes(f)),
-    carry: { ...ref, parts },
-    draft: ref,
   };
 }

@@ -33,8 +33,12 @@ type Mirror interface {
 	Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Origin, error)
 	// Sent files a sent message in Sent and marks what it answers, in the background.
 	Sent(t store.SyncTarget, s mirror.Sending)
-	// SaveDraft keeps a draft in place of the one it replaces, and says its UIDVALIDITY and UID.
-	SaveDraft(ctx context.Context, t store.SyncTarget, mailbox string, raw []byte, replaces *mirror.Located) (uint32, uint32, error)
+	// WakeDrafts says a draft was saved; WriteDraft writes one to the mail server now.
+	WakeDrafts()
+	WriteDraft(ctx context.Context, id string) error
+	// HoldDraft keeps a draft from being written while it is sent; ForgetDraft removes it.
+	HoldDraft(ctx context.Context, userID, id string) (*store.Draft, []store.DraftPart, error)
+	ForgetDraft(ctx context.Context, userID, id string) (*store.Draft, error)
 }
 
 // targetOf is an email config as the mirror is asked about it.

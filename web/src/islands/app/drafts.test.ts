@@ -130,42 +130,50 @@ it("an address is quoted where its name would split it", () => {
   expect(typed({ name: "", email: "kim@example.com" })).toBe("kim@example.com");
 });
 
-// Once kept, what it carried and the files it sent are the draft's own parts, under the sections
-// the server gave them. What was removed while it was being kept stays removed; a file added
+const held = (id: string, name: string, size: number) => ({
+  id,
+  name,
+  type: "text/plain",
+  size,
+});
+// Once kept in emguio, what it carried and the files it sent are held there, under the ids it
+// gave them, in order. What was removed while it was being kept stays removed; a file added
 // meanwhile waits for the next save.
-it("a draft kept carries its attachments from itself from then on", () => {
+it("a draft kept holds its attachments from then on", () => {
   const notes = new File(["notes"], "notes.txt", { type: "text/plain" });
   const late = new File(["late"], "late.txt");
-  const saved = {
-    ...forwardOf(read(), "ec_1"),
-    files: [notes],
-  };
+  const saved = { ...forwardOf(read(), "ec_1"), files: [notes] };
   const now = {
     ...saved,
     text: "typed meanwhile",
     files: [notes, late],
     carry: { ...saved.carry!, parts: [] },
   };
-  const at = { mailbox: "mb_drafts", message: "9-100", parts: ["2", "3"] };
-  const d = settled(now, saved, at);
-  expect(d.draft).toEqual({ mailbox: "mb_drafts", message: "9-100" });
-  expect(d.carry).toEqual({
-    mailbox: "mb_drafts",
-    message: "9-100",
+
+  const kept = {
+    id: "d_1",
     parts: [
-      {
-        section: "3",
-        name: "notes.txt",
-        type: "text/plain",
-        size: 5,
-        listed: true,
-      },
+      held("dp_menu", "menu.pdf", 2048),
+      held("dp_notes", "notes.txt", 5),
     ],
-  });
+    problem: "",
+  };
+  const d = settled(now, saved, kept);
+  expect(d).toMatchObject({ id: "d_1", carry: null, draft: null });
+  expect(d.held.map((h) => h.id)).toEqual(["dp_notes"]);
   expect(d.files).toEqual([late]);
   expect(d.text).toBe("typed meanwhile");
-  expect(differs(settled(saved, saved, at), d)).toBe(true);
-  expect(differs(d, { ...d })).toBe(false);
+
+  // The next save keeps what it holds, and the file added meanwhile after it.
+  const again = settled(d, d, {
+    id: "d_1",
+    parts: [held("dp_notes", "notes.txt", 5), held("dp_late", "late.txt", 4)],
+    problem: "",
+  });
+  expect(again.held.map((h) => h.id)).toEqual(["dp_notes", "dp_late"]);
+  expect(again.files).toEqual([]);
+  expect(differs(again, d)).toBe(true);
+  expect(differs(again, { ...again })).toBe(false);
 });
 
 it("a draft opened again has what it had, its Bcc too, and replaces itself", () => {

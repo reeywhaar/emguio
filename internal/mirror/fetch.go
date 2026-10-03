@@ -24,9 +24,10 @@ var ErrGone = errors.New("mirror: gone")
 // FetchIdle is how long a reading session stays open after its last use.
 const FetchIdle = 5 * time.Minute
 
-// fetcher is an email config's second session, for whatever somebody asks for that is not
-// kept: a mailbox's list, a message, one of its parts, and marking it read. A session of its
-// own, so none of it waits behind a pass; one request at a time, because one person is asking.
+// fetcher is one of an email config's sessions besides the sync's: one for reading what is not
+// kept — a mailbox's list, a message, one of its parts — and one for changing what is on the
+// server: jobs, drafts, filing in Sent. Sessions of their own, so a read waits behind neither a
+// pass nor a long run of jobs; one request at a time on each.
 type fetcher struct {
 	mu      sync.Mutex
 	target  store.SyncTarget
@@ -41,28 +42,41 @@ type fetcher struct {
 	uidValidity uint32
 }
 
-// fetcherFor is the config's fetcher, a new one when the config changed since the last: the old
-// one would go on signing in with what was saved before.
-func (m *Mirror) fetcherFor(t store.SyncTarget) *fetcher {
+// fetcherFor is the config's session for reading, or for changing, a new one when the config
+// changed since the last: the old one would go on signing in with what was saved before.
+func (m *Mirror) fetcherFor(t store.SyncTarget, changing bool) *fetcher {
+	key := t.ID
+	if changing {
+		key += " changing"
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	f := m.fetchers[t.ID]
+	f := m.fetchers[key]
 	if f != nil && !f.target.UpdatedAt.Equal(t.UpdatedAt) {
 		go f.shut()
 		f = nil
 	}
 	if f == nil {
 		f = &fetcher{target: t}
-		m.fetchers[t.ID] = f
+		m.fetchers[key] = f
 	}
 	return f
 }
 
-// use runs one request on the config's reading session. The request bounds it: when ctx ends
-// first, the session is closed under it. A session that failed is not trusted with the next
-// request; one whose server answered — gone, refused, cannot — is fine.
+// use runs one request on the config's reading session.
 func (m *Mirror) use(ctx context.Context, t store.SyncTarget, do func(f *fetcher) error) error {
-	f := m.fetcherFor(t)
+	return m.on(ctx, m.fetcherFor(t, false), do)
+}
+
+// change runs one change on the config's session for changing.
+func (m *Mirror) change(ctx context.Context, t store.SyncTarget, do func(f *fetcher) error) error {
+	return m.on(ctx, m.fetcherFor(t, true), do)
+}
+
+// on runs one request on f. The request bounds it: when ctx ends first, the session is closed
+// under it. A session that failed is not trusted with the next request; one whose server
+// answered — gone, refused, cannot — is fine.
+func (m *Mirror) on(ctx context.Context, f *fetcher, do func(f *fetcher) error) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.ready(m); err != nil {
@@ -388,7 +402,7 @@ func has(flags store.Flags, flag imap.Flag) bool {
 // those it changes, and says the flags each had.
 func (m *Mirror) SetFlag(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, flag imap.Flag, on bool) (Had, error) {
 	var had Had
-	err := m.use(ctx, t, func(f *fetcher) error {
+	err := m.change(ctx, t, func(f *fetcher) error {
 		if err := f.openAt(mailbox, uidValidity, true); err != nil {
 			return err
 		}
@@ -421,7 +435,7 @@ func (m *Mirror) SetFlag(ctx context.Context, t store.SyncTarget, mailbox string
 // deleted, and on a server with neither the move is refused.
 func (m *Mirror) Move(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, to string) (Had, error) {
 	var had Had
-	err := m.use(ctx, t, func(f *fetcher) error {
+	err := m.change(ctx, t, func(f *fetcher) error {
 		if err := f.openAt(mailbox, uidValidity, true); err != nil {
 			return err
 		}
@@ -442,7 +456,7 @@ func (m *Mirror) Move(ctx context.Context, t store.SyncTarget, mailbox string, u
 // needs UIDPLUS, for the reason Move does, and says the flags each had.
 func (m *Mirror) Delete(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32) (Had, error) {
 	var had Had
-	err := m.use(ctx, t, func(f *fetcher) error {
+	err := m.change(ctx, t, func(f *fetcher) error {
 		if err := f.openAt(mailbox, uidValidity, true); err != nil {
 			return err
 		}

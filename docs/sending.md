@@ -1,8 +1,9 @@
 # Sending mail
 
 A message is written in a window over whatever is open — a new one, a reply, a reply to all, a
-forward — and sent through the email config's outgoing server. Nothing of it is kept here: while
-it is written it is kept in the config's Drafts, on its mail server, and once sent in Sent.
+forward — and sent through the email config's outgoing server. While it is written emguio keeps
+it, and puts it in the config's Drafts on its mail server every so often; once its window is
+closed and it is there, or it is sent, nothing of it is kept here.
 
 ## A message is sent while its writer waits, and nothing is queued
 
@@ -27,7 +28,7 @@ address.
 
 The API takes JSON and nothing else, which is half of what keeps another site from posting to it,
 so files come as base64 in the body: up to 25 MB of them, which most mail servers will not take
-more than, in a request of up to 36 MB. A file goes with the first save of a draft, and the draft
+more than, in a request of up to 36 MB. A file goes with the first save of a draft, and emguio
 holds it from then on.
 
 ## A reply is threaded, and its original marked answered
@@ -59,30 +60,41 @@ files what its SMTP is given; so do others, and a second copy there would be one
 when it is not there is the message appended, read. A config with no Sent folder keeps no copy.
 What fails here is logged: the message has already gone.
 
-## What is written is kept in Drafts, each save in place of the last
+## A draft is kept here, and put in Drafts every so often
 
-Two seconds after writing pauses, and on closing, the window saves: `POST
-/api/email-configs/{id}/drafts` takes what `send` takes. The server appends the draft to the
-config's Drafts folder, read and `\Draft`, then deletes the one it replaces with `\Deleted` and
-`UID EXPUNGE`: the new one first, so a failure leaves the old. One save at a time, each after the
-last, so each knows what it replaces.
+Two seconds after writing pauses, the window saves to emguio: `POST /api/email-configs/{id}/drafts`
+the first time, `PUT .../drafts/{draft}` after, taking what `send` takes. A save is a row here
+and nothing on the mail server, so it is cheap and answered at once, however often it comes. The
+first reads what the draft answers and the attachments it carries, from the mail server, once;
+the answer names the attachments emguio holds, and later saves name those to keep, with only new
+files after them. Nothing is uploaded or fetched twice.
 
-That needs UIDPLUS: `APPENDUID` says where the new draft went, and `UID EXPUNGE` removes the old
-one alone. Without it, or without a Drafts folder, the save is refused, nothing more is tried,
-and closing asks before discarding what is written, as it would with nowhere to keep it.
+emguio writes the draft to the config's Drafts folder on its own: thirty seconds after a save, and
+at most that often while somebody types, so the mail server — and every other client watching
+Drafts — sees a new copy now and then rather than at every pause. A closed tab or a browser that
+crashed loses at most the last two seconds, and the draft still reaches Drafts. Writing appends
+the draft, read and `\Draft`, then deletes the copy it replaces with `\Deleted` and `UID EXPUNGE`:
+the new one first, so a failure leaves the old. One draft at a time, and on a session for changes,
+so opening a message never waits behind one. A write the server would not take is tried again,
+after thirty seconds, two minutes, ten and then hourly.
+
+That needs UIDPLUS: `APPENDUID` says where the new copy went, and `UID EXPUNGE` removes the old
+one alone. A config without a Drafts folder has nowhere to put one, and is refused the first
+save; one without UIDPLUS finds out at the first write. Either way closing asks before discarding
+what is written, as it would with nowhere to keep it.
 
 A draft holds what a message to send would not: its Bcc in a header, to be read back; a field that
 is not addresses yet, as typed; nobody to send to at all.
 
-The answer names the new draft and each attachment's section, what was carried first and then the
-files. From then on the window carries them from the draft, as a forward carries the original's:
-the server fetches them from the mail server, and a file is not uploaded twice.
-
-Closing keeps the draft, and says so. Discard deletes it, as a delete job, so it leaves the list at
-once. Sending replaces it: the request names the draft, and once the message has gone the server
-deletes it, along with filing the copy in Sent.
+Closing writes the draft to Drafts now, and it goes from here; the window says so. A mail server
+that cannot be reached leaves the draft here, written once it can be, and the window says that
+instead. Discard deletes it here, and its copy in Drafts as a delete job, so it leaves the list at
+once. Sending names the draft: it is not written while the message goes out, and once it has gone
+it goes from here and its copy from Drafts, along with the copy filed in Sent. A draft nobody has
+saved for a week — a window left open, or one whose server would not take it — is swept.
 
 In Drafts a message opens with Edit draft rather than Reply and Forward: its fields, text and
-attachments back in the window, saved in place of itself. A reply opened again is threaded as it
-was, from the draft's own `In-Reply-To` and `References`; its original is not marked answered,
-since only the window that began the reply knew where that is.
+attachments back in the window, kept here again at the first save and written in place of itself.
+A reply opened again is threaded as it was, from the draft's own `In-Reply-To` and `References`;
+its original is not marked answered, since only the window that began the reply knew where that
+is.

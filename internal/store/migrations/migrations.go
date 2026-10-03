@@ -26,6 +26,7 @@ var all = []Migration{
 	window,
 	jobs,
 	senderName,
+	drafts,
 }
 
 // exec runs a statement block as one migration.

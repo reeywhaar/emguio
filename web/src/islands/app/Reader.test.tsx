@@ -20,6 +20,8 @@ const postJob = vi.fn();
 
 const postSend = vi.fn();
 const postDraft = vi.fn();
+const putDraft = vi.fn();
+const deleteDraft = vi.fn();
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
@@ -56,6 +58,13 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),
   postEmailConfigsByIdDrafts: (id: string, body: unknown) =>
     postDraft(id, body),
+  putEmailConfigsByIdDraftsByDraft: (
+    id: string,
+    draft: string,
+    body: unknown,
+  ) => putDraft(id, draft, body),
+  deleteEmailConfigsByIdDraftsByDraft: (id: string, draft: string) =>
+    deleteDraft(id, draft),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
@@ -485,19 +494,24 @@ describe("the reading pane", () => {
   });
 });
 
-/** What each save of a draft asked the server to keep. */
-const saved = (): Outgoing[] =>
-  postDraft.mock.calls.map((c) => (c as [string, Outgoing])[1]);
+/** What each save of a draft asked emguio to keep: the first, then the rest. */
+const saved = (): Outgoing[] => [
+  ...postDraft.mock.calls.map((c) => (c as [string, Outgoing])[1]),
+  ...putDraft.mock.calls.map((c) => (c as [string, string, Outgoing])[2]),
+];
+
+const q3 = {
+  id: "dp_q3",
+  name: "q3.pdf",
+  type: "application/pdf",
+  size: 12800,
+};
 
 describe("drafts", () => {
-  // Closing keeps what is written; nothing asks.
-  it("keeps a reply in Drafts on closing", async () => {
+  // Closing has it put in Drafts; nothing asks.
+  it("puts a reply in Drafts on closing", async () => {
     getMessage.mockResolvedValue(read({ seen: true }));
-    postDraft.mockResolvedValue({
-      mailbox: "mb_drafts",
-      message: "9-100",
-      parts: [],
-    });
+    postDraft.mockResolvedValue({ closed: true });
     open();
     fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
     const dialog = within(await screen.findByRole("dialog"));
@@ -508,30 +522,23 @@ describe("drafts", () => {
     fireEvent.click(dialog.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     screen.getByText("Saved to Drafts.");
-    expect(saved()).toHaveLength(1);
-    expect(saved()[0]).toMatchObject({
-      reply: { mailbox: "mb_inbox", message: "m_1" },
-      draft: null,
-    });
+    expect(saved()).toEqual([
+      expect.objectContaining({
+        reply: { mailbox: "mb_inbox", message: "m_1" },
+        draft_id: null,
+        close: true,
+      }),
+    ]);
   });
 
-  // Each save replaces the last and carries its attachments from it, and the message sent
-  // replaces the last of all.
-  it("saves as it is written, each save in place of the last", async () => {
+  // The first save keeps it in emguio with what it carries; the next ones name what it holds,
+  // and the message sent is that draft.
+  it("keeps it in emguio as it is written, and sends it from there", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       getMessage.mockResolvedValue(read({ seen: true }));
-      postDraft
-        .mockResolvedValueOnce({
-          mailbox: "mb_drafts",
-          message: "9-100",
-          parts: ["2"],
-        })
-        .mockResolvedValueOnce({
-          mailbox: "mb_drafts",
-          message: "9-101",
-          parts: ["2"],
-        });
+      postDraft.mockResolvedValue({ id: "d_1", parts: [q3], problem: "" });
+      putDraft.mockResolvedValue({ id: "d_1", parts: [q3], problem: "" });
       postSend.mockResolvedValue({ message_id: "<f@example.com>" });
       open();
       await screen.findByRole("button", { name: "Forward" });
@@ -544,8 +551,9 @@ describe("drafts", () => {
       await dialog.findByText("Saved");
       expect(saved()[0]).toMatchObject({
         to: "kim@example.com",
-        draft: null,
+        draft_id: null,
         carry: { mailbox: "mb_inbox", message: "m_1", parts: ["2"] },
+        close: false,
       });
 
       fireEvent.change(to, {
@@ -554,23 +562,44 @@ describe("drafts", () => {
       expect(dialog.queryByText("Saved")).toBeNull();
       await vi.advanceTimersByTimeAsync(2000);
       await waitFor(() => expect(saved()).toHaveLength(2));
-      const kept = { mailbox: "mb_drafts", message: "9-100" };
+      expect(putDraft.mock.calls[0]![1]).toBe("d_1");
       expect(saved()[1]).toMatchObject({
-        draft: kept,
-        carry: { ...kept, parts: ["2"] },
+        draft_id: "d_1",
+        parts: ["dp_q3"],
+        carry: null,
       });
       await dialog.findByText("Saved");
 
       fireEvent.click(dialog.getByRole("button", { name: "Send" }));
       await waitFor(() => expect(postSend).toHaveBeenCalledTimes(1));
-      const last = { mailbox: "mb_drafts", message: "9-101" };
       expect((postSend.mock.calls[0] as [string, Outgoing])[1]).toMatchObject({
-        draft: last,
-        carry: { ...last, parts: ["2"] },
+        draft_id: "d_1",
+        parts: ["dp_q3"],
+        carry: null,
       });
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // emguio keeps what the mail server would not take yet, and says so.
+  it("closes, saying so, when the mail server takes it later", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    postDraft.mockResolvedValue({
+      closed: false,
+      problem: "imap.example.com cannot be reached.",
+    });
+    open();
+    fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    fireEvent.change(dialog.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Thanks!" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    screen.getByText(
+      "Saved. It goes in Drafts once the mail server takes it: imap.example.com cannot be reached.",
+    );
   });
 
   it("opens a draft again as it was, and deletes it when it is discarded", async () => {
@@ -607,7 +636,43 @@ describe("drafts", () => {
         }),
       ),
     );
-    expect(postDraft).not.toHaveBeenCalled();
+    expect(saved()).toEqual([]);
+    expect(deleteDraft).not.toHaveBeenCalled();
+  });
+
+  // A draft kept in emguio goes from there, and its copy from the mail server.
+  it("discards a draft kept in emguio, and its copy in Drafts", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      getMessage.mockResolvedValue(read({ seen: true }));
+      postDraft.mockResolvedValue({ id: "d_1", parts: [], problem: "" });
+      deleteDraft.mockResolvedValue({
+        kept: { mailbox: "mb_drafts", message: "9-100" },
+      });
+      open();
+      fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+      const dialog = within(await screen.findByRole("dialog"));
+      fireEvent.change(dialog.getByRole("textbox", { name: "Message" }), {
+        target: { value: "Thanks!" },
+      });
+      await vi.advanceTimersByTimeAsync(2000);
+      await dialog.findByText("Saved");
+      fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+      const sure = screen.getAllByRole("button", { name: "Discard" });
+      fireEvent.click(sure[sure.length - 1]!);
+      await waitFor(() =>
+        expect(asked()).toContainEqual(
+          expect.objectContaining({
+            kind: "delete",
+            mailbox: "mb_drafts",
+            message: "9-100",
+          }),
+        ),
+      );
+      expect(deleteDraft).toHaveBeenCalledWith("ec_1", "d_1");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Without a Drafts folder, closing asks, as it did before there were drafts.

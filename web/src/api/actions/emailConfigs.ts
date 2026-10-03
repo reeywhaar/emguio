@@ -2,7 +2,8 @@ import { query, request } from "@app/api/transport";
 import type {
   EmailConfig,
   EmailConfigDraft,
-  Kept,
+  ClosedDraft,
+  KeptDraft,
   Mailbox,
   MessagePage,
   Outgoing,
@@ -55,12 +56,38 @@ export const postEmailConfigsByIdSend = (id: string, body: Outgoing) =>
     { method: "POST", body },
   );
 
-/** Keeps a draft in Drafts, in place of the one it was saved as before. */
-export const postEmailConfigsByIdDrafts = (id: string, body: Outgoing) =>
-  request<Kept>(`/api/email-configs/${encodeURIComponent(id)}/drafts`, {
+/** Keeps a new draft in emguio, written to Drafts in a while; with close, now. */
+export const postEmailConfigsByIdDrafts = <T extends KeptDraft | ClosedDraft>(
+  id: string,
+  body: Outgoing,
+) =>
+  request<T>(`/api/email-configs/${encodeURIComponent(id)}/drafts`, {
     method: "POST",
     body,
   });
+
+/** Keeps what is written in a draft now. */
+export const putEmailConfigsByIdDraftsByDraft = <
+  T extends KeptDraft | ClosedDraft,
+>(
+  id: string,
+  draft: string,
+  body: Outgoing,
+) =>
+  request<T>(
+    `/api/email-configs/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draft)}`,
+    { method: "PUT", body },
+  );
+
+/** Discards a draft kept in emguio, and says where the mail server holds its copy. */
+export const deleteEmailConfigsByIdDraftsByDraft = (
+  id: string,
+  draft: string,
+) =>
+  request<{ kept: { mailbox: string; message: string } | null }>(
+    `/api/email-configs/${encodeURIComponent(id)}/drafts/${encodeURIComponent(draft)}`,
+    { method: "DELETE" },
+  );
 
 export const getEmailConfigsByIdMailboxes = (id: string) =>
   request<{ mailboxes: Mailbox[] }>(

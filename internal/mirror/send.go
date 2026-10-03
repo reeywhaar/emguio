@@ -128,7 +128,7 @@ func (m *Mirror) Sent(t store.SyncTarget, s Sending) {
 
 // file appends raw to mailbox, read, unless a message there has its Message-ID already.
 func (m *Mirror) file(ctx context.Context, t store.SyncTarget, mailbox, id string, raw []byte) error {
-	return m.use(ctx, t, func(f *fetcher) error {
+	return m.change(ctx, t, func(f *fetcher) error {
 		if _, _, err := f.open(mailbox, false, true); err != nil {
 			return err
 		}
@@ -162,7 +162,7 @@ func (m *Mirror) file(ctx context.Context, t store.SyncTarget, mailbox, id strin
 // a server without UIDPLUS: it neither says where a message went nor removes one alone.
 func (m *Mirror) SaveDraft(ctx context.Context, t store.SyncTarget, mailbox string, raw []byte, replaces *Located) (uint32, uint32, error) {
 	var at *imap.AppendData
-	err := m.use(ctx, t, func(f *fetcher) error {
+	err := m.change(ctx, t, func(f *fetcher) error {
 		if !f.session.client.Caps().Has(imap.CapUIDPlus) {
 			return ErrUnsupported
 		}

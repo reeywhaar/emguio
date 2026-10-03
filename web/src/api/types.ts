@@ -173,13 +173,29 @@ export type Outgoing = {
   /** The message it answers: threaded under it, and marked answered. */
   reply: { mailbox: string; message: string } | null;
   /**
-   * A message some of whose parts go with this one, by section: the one it forwards, or the
-   * draft it was saved as.
+   * A message on the mail server some of whose parts go with this one, by section: the one it
+   * forwards, or the draft it was opened from.
    */
   carry: { mailbox: string; message: string; parts: string[] } | null;
-  /** The draft it was saved as, which what is sent or saved now replaces. */
+  /** A draft on the mail server this was opened from, which it replaces. */
   draft: { mailbox: string; message: string } | null;
+  /** The draft kept in emguio that this is, and the attachments it holds that go with it. */
+  draft_id: string | null;
+  parts: string[];
+  /** The window closing: the draft is written to the mail server now. */
+  close?: boolean;
 };
 
-/** Where a draft was kept, and its attachments' sections: what it carried, then the files. */
-export type Kept = { mailbox: string; message: string; parts: string[] };
+/** A draft kept in emguio until it is written to the mail server's Drafts. */
+export type KeptDraft = {
+  id: string;
+  /** The attachments it holds, in order: those it held, then those carried, then new files. */
+  parts: Held[];
+  /** Why the mail server did not take it, the last time it was tried. */
+  problem: string;
+};
+
+export type Held = { id: string; name: string; type: string; size: number };
+
+/** A draft whose window closed: in Drafts now, or kept and put there once the server takes it. */
+export type ClosedDraft = { closed: boolean; problem?: string };

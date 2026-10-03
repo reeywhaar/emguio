@@ -37,25 +37,31 @@ type fakeMirror struct {
 	// origin is what a reply reads of its original, and sendings what was sent.
 	origin   *mirror.Origin
 	sendings []mirror.Sending
-	// drafts are the drafts kept, each where, what, and in place of which.
-	drafts []savedDraft
-	err    error
+	// store is where the drafts it holds and forgets are kept; written each draft written, and
+	// woken how many times it was told one was saved.
+	store   *store.Store
+	written []string
+	woken   int
+	err     error
 }
 
-type savedDraft struct {
-	mailbox  string
-	raw      string
-	replaces *mirror.Located
-}
-
-func (f *fakeMirror) SaveDraft(_ context.Context, _ store.SyncTarget, mailbox string, raw []byte, replaces *mirror.Located) (uint32, uint32, error) {
+func (f *fakeMirror) WakeDrafts() { f.mu.Lock(); f.woken++; f.mu.Unlock() }
+func (f *fakeMirror) WriteDraft(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.err != nil {
-		return 0, 0, f.err
+	f.written = append(f.written, id)
+	return f.err
+}
+func (f *fakeMirror) HoldDraft(ctx context.Context, userID, id string) (*store.Draft, []store.DraftPart, error) {
+	d, err := f.store.HoldDraft(ctx, userID, id)
+	if err != nil {
+		return nil, nil, err
 	}
-	f.drafts = append(f.drafts, savedDraft{mailbox, string(raw), replaces})
-	return 9, uint32(99 + len(f.drafts)), nil
+	parts, err := f.store.DraftParts(ctx, id, true)
+	return d, parts, err
+}
+func (f *fakeMirror) ForgetDraft(ctx context.Context, userID, id string) (*store.Draft, error) {
+	return f.store.DeleteDraft(ctx, userID, id)
 }
 
 func (f *fakeMirror) Origin(context.Context, store.SyncTarget, string, uint32, uint32) (*mirror.Origin, error) {

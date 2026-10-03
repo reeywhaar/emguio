@@ -24,7 +24,7 @@ func withOutbox(t *testing.T) (*client, string, map[string]string, *connecttest.
 	s.connector = connect.New(connecttest.Loopback).WithRoots(cert.Pool)
 	box := &connecttest.Outbox{}
 	port := connecttest.SMTPInto(t, cert, connect.Implicit, "misha", "hunter2", box)
-	fake := &fakeMirror{}
+	fake := &fakeMirror{store: st}
 	s.mirror = fake
 	c := signIn(t, s, st)
 	var made emailConfigJSON
@@ -131,72 +131,6 @@ func TestWhatCannotBeSentSaysWhy(t *testing.T) {
 	resp := nowhere.do("POST", "/api/email-configs/"+nowhereConfig(t, nowhere)+"/send", `{"to":"robin@example.com"}`)
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("without an outgoing server = %s", resp.Status)
-	}
-}
-
-// A draft is kept in Drafts with whatever it has so far — its Bcc, a field not an address yet,
-// nobody at all — and each save replaces the last, carrying the attachments it already had.
-func TestADraftIsKeptInPlaceOfTheLast(t *testing.T) {
-	c, cfg, boxes, _, fake := withOutbox(t)
-	resp := c.do("POST", "/api/email-configs/"+cfg+"/drafts", fmt.Sprintf(`{"to":"Robin <robin@example.com>","cc":"bob@","bcc":"secret@example.com",
-		"subject":"Plans","text":"Half a thought","attachments":[{"name":"notes.txt","type":"text/plain","data":%q}]}`,
-		base64.StdEncoding.EncodeToString([]byte("the notes"))))
-	got := c.json(resp)
-	if resp.StatusCode != http.StatusOK || got["mailbox"] != boxes["Drafts"] || got["message"] != "9-100" || fmt.Sprint(got["parts"]) != "[2]" {
-		t.Fatalf("save = %s %v", resp.Status, got)
-	}
-	d := fake.drafts[0]
-	for _, want := range []string{"Bcc: <secret@example.com>", "Cc: bob@", "Subject: Plans", "notes.txt"} {
-		if !strings.Contains(d.raw, want) {
-			t.Errorf("the draft has no %q:\n%s", want, d.raw)
-		}
-	}
-	if d.mailbox != "Drafts" || d.replaces != nil {
-		t.Errorf("first draft = %+v", d)
-	}
-
-	fake.parts = map[string][2]string{"2": {"Content-Type: text/plain; name=\"notes.txt\"\r\n\r\n", "the notes"}}
-	resp = c.do("POST", "/api/email-configs/"+cfg+"/drafts", fmt.Sprintf(`{"subject":"Plans","text":"A whole thought",
-		"draft":{"mailbox":%q,"message":"9-100"},"carry":{"mailbox":%q,"message":"9-100","parts":["2"]}}`, boxes["Drafts"], boxes["Drafts"]))
-	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["message"] != "9-101" || fmt.Sprint(got["parts"]) != "[2]" {
-		t.Fatalf("second save = %s %v", resp.Status, got)
-	}
-	if d := fake.drafts[1]; d.replaces == nil || d.replaces.Mailbox.ID != boxes["Drafts"] || d.replaces.UID != 100 || !strings.Contains(d.raw, "the notes") {
-		t.Errorf("second draft = %+v", d)
-	}
-}
-
-// A draft sent is deleted once it has gone, and one opened again is threaded as it was.
-func TestASentDraftIsDeletedAndThreadedAsItWas(t *testing.T) {
-	c, cfg, boxes, box, fake := withOutbox(t)
-	fake.origin = &mirror.Origin{MessageID: "<draft@example.com>", InReplyTo: "<q@example.com>", References: []string{"<root@example.com>", "<q@example.com>"}}
-	resp := c.do("POST", "/api/email-configs/"+cfg+"/send", fmt.Sprintf(`{"to":"alice@example.com","subject":"Re: Question","text":"Yes.",
-		"draft":{"mailbox":%q,"message":"9-100"}}`, boxes["Drafts"]))
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("send = %s %v", resp.Status, c.json(resp))
-	}
-	raw := string(box.Sent()[0].Data)
-	if !strings.Contains(raw, "In-Reply-To: <q@example.com>") || !strings.Contains(raw, "References: <root@example.com> <q@example.com>") {
-		t.Errorf("not threaded:\n%s", raw)
-	}
-	if s := fake.sendings[0]; s.Draft == nil || s.Draft.UID != 100 || s.Answers != nil {
-		t.Errorf("sending = %+v", s)
-	}
-}
-
-// Without a Drafts folder, or on a server that cannot say where it put one, no draft is kept.
-func TestADraftNeedsSomewhereToGo(t *testing.T) {
-	_, _, nowhere, _, _ := withMail(t, 0)
-	resp := nowhere.do("POST", "/api/email-configs/"+nowhereConfig(t, nowhere)+"/drafts", `{"text":"x"}`)
-	if got := nowhere.json(resp); resp.StatusCode != http.StatusConflict || !strings.Contains(got["message"].(string), "no Drafts folder") {
-		t.Errorf("without Drafts = %s %v", resp.Status, got)
-	}
-
-	c, cfg, _, _, fake := withOutbox(t)
-	fake.err = mirror.ErrUnsupported
-	resp = c.do("POST", "/api/email-configs/"+cfg+"/drafts", `{"text":"x"}`)
-	if got := c.json(resp); resp.StatusCode != http.StatusConflict || !strings.Contains(got["message"].(string), "UIDPLUS") {
-		t.Errorf("without UIDPLUS = %s %v", resp.Status, got)
 	}
 }
 

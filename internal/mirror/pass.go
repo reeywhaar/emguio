@@ -29,11 +29,15 @@ type session struct {
 	listed bool
 	// moved is signalled when the server says, unasked, that the selected mailbox changed.
 	moved chan struct{}
+	// news is what it says, under NOTIFY, of the others.
+	news *news
+	// saw is INBOX as the last pass found it.
+	saw *store.MailboxStatus
 }
 
-// pass brings what is kept up to date: the window on every pass, and on a full one the list of
-// mailboxes and how many messages each holds.
-func (s *session) pass(ctx context.Context, full bool) (bool, error) {
+// pass brings what is kept up to date: on a full pass the list of mailboxes, how many messages
+// each holds, and the window; otherwise the window, or only the mailboxes named.
+func (s *session) pass(ctx context.Context, full bool, named []string) (bool, error) {
 	changed := false
 	if full || !s.listed {
 		listed, err := s.list()
@@ -52,7 +56,15 @@ func (s *session) pass(ctx context.Context, full bool) (bool, error) {
 		return changed, err
 	}
 	for _, mb := range boxes {
-		if !mb.Selectable || (!full && mb.SpecialUse != store.UseInbox) {
+		switch {
+		case !mb.Selectable:
+			continue
+		case full:
+		case named != nil:
+			if !slices.Contains(named, mb.Name) {
+				continue
+			}
+		case mb.SpecialUse != store.UseInbox:
 			continue
 		}
 		look := s.count
@@ -164,7 +176,8 @@ func (s *session) status(mb *store.Mailbox) (store.MailboxStatus, error) {
 	}, nil
 }
 
-// count records how many messages a mailbox holds and how many are unread, for the sidebar.
+// count records how many messages a mailbox holds and how many are unread, for the sidebar, and
+// its UIDNEXT, which tells a list it changed when the counts did not.
 func (s *session) count(ctx context.Context, mb *store.Mailbox) (bool, error) {
 	now, err := s.status(mb)
 	if err != nil {
@@ -174,7 +187,7 @@ func (s *session) count(ctx context.Context, mb *store.Mailbox) (bool, error) {
 	if mb.SyncedAt != nil && now == was {
 		return false, nil
 	}
-	return now.Messages != was.Messages || now.Unseen != was.Unseen, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
+	return true, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
 }
 
 // window brings the kept newest messages of a mailbox up to date, and reports whether anything
@@ -256,6 +269,7 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 		}
 	}
 	changed = changed || len(gone) > 0 || len(moved) > 0 || len(missing) > 0
+	s.saw = &now
 	return changed, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
 }
 

@@ -46,6 +46,9 @@ type Mirror struct {
 	fetchers map[string]*fetcher
 	runners  map[string]chan struct{}
 	kick     chan struct{}
+	// drafts wakes the draft writer, and drafting keeps it to one draft at a time.
+	drafts   chan struct{}
+	drafting sync.Mutex
 
 	// life bounds the job runners, which outlive any one request: Run's end ends it.
 	life    context.Context
@@ -63,16 +66,23 @@ func New(st *store.Store, conn *connect.Connector, log *slog.Logger) *Mirror {
 		fetchers: map[string]*fetcher{},
 		runners:  map[string]chan struct{}{},
 		kick:     make(chan struct{}, 1),
+		drafts:   make(chan struct{}, 1),
 		life:     life,
 		end:      end,
 	}
 }
 
-// Run keeps one worker per email config until ctx ends, and returns once every worker and job
-// runner has. Jobs left waiting by the last run are taken up again.
+// Run keeps one worker per email config until ctx ends, and returns once every worker, job
+// runner and the draft writer has. Jobs left waiting by the last run are taken up again, and
+// drafts left due.
 func (m *Mirror) Run(ctx context.Context) {
 	tick := time.NewTicker(Reconcile)
 	defer tick.Stop()
+	m.running.Add(1)
+	go func() {
+		defer m.running.Done()
+		m.runDrafts()
+	}()
 	if configs, err := m.store.JobConfigs(ctx); err != nil {
 		m.log.Error("mirror could not list waiting jobs", "err", err)
 	} else {
@@ -217,6 +227,9 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 	}
 	defer s.client.Close()
 
+	if err := s.notify(); err != nil {
+		return false, err
+	}
 	// With IDLE the server says when INBOX moves, and the timer is only for every other
 	// mailbox's counts; without it, INBOX is looked at every minute.
 	idles := s.idles()
@@ -227,9 +240,10 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	full, lastFull, synced := true, time.Time{}, false
+	var named []string
 	for {
 		began := time.Now()
-		changed, err := s.pass(ctx, full)
+		changed, err := s.pass(ctx, full, named)
 		if err != nil {
 			return synced, err
 		}
@@ -246,6 +260,7 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 		}
 		synced = true
 		why, err := s.wait(ctx, tick.C, w.wake)
+		named = nil
 		switch {
 		case why == ended:
 			return true, nil
@@ -253,6 +268,14 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 			return true, err
 		case why == poked:
 			full = true
+		case why == told:
+			var lost bool
+			named, full, lost = s.news.take()
+			if lost {
+				if err := s.notify(); err != nil {
+					return true, err
+				}
+			}
 		default:
 			// A tick comes a moment before Full has passed since the last full pass began.
 			full = time.Since(lastFull) >= Full-every/2
@@ -266,6 +289,8 @@ const (
 	poked
 	// arrived is INBOX moving, said by the server under IDLE.
 	arrived
+	// told is another mailbox moving, said by the server under NOTIFY.
+	told
 	ended
 )
 
@@ -285,15 +310,20 @@ func (s *session) wait(ctx context.Context, tick <-chan time.Time, wake <-chan s
 	)
 	if s.idles() {
 		moved = s.moved
-		if _, err := s.client.Select("INBOX", &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+		data, err := s.client.Select("INBOX", &imap.SelectOptions{ReadOnly: true}).Wait()
+		if err != nil {
 			return ticked, err
 		}
-		// What was said before this wait, the pass just made has seen.
+		// What was said before this wait, the pass just made has seen, unless it came after the
+		// pass read INBOX: then INBOX is not as the pass found it, and is looked at again.
 		select {
 		case <-s.moved:
 		default:
 		}
-		var err error
+		if saw := s.saw; saw != nil && (data.NumMessages != saw.Messages || uint32(data.UIDNext) != saw.UIDNext) {
+			s.unselect()
+			return arrived, nil
+		}
 		if idle, err = s.client.Idle(); err != nil {
 			return ticked, err
 		}
@@ -307,6 +337,8 @@ func (s *session) wait(ctx context.Context, tick <-chan time.Time, wake <-chan s
 		why = poked
 	case <-moved:
 		why = arrived
+	case <-s.news.ready:
+		why = told
 	}
 	if idle == nil {
 		return why, nil
@@ -330,7 +362,7 @@ func (m *Mirror) Once(ctx context.Context, t store.SyncTarget) error {
 		return err
 	}
 	defer s.client.Close()
-	if _, err := s.pass(ctx, true); err != nil {
+	if _, err := s.pass(ctx, true, nil); err != nil {
 		m.failed(ctx, t, err)
 		return err
 	}
@@ -349,6 +381,7 @@ func (m *Mirror) open(ctx context.Context, t store.SyncTarget) (*session, error)
 	}
 	in := logins.Incoming
 	server := connect.Server{Host: in.Host, Port: in.Port, TLS: in.TLS, Username: in.Username, Password: in.Password}
+	heard := newNews()
 	moved := make(chan struct{}, 1)
 	say := func() {
 		select {
@@ -363,11 +396,14 @@ func (m *Mirror) open(ctx context.Context, t store.SyncTarget) (*session, error)
 			msg.Collect()
 			say()
 		},
+		Status:               func(data *imap.StatusData) { heard.moved(data.Mailbox) },
+		List:                 func(*imap.ListData) { heard.listed() },
+		NotificationOverflow: heard.overflowed,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &session{m: m, target: t, host: in.Host, client: client, moved: moved}, nil
+	return &session{m: m, target: t, host: in.Host, client: client, moved: moved, news: heard}, nil
 }
 
 // failed records why the latest attempt did not work, in a sentence for the settings page.
