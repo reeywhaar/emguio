@@ -256,6 +256,10 @@ the results stay beside it, and a reload or Back lands on them. The field sits a
 Enter searches, Escape or the cross goes back to the whole folder, and `/` reaches it from
 anywhere but a field. Actions on results, one or a selection, are what they are anywhere.
 
+Unread only, the envelope beside Select, is `is:unread` put in the query and taken out again: the
+field shows the rest, and each stays as the other changes. A message read meanwhile leaves the
+list when it is next read from the server.
+
 ## A conversation is the server's THREAD, with its other side from Sent
 
 Nothing is kept here to thread by either, so conversations are the server's `UID THREAD

@@ -109,6 +109,23 @@ export const MailMark = ({ open }: { open: boolean }) => (
   </Mark>
 );
 
+/** A letter, and with lit, the dot an unread one has: on its corner, cut out of it. */
+export const UnreadMark = ({ lit }: { lit: boolean }) => (
+  <Mark>
+    <path d="M1.5 3.5h13v9h-13zM1.5 3.5 8 8.5l6.5-5" />
+    {lit ? (
+      <circle
+        cx="13.5"
+        cy="3.5"
+        r="2.5"
+        strokeWidth={2}
+        paintOrder="stroke"
+        className="fill-brand stroke-bg"
+      />
+    ) : null}
+  </Mark>
+);
+
 export const FolderMark = () => (
   <Mark>
     <path d="M1.5 3.5h4.5l1.5 1.5h7v8h-13zM7 9h4.5M9.5 7l2 2-2 2" />

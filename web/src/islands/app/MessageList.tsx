@@ -16,6 +16,7 @@ import { Link } from "@app/islands/app/Link";
 import { counterpart } from "@app/islands/app/mailbox";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
+import { textOf, unreadOnly } from "@app/islands/app/Search";
 
 /** How far before the end of the list the next run starts loading. */
 const AHEAD = 200;
@@ -178,7 +179,11 @@ export function MessageList({
         </ul>
       ) : hasNextPage ? null : (
         <p className="p-4 text-sm text-muted">
-          {q ? "Nothing here matches." : "No messages here."}
+          {textOf(q)
+            ? "Nothing here matches."
+            : unreadOnly(q)
+              ? "No unread messages here."
+              : "No messages here."}
         </p>
       )}
       <div ref={end}>

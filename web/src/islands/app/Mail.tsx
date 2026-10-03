@@ -26,6 +26,7 @@ import {
   SpamMark,
   StarMark,
   TrashMark,
+  UnreadMark,
   WriteMark,
 } from "@app/components/icons";
 import { PickerButton } from "@app/components/PickerButton";
@@ -54,7 +55,7 @@ import { say } from "@app/islands/app/notices";
 import { Selection } from "@app/islands/app/Selection";
 import { countsWithPending, usePending } from "@app/islands/app/pending";
 import { Reader } from "@app/islands/app/Reader";
-import { Search } from "@app/islands/app/Search";
+import { Search, queryOf, textOf, unreadOnly } from "@app/islands/app/Search";
 import { go, paths } from "@app/islands/app/route";
 
 /**
@@ -247,6 +248,28 @@ function Folders({
               >
                 <WriteMark />
               </Button>
+              {current?.selectable ? (
+                <Button
+                  size="bar"
+                  aria-label="Unread only"
+                  aria-pressed={unreadOnly(q)}
+                  title={
+                    unreadOnly(q) ? "Show all mail" : "Show unread mail only"
+                  }
+                  onClick={() =>
+                    go(
+                      paths.mail(
+                        config.id,
+                        current.id,
+                        undefined,
+                        queryOf(textOf(q), !unreadOnly(q)),
+                      ),
+                    )
+                  }
+                >
+                  <UnreadMark lit={unreadOnly(q)} />
+                </Button>
+              ) : null}
               {current?.selectable ? (
                 // Selecting is about the list: an open message is closed for it.
                 <Button

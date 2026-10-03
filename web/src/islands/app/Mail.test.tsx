@@ -610,6 +610,65 @@ describe("the mail view", () => {
     );
   });
 
+  // Unread only is is:unread in the query, kept apart from what is typed and kept while searching.
+  it("shows unread mail only, while searching too", async () => {
+    getMessages.mockImplementation(
+      async (_c: string, _m: string, _cursor: string, q: string) => ({
+        messages: q.includes("lunch")
+          ? []
+          : q
+            ? [message("m_1", "Quarterly numbers", { seen: false })]
+            : [
+                message("m_1", "Quarterly numbers", { seen: false }),
+                message("m_2", "Lunch?"),
+              ],
+      }),
+    );
+    window.history.pushState({}, "", "/c/ec_1/mb_inbox");
+    mount(<Routed />);
+    await screen.findByText("Lunch?");
+    const toggle = screen.getByRole("button", { name: "Unread only" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(toggle);
+    expect(window.location.search).toBe("?q=is%3Aunread");
+    await waitFor(() => expect(screen.queryByText("Lunch?")).toBeNull());
+    expect(getMessages).toHaveBeenLastCalledWith(
+      "ec_1",
+      "mb_inbox",
+      "",
+      "is:unread",
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Unread only" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    const field = screen.getByRole<HTMLInputElement>("searchbox", {
+      name: "Search Inbox",
+    });
+    expect(field.value).toBe("");
+
+    fireEvent.change(field, { target: { value: "lunch" } });
+    fireEvent.submit(field.closest("form")!);
+    expect(window.location.search).toBe("?q=lunch+is%3Aunread");
+    await screen.findByText("Nothing here matches.");
+    expect(
+      screen.getByRole<HTMLInputElement>("searchbox", { name: "Search Inbox" })
+        .value,
+    ).toBe("lunch");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unread only" }));
+    expect(window.location.search).toBe("?q=lunch");
+  });
+
+  it("says when nothing is unread", async () => {
+    getMessages.mockResolvedValue({ messages: [] });
+    window.history.pushState({}, "", "/c/ec_1/mb_inbox?q=is%3Aunread");
+    mount(<Routed />);
+    await screen.findByText("No unread messages here.");
+  });
+
   // The end of the list is rows still to come, drawn before they are here, and reaching it
   // brings them; past the last there is nothing more to draw.
   it("reaches further back as the end of the list comes into view", async () => {

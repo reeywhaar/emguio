@@ -6,7 +6,22 @@ import { fieldLook } from "@app/components/TextField";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { go, paths } from "@app/islands/app/route";
 
-/** The folder's search field. Keyed by the query where it is drawn, so it starts with it. */
+const unreadWord = /(^|\s+)is:unread(?=\s|$)/gi;
+
+/** Whether a query asks for unread mail only, which the header's toggle shows. */
+export const unreadOnly = (q: string) => textOf(q) !== q.trim();
+
+/** A query without asking for unread mail only: what the search field shows of it. */
+export const textOf = (q: string) => q.replace(unreadWord, "").trim();
+
+/** The query for text, for unread mail only or not. */
+export const queryOf = (text: string, unread: boolean) =>
+  [text.trim(), unread ? "is:unread" : ""].filter(Boolean).join(" ");
+
+/**
+ * The folder's search field. Keyed by the query where it is drawn, so it starts with it. Unread
+ * only is the header's toggle and stays as it is.
+ */
 export function Search({
   config,
   mailbox,
@@ -16,7 +31,8 @@ export function Search({
   mailbox: Mailbox;
   q: string;
 }) {
-  const [draft, setDraft] = useState(q);
+  const text = textOf(q);
+  const [draft, setDraft] = useState(text);
   const field = useRef<HTMLInputElement>(null);
   const label = `Search ${labelOfMailbox(mailbox)}`;
 
@@ -34,10 +50,12 @@ export function Search({
   }, []);
 
   const look = (query: string) =>
-    go(paths.mail(config, mailbox.id, undefined, query.trim()));
+    go(
+      paths.mail(config, mailbox.id, undefined, queryOf(query, unreadOnly(q))),
+    );
   const clear = () => {
     setDraft("");
-    if (q) look("");
+    if (text) look("");
   };
 
   return (
@@ -59,7 +77,7 @@ export function Search({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key !== "Escape" || (!draft && !q)) return;
+            if (e.key !== "Escape" || (!draft && !text)) return;
             // The folder's own Escape, which leaves selecting, is not this one.
             e.preventDefault();
             e.stopPropagation();
@@ -67,7 +85,7 @@ export function Search({
           }}
           className={`${fieldLook} min-h-8 w-full py-1 pr-9 pointer-coarse:min-h-10 [&::-webkit-search-cancel-button]:appearance-none`}
         />
-        {draft || q ? (
+        {draft || text ? (
           <button
             type="button"
             aria-label="Clear the search"
