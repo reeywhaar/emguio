@@ -27,6 +27,7 @@ var all = []Migration{
 	jobs,
 	senderName,
 	drafts,
+	archiveMailbox,
 }
 
 // exec runs a statement block as one migration.

@@ -29,6 +29,8 @@ type Mirror interface {
 	Part(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, section []int) ([]byte, []byte, error)
 	// Kick says an email config has a job waiting.
 	Kick(configID string)
+	// CreateMailbox makes a folder on the server, and says its name and the folders listed then.
+	CreateMailbox(ctx context.Context, t store.SyncTarget, parent *store.Mailbox, name string) (string, []store.Listed, error)
 	// Origin is what a reply needs of the message it answers, or mirror.ErrGone.
 	Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Origin, error)
 	// Sent files a sent message in Sent and marks what it answers, in the background.
@@ -91,18 +93,22 @@ func (s *Server) listMailboxes(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]mailboxJSON, len(boxes))
 	for i, mb := range boxes {
-		out[i] = mailboxJSON{
-			ID:         mb.ID,
-			Name:       mb.Name,
-			Path:       mb.Path(),
-			SpecialUse: mb.SpecialUse,
-			Selectable: mb.Selectable,
-			Messages:   mb.Messages,
-			Unseen:     mb.Unseen,
-			UIDNext:    mb.UIDNext,
-		}
+		out[i] = mailboxOut(mb)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"mailboxes": out})
+}
+
+func mailboxOut(mb *store.Mailbox) mailboxJSON {
+	return mailboxJSON{
+		ID:         mb.ID,
+		Name:       mb.Name,
+		Path:       mb.Path(),
+		SpecialUse: mb.SpecialUse,
+		Selectable: mb.Selectable,
+		Messages:   mb.Messages,
+		Unseen:     mb.Unseen,
+		UIDNext:    mb.UIDNext,
+	}
 }
 
 type messageJSON struct {

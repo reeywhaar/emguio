@@ -131,7 +131,8 @@ An email config:
 {"id": "ec_01k6r2n8v4b7c9d3f5g1h6j8k2", "name": "Work", "email": "ann@example.com", "sender_name": "Ann Smith",
  "incoming": {"protocol": "imap", "host": "imap.example.com", "port": 993, "tls": "implicit", "username": "ann@example.com"},
  "outgoing": {"host": "smtp.example.com", "port": 465, "tls": "implicit", "username": ""},
- "created_at": 1790000000, "updated_at": 1790000000, "synced_at": 1790000300, "sync_error": "", "inbox_unseen": 3}
+ "created_at": 1790000000, "updated_at": 1790000000, "synced_at": 1790000300, "sync_error": "", "inbox_unseen": 3,
+ "archive_mailbox": null}
 ```
 
 | field | |
@@ -145,6 +146,7 @@ An email config:
 | `synced_at` | When its mail was last brought up to date; `null` before the first time. |
 | `sync_error` | Why the latest try did not, in a sentence; empty when it did. |
 | `inbox_unseen` | How many messages in INBOX are unread. |
+| `archive_mailbox` | The folder chosen to archive to; `null` for the one the server names. See below. |
 
 No answer ever carries a password.
 
@@ -194,6 +196,17 @@ DELETE /api/email-configs/{id}
 
 Removes the email config and everything emguio keeps of it: folders, jobs, drafts. Nothing on
 the mail server changes. `204`.
+
+```
+PUT /api/email-configs/{id}/archive
+```
+
+Chooses the folder archiving moves to: `{"mailbox": "mb_…"}`, one of the email config's own
+folders that holds messages, or `{"mailbox": ""}` for the one the server names — its Archive, or
+Gmail's All Mail. Only this changes: the config's connections go on as they are. A folder the
+server later drops goes back to the server's. Answers `200` with the email config. A folder that
+is not the config's answers `404 not_found`, a malformed id or one that only holds folders
+`400 invalid`.
 
 ```
 POST /api/email-configs/test
@@ -278,6 +291,20 @@ path.
 
 A folder's id lasts while the server keeps its name. One renamed on the server is a new folder
 with a new id.
+
+```
+POST /api/email-configs/{id}/mailboxes
+```
+
+Makes a folder on the mail server: `{"name": "Projects"}` at the top of the user's own folders,
+or with `"parent": "mb_…"` inside that one. At the top means under the server's personal
+namespace, `INBOX.` on servers that keep everything under INBOX. The folders are then listed
+again, and the answer is `201` with the new one, shaped as above, ready to move messages into.
+
+A name is one line of at most 200 characters, without the server's delimiter: nesting is what
+`parent` is for. An empty or wrong name answers `400 invalid`; one a sibling has already,
+compared without regard to case, `409 conflict`. A server that refuses answers
+`502 unreachable` with its reason.
 
 ```
 GET /api/email-configs/{id}/mailboxes/{mailbox}/messages

@@ -36,6 +36,8 @@ export type EmailConfig = {
   sync_error: string;
   /** How many messages in its INBOX are unread. */
   inbox_unseen: number;
+  /** The folder chosen to archive to; null for the one the server names. */
+  archive_mailbox: string | null;
 };
 
 /** A whole email config as the form sends it. An empty password is the one already saved. */

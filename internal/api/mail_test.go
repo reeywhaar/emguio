@@ -73,6 +73,24 @@ func (f *fakeMirror) Related(_ context.Context, _ store.SyncTarget, _ string, an
 	}
 	return f.related, nil
 }
+func (f *fakeMirror) CreateMailbox(ctx context.Context, t store.SyncTarget, parent *store.Mailbox, name string) (string, []store.Listed, error) {
+	if f.err != nil {
+		return "", nil, f.err
+	}
+	full := name
+	if parent != nil {
+		full = parent.Name + parent.Delimiter + name
+	}
+	known, err := f.store.MirrorMailboxes(ctx, t.ID)
+	if err != nil {
+		return "", nil, err
+	}
+	listed := []store.Listed{{Name: full, Delimiter: "/", Selectable: true}}
+	for _, mb := range known {
+		listed = append(listed, store.Listed{Name: mb.Name, Delimiter: mb.Delimiter, SpecialUse: mb.SpecialUse, Selectable: mb.Selectable})
+	}
+	return full, listed, nil
+}
 func (f *fakeMirror) WakeDrafts() { f.mu.Lock(); f.woken++; f.mu.Unlock() }
 func (f *fakeMirror) WriteDraft(_ context.Context, id string) error {
 	f.mu.Lock()

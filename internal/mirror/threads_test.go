@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"emguio/internal/connect/connecttest"
@@ -68,5 +69,33 @@ func TestTheOtherSideOfAConversationIsFoundByMessageID(t *testing.T) {
 	got, err := w.mirror.Headers(ctx, w.target, "Sent", found.UIDValidity, []uint32{3})
 	if err != nil || headers(got) != "Report" {
 		t.Errorf("headers = %q, %v", headers(got), err)
+	}
+}
+
+// A folder is made on the server at the top or inside another, and the folders listed after say
+// it is there.
+func TestAFolderIsMadeAndListed(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Work")
+	w.sync()
+	ctx := context.Background()
+	full, listed, err := w.mirror.CreateMailbox(ctx, w.target, nil, "Projects")
+	if err != nil || full != "Projects" {
+		t.Fatalf("top = %q, %v", full, err)
+	}
+	full, listed, err = w.mirror.CreateMailbox(ctx, w.target, w.mailbox("Work"), "Clients")
+	if err != nil || full != "Work/Clients" {
+		t.Fatalf("inside = %q, %v", full, err)
+	}
+	var names []string
+	for _, l := range listed {
+		names = append(names, l.Name)
+	}
+	slices.Sort(names)
+	if strings.Join(names, ", ") != "INBOX, Projects, Work, Work/Clients" {
+		t.Errorf("listed %v", names)
+	}
+	if _, _, err := w.mirror.CreateMailbox(ctx, w.target, nil, "Projects"); err == nil {
+		t.Error("made the same folder twice")
 	}
 }

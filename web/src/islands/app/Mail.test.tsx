@@ -28,6 +28,7 @@ const getMessages = vi.fn();
 const postEmailConfigsByIdSync = vi.fn();
 const getMessage = vi.fn();
 const getThreads = vi.fn();
+const postMailbox = vi.fn();
 const postJob = vi.fn();
 const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
@@ -44,6 +45,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     q: string,
   ) => getMessages(id, mailbox, cursor, q),
   postEmailConfigsByIdSync: (id: string) => postEmailConfigsByIdSync(id),
+  postEmailConfigsByIdMailboxes: (id: string, body: unknown) =>
+    postMailbox(id, body),
   getEmailConfigsByIdMailboxesByMailboxThreads: (
     id: string,
     mailbox: string,
@@ -95,6 +98,7 @@ const work: EmailConfig = {
   synced_at: Math.round(Date.now() / 1000) - 120,
   sync_error: "",
   inbox_unseen: 0,
+  archive_mailbox: null,
 };
 
 const box = (
@@ -256,6 +260,53 @@ describe("the mail view", () => {
     );
     expect(getThreads).toHaveBeenCalledWith("ec_1", "mb_inbox", ["m_1", "m_2"]);
     expect(rows[1]!.textContent).not.toContain("Conversation");
+  });
+
+  // A server that names no archive archives to the folder chosen for it.
+  it("archives to the folder chosen for it", async () => {
+    getEmailConfigs.mockResolvedValue([
+      { ...work, archive_mailbox: "mb_clients" },
+    ]);
+    opened("m_1");
+    mount(<Mail named="ec_1" mailbox="mb_inbox" message="m_1" />);
+    const reader = await screen.findByRole("article", { name: "Message" });
+    const archive = await within(reader).findByRole("button", {
+      name: "Archive",
+    });
+    await waitFor(() => expect(archive).toHaveProperty("disabled", false));
+    fireEvent.click(archive);
+    await waitFor(() =>
+      expect(postJob).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "move", target: "mb_clients" }),
+      ),
+    );
+  });
+
+  it("moves to a folder made for it", async () => {
+    postMailbox.mockResolvedValue(box("mb_projects", ["Projects"]));
+    opened("m_1");
+    mount(<Mail named="ec_1" mailbox="mb_inbox" message="m_1" />);
+    const reader = await screen.findByRole("article", { name: "Message" });
+    await within(reader).findByText("Hello.");
+    const picker =
+      await within(reader).findByLabelText<HTMLSelectElement>("Move to folder");
+    await waitFor(() => expect(picker.disabled).toBe(false));
+    fireEvent.change(picker, { target: { value: "new" } });
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Move to a new folder" });
+    fireEvent.change(dialog.getByLabelText("Name"), {
+      target: { value: " Projects " },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Make and move" }));
+    await waitFor(() =>
+      expect(postJob).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "move", target: "mb_projects" }),
+      ),
+    );
+    expect(postMailbox).toHaveBeenCalledWith("ec_1", {
+      name: "Projects",
+      parent: "",
+    });
   });
 
   it("lists folders in the server's tree, with what is unread and how many", async () => {

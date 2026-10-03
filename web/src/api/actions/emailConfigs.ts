@@ -38,6 +38,23 @@ export const deleteEmailConfigsById = (id: string) =>
 export const postEmailConfigsTest = (body: EmailConfigDraft) =>
   request<TestResult>("/api/email-configs/test", { method: "POST", body });
 
+/** Makes a folder on the mail server, at the top or inside parent, and answers with it. */
+export const postEmailConfigsByIdMailboxes = (
+  id: string,
+  body: { name: string; parent: string },
+) =>
+  request<Mailbox>(`/api/email-configs/${encodeURIComponent(id)}/mailboxes`, {
+    method: "POST",
+    body,
+  });
+
+/** Chooses the folder a config archives to; empty for the one the server names. */
+export const putEmailConfigsByIdArchive = (id: string, mailbox: string) =>
+  request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}/archive`, {
+    method: "PUT",
+    body: { mailbox },
+  });
+
 /** Looks up the servers of an address's domain, for a new config to start from. */
 export const postEmailConfigsAutoconfig = (email: string) =>
   request<Settings>("/api/email-configs/autoconfig", {

@@ -40,6 +40,19 @@ says is for it: Archive, or Gmail's All Mail where there is none, which on Gmail
 archiving is; Trash; Junk, and from Junk back to INBOX. An action whose folder the server does
 not have, or that the message is already in, is not offered. Any other folder is a move too.
 
+Archive is the one a user may choose instead, on the mail account's card in Settings: for a
+server that names none, or names one other than the one wanted. Saved with
+`PUT /api/email-configs/{id}/archive` and nothing else about the account, so its sessions go on as
+they are; a folder the server later drops goes back to the server's.
+
+The folder picker also makes a folder: New folder…, a name, and where it goes — at the top of the
+user's own folders, under the server's personal namespace (`INBOX.` on servers that keep
+everything under INBOX), or inside another. `POST /api/email-configs/{id}/mailboxes` sends
+`CREATE` on the session for changes, lists the folders again so the new one is kept like the
+rest, and answers with it; the move then goes to it as to any other. A name holding the
+server's delimiter is refused rather than read as nesting, which is what choosing where it goes
+is for, and so is one a sibling already has.
+
 Deleting moves to Trash. In Trash, or on a server with none, it is a delete job, for good, and
 asked about first.
 

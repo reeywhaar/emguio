@@ -15,7 +15,12 @@ import {
   StarMark,
   TrashMark,
 } from "@app/components/icons";
-import { Action, MovePicker, targets } from "@app/islands/app/Actions";
+import {
+  Action,
+  MovePicker,
+  targets,
+  useArchiveTo,
+} from "@app/islands/app/Actions";
 import { useAsk } from "@app/islands/app/ask";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 
@@ -55,7 +60,7 @@ export function Selection({
   );
   const chosen = rows.filter((m) => selected.has(m.id));
   const all = rows.length > 0 && chosen.length === rows.length;
-  const to = targets(boxes, mailbox);
+  const to = targets(boxes, mailbox, useArchiveTo(config));
   const none = chosen.length === 0;
 
   const job = (
@@ -229,6 +234,7 @@ export function Selection({
         <MailMark open={!unread && !none} />
       </Action>
       <MovePicker
+        config={config}
         boxes={boxes}
         current={mailbox}
         disabled={none}

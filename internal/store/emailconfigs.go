@@ -51,6 +51,9 @@ type EmailConfig struct {
 	SyncError string
 	// InboxUnseen is how many messages in its INBOX are unread, as last counted.
 	InboxUnseen uint32
+	// ArchiveMailbox is the folder its user chose to archive to, empty for the one the server
+	// names.
+	ArchiveMailbox string
 }
 
 // Login is a server and the password to sign in to it.
@@ -90,10 +93,11 @@ const emailConfigColumns = `id, user_id, name, email, sender_name,
   created_at, updated_at`
 
 // emailConfigSelect is what a read takes: every written column, the sync state the mirror
-// keeps beside them, and what is unread in INBOX.
+// keeps beside them, what is unread in INBOX, and the folder chosen to archive to.
 const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error,
   (SELECT COALESCE(SUM(unseen), 0) FROM mailboxes
-    WHERE mailboxes.email_config_id = email_configs.id AND special_use = 'inbox')`
+    WHERE mailboxes.email_config_id = email_configs.id AND special_use = 'inbox'),
+  COALESCE(archive_mailbox, '')`
 
 func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error) {
 	var (
@@ -106,7 +110,7 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email, &r.SenderName,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
-		&created, &updated, &synced, &r.SyncError, &r.InboxUnseen)
+		&created, &updated, &synced, &r.SyncError, &r.InboxUnseen, &r.ArchiveMailbox)
 	if err != nil {
 		return nil, err
 	}
@@ -514,4 +518,28 @@ func hasControl(s string) bool {
 		}
 	}
 	return false
+}
+
+// SetArchiveMailbox chooses the folder one of a user's email configs archives to; empty goes
+// back to the one the server names. Not an edit of the config: its sessions go on as they are.
+func (s *Store) SetArchiveMailbox(ctx context.Context, userID, configID, mailboxID string) error {
+	if _, err := s.emailConfigRow(ctx, userID, configID); err != nil {
+		return err
+	}
+	var chosen any
+	if mailboxID != "" {
+		mb, err := s.Mailbox(ctx, userID, configID, mailboxID)
+		if err != nil {
+			return err
+		}
+		if !mb.Selectable {
+			return Invalid("%s only holds other folders.", mb.Name)
+		}
+		chosen = mb.ID
+	}
+	if _, err := s.writer.ExecContext(ctx,
+		`UPDATE email_configs SET archive_mailbox = ? WHERE id = ? AND user_id = ?`, chosen, configID, userID); err != nil {
+		return fmt.Errorf("set archive mailbox: %w", err)
+	}
+	return nil
 }

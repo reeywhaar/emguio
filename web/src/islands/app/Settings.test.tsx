@@ -8,6 +8,7 @@ import { mount } from "@app/test/harness";
 const getEmailConfigs = vi.fn();
 const deleteEmailConfigsById = vi.fn();
 const postEmailConfigsByIdTest = vi.fn();
+const putArchive = vi.fn();
 
 vi.mock("@app/api/actions/auth", () => ({
   getAuthMe: async () => ({ id: "u_1", username: "misha", created_at: 0 }),
@@ -19,6 +20,30 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   deleteEmailConfigsById: (id: string) => deleteEmailConfigsById(id),
   postEmailConfigsByIdTest: (id: string, body: unknown) =>
     postEmailConfigsByIdTest(id, body),
+  getEmailConfigsByIdMailboxes: async () => [
+    {
+      id: "mb_inbox",
+      name: "INBOX",
+      path: ["INBOX"],
+      special_use: "inbox",
+      selectable: true,
+      messages: 1,
+      unseen: 0,
+      uid_next: 2,
+    },
+    {
+      id: "mb_old",
+      name: "Old",
+      path: ["Old"],
+      special_use: "",
+      selectable: true,
+      messages: 1,
+      unseen: 0,
+      uid_next: 2,
+    },
+  ],
+  putEmailConfigsByIdArchive: (id: string, mailbox: string) =>
+    putArchive(id, mailbox),
 }));
 
 const work: EmailConfig = {
@@ -39,6 +64,7 @@ const work: EmailConfig = {
   synced_at: null,
   sync_error: "",
   inbox_unseen: 0,
+  archive_mailbox: null,
 };
 
 beforeEach(() => {
@@ -47,6 +73,24 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe("settings", () => {
+  // A server that names no archive is one to choose for, and the choice is saved as it is made.
+  it("chooses where a config archives to", async () => {
+    putArchive.mockResolvedValue({ ...work, archive_mailbox: "mb_old" });
+    mount(<Settings editing={null} />);
+    const choice = await screen.findByRole<HTMLSelectElement>("combobox", {
+      name: "Archive to",
+    });
+    expect([...choice.options].map((o) => o.textContent)).toEqual([
+      "Automatic: the server names none",
+      "Old",
+    ]);
+    fireEvent.change(choice, { target: { value: "mb_old" } });
+    await waitFor(() =>
+      expect(putArchive).toHaveBeenCalledWith("ec_1", "mb_old"),
+    );
+    await waitFor(() => expect(choice.value).toBe("mb_old"));
+  });
+
   it("lists each email config with its servers", async () => {
     mount(<Settings editing={null} />);
     await screen.findByText("Work");

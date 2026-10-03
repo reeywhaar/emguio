@@ -1,11 +1,20 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   useQuery,
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
 
-import { getEmailConfigsByIdMailboxes } from "@app/api/actions/emailConfigs";
+import {
+  getEmailConfigs,
+  getEmailConfigsByIdMailboxes,
+} from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import type { JobDraft, Mailbox, Message, MessagePage } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
@@ -21,20 +30,28 @@ import {
 } from "@app/components/icons";
 import { useAsk } from "@app/islands/app/ask";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
+import { NewFolder } from "@app/islands/app/NewFolder";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
 
 /**
  * Where each action sends a message: the folders the server says are for archiving, for
- * deleted mail and for spam. Archive is Gmail's All Mail where there is no Archive. An action
- * whose folder is the one the message is in, or that the server does not have, is not offered.
+ * deleted mail and for spam. Archive is the folder the user chose, or else the server's Archive,
+ * or Gmail's All Mail where there is none. An action whose folder is the one the message is in,
+ * or that the server does not have, is not offered.
  */
-export function targets(boxes: Mailbox[], current: Mailbox) {
+export function targets(
+  boxes: Mailbox[],
+  current: Mailbox,
+  archiveTo: string | null = null,
+) {
   const find = (...uses: Mailbox["special_use"][]) =>
     uses
       .map((use) => boxes.find((mb) => mb.special_use === use && mb.selectable))
       .find((mb) => mb !== undefined);
-  const archive = find("archive", "all");
+  const archive =
+    boxes.find((mb) => mb.id === archiveTo && mb.selectable) ??
+    find("archive", "all");
   const trash = find("trash");
   const junk = find("junk");
   const inbox = find("inbox");
@@ -46,6 +63,15 @@ export function targets(boxes: Mailbox[], current: Mailbox) {
     spam: here(junk) ? undefined : junk,
     notSpam: here(junk) && !here(inbox) ? inbox : undefined,
   };
+}
+
+/** The folder a config archives to, as its user chose; null for the one the server names. */
+export function useArchiveTo(config: string): string | null {
+  const configs = useQuery({
+    queryKey: qk.emailConfigs,
+    queryFn: getEmailConfigs,
+  });
+  return configs.data?.find((c) => c.id === config)?.archive_mailbox ?? null;
 }
 
 /**
@@ -76,7 +102,7 @@ export function Actions({
     queryKey: qk.mailboxes(config),
     queryFn: () => getEmailConfigsByIdMailboxes(config),
   });
-  const to = targets(boxes.data ?? [], mailbox);
+  const to = targets(boxes.data ?? [], mailbox, useArchiveTo(config));
 
   // The list it is in is this folder's, or what it was searched for, and only that one: an id
   // names a message within its folder, so another folder's list can hold the same one for a
@@ -243,6 +269,7 @@ export function Actions({
           <MailMark open={seen} />
         </Action>
         <MovePicker
+          config={config}
           boxes={boxes.data ?? []}
           current={mailbox}
           disabled={busy}
@@ -281,48 +308,75 @@ export function Action({
   );
 }
 
+/** The picker's choice that makes a folder to move to. */
+const NEW = "new";
+
 /**
- * Every other folder a message can be moved to: the platform's own list, laid over a button
- * that looks like the others, so on a phone it is the system's picker and in a row of actions it
- * is one more icon.
+ * Every other folder a message can be moved to, or a new one: the platform's own list, laid over
+ * a button that looks like the others, so on a phone it is the system's picker and in a row of
+ * actions it is one more icon.
  */
 export function MovePicker({
+  config,
   boxes,
   current,
   disabled,
   onMove,
 }: {
+  config: string;
   boxes: Mailbox[];
   current: Mailbox;
   disabled: boolean;
   onMove: (to: Mailbox) => void;
 }) {
+  const [making, setMaking] = useState(false);
+  // Each opening starts the form afresh.
+  const [opened, setOpened] = useState(0);
   const others = boxes.filter((mb) => mb.selectable && mb.id !== current.id);
-  if (others.length === 0) return null;
   return (
-    <label
-      title="Move to folder"
-      className={`${buttonLook("quiet", "bar")} relative focus-within:border-brand ${disabled ? "opacity-50" : ""}`}
-    >
-      <FolderMark />
-      <select
-        aria-label="Move to folder"
-        className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default"
-        value=""
-        disabled={disabled}
-        onChange={(e) => {
-          const dest = others.find((mb) => mb.id === e.target.value);
-          if (dest) onMove(dest);
-        }}
+    <>
+      <label
+        title="Move to folder"
+        className={`${buttonLook("quiet", "bar")} relative focus-within:border-brand ${disabled ? "opacity-50" : ""}`}
       >
-        <option value="">Move to…</option>
-        {others.map((mb) => (
-          <option key={mb.id} value={mb.id}>
-            {" ".repeat(depthOf(mb))}
-            {labelOfMailbox(mb)}
-          </option>
-        ))}
-      </select>
-    </label>
+        <FolderMark />
+        <select
+          aria-label="Move to folder"
+          className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default"
+          value=""
+          disabled={disabled}
+          onChange={(e) => {
+            if (e.target.value === NEW) {
+              setOpened((n) => n + 1);
+              setMaking(true);
+              return;
+            }
+            const dest = others.find((mb) => mb.id === e.target.value);
+            if (dest) onMove(dest);
+          }}
+        >
+          <option value="">Move to…</option>
+          {others.map((mb) => (
+            <option key={mb.id} value={mb.id}>
+              {" ".repeat(depthOf(mb))}
+              {labelOfMailbox(mb)}
+            </option>
+          ))}
+          <option value={NEW}>New folder…</option>
+        </select>
+      </label>
+      {/* Beside the picker rather than in it: a click inside the dialog would be the label's. */}
+      <NewFolder
+        key={opened}
+        config={config}
+        boxes={boxes}
+        open={making}
+        onClose={() => setMaking(false)}
+        onMade={(made) => {
+          setMaking(false);
+          onMove(made);
+        }}
+      />
+    </>
   );
 }

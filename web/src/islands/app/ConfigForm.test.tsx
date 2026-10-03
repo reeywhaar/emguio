@@ -48,6 +48,7 @@ const saved: EmailConfig = {
   synced_at: null,
   sync_error: "",
   inbox_unseen: 0,
+  archive_mailbox: null,
 };
 
 beforeEach(() => {

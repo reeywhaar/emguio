@@ -54,6 +54,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
       synced_at: null,
       sync_error: "",
       inbox_unseen: 0,
+      archive_mailbox: null,
     },
   ],
   postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),

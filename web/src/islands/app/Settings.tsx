@@ -5,16 +5,20 @@ import { getAuthMe, postAuthLogout } from "@app/api/actions/auth";
 import {
   deleteEmailConfigsById,
   getEmailConfigs,
+  getEmailConfigsByIdMailboxes,
   postEmailConfigsByIdTest,
+  putEmailConfigsByIdArchive,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
 import type { EmailConfig } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
+import { Select } from "@app/components/Field";
 import { ConfigForm } from "@app/islands/app/ConfigForm";
 import { describe, draftOf, labelOf } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
+import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import { Results } from "@app/islands/app/Results";
 import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
@@ -133,6 +137,10 @@ function Card({ config }: { config: EmailConfig }) {
         <dd className="break-all">
           {config.outgoing ? describe(config.outgoing, "SMTP") : "None"}
         </dd>
+        <dt className="self-center text-muted">Archive to</dt>
+        <dd>
+          <ArchiveTo config={config} />
+        </dd>
       </dl>
       {test.data ? <Results result={test.data} /> : null}
       {test.error ? (
@@ -181,5 +189,61 @@ function Card({ config }: { config: EmailConfig }) {
         </div>
       )}
     </article>
+  );
+}
+
+/**
+ * Where archiving moves this config's mail: the folder the server names, or one chosen here, for
+ * a server that names none or names another. Saved as it is chosen. See docs/reading.md.
+ */
+function ArchiveTo({ config }: { config: EmailConfig }) {
+  const client = useQueryClient();
+  const boxes = useQuery({
+    queryKey: qk.mailboxes(config.id),
+    queryFn: () => getEmailConfigsByIdMailboxes(config.id),
+  });
+  const choose = useMutation({
+    mutationFn: (mailbox: string) =>
+      putEmailConfigsByIdArchive(config.id, mailbox),
+    onSuccess: (saved) =>
+      client.setQueryData<EmailConfig[]>(qk.emailConfigs, (old) =>
+        old?.map((c) => (c.id === saved.id ? saved : c)),
+      ),
+  });
+  if (!boxes.data) return <Dummy className="h-8 w-48" />;
+  const usable = boxes.data.filter((mb) => mb.selectable);
+  const server =
+    usable.find((mb) => mb.special_use === "archive") ??
+    usable.find((mb) => mb.special_use === "all");
+  return (
+    <div className="flex flex-col gap-1">
+      <Select
+        size="bar"
+        aria-label="Archive to"
+        className="max-w-full sm:max-w-72"
+        value={
+          choose.isPending ? choose.variables : (config.archive_mailbox ?? "")
+        }
+        disabled={choose.isPending}
+        onChange={(e) => choose.mutate(e.target.value)}
+      >
+        <option value="">
+          {server
+            ? `Automatic: ${labelOfMailbox(server)}`
+            : "Automatic: the server names none"}
+        </option>
+        {usable
+          .filter((mb) => mb.special_use !== "inbox")
+          .map((mb) => (
+            <option key={mb.id} value={mb.id}>
+              {" ".repeat(depthOf(mb))}
+              {labelOfMailbox(mb)}
+            </option>
+          ))}
+      </Select>
+      {choose.error ? (
+        <p className="text-sm text-accent">{messageOf(choose.error)}</p>
+      ) : null}
+    </div>
   );
 }

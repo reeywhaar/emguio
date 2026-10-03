@@ -541,3 +541,40 @@ func (f *fetcher) close() {
 	}
 	f.mailbox = ""
 }
+
+// CreateMailbox makes a folder on the server, inside parent or, for nil, at the top of the
+// user's own folders, and says its name and every folder as the server then lists them.
+func (m *Mirror) CreateMailbox(ctx context.Context, t store.SyncTarget, parent *store.Mailbox, name string) (string, []store.Listed, error) {
+	var (
+		full   string
+		listed []store.Listed
+	)
+	err := m.change(ctx, t, func(f *fetcher) error {
+		client := f.session.client
+		if parent != nil {
+			full = parent.Name + parent.Delimiter + name
+		} else {
+			full = personal(client) + name
+		}
+		if err := client.Create(full, nil).Wait(); err != nil {
+			return refused(err)
+		}
+		var err error
+		listed, err = f.session.list()
+		return err
+	})
+	return full, listed, err
+}
+
+// personal is where the user's own folders begin, said by NAMESPACE: "INBOX." on servers that
+// keep them under INBOX, empty on those that keep them at the top.
+func personal(c *imapclient.Client) string {
+	if caps := c.Caps(); !caps.Has(imap.CapNamespace) && !caps.Has(imap.CapIMAP4rev2) {
+		return ""
+	}
+	data, err := c.Namespace().Wait()
+	if err != nil || len(data.Personal) == 0 {
+		return ""
+	}
+	return data.Personal[0].Prefix
+}

@@ -36,6 +36,9 @@ type emailConfigJSON struct {
 	SyncError string `json:"sync_error"`
 	// InboxUnseen is how many messages in its INBOX are unread.
 	InboxUnseen uint32 `json:"inbox_unseen"`
+	// ArchiveMailbox is the folder its user chose to archive to, null for the one the server
+	// names.
+	ArchiveMailbox *string `json:"archive_mailbox"`
 }
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
@@ -50,6 +53,9 @@ func toJSON(c *store.EmailConfig) emailConfigJSON {
 		SyncedAt:    unixOrNil(c.SyncedAt),
 		SyncError:   c.SyncError,
 		InboxUnseen: c.InboxUnseen,
+	}
+	if c.ArchiveMailbox != "" {
+		out.ArchiveMailbox = &c.ArchiveMailbox
 	}
 	if c.Outgoing != nil {
 		o := serverJSON(*c.Outgoing)
@@ -233,4 +239,30 @@ func (s *Server) reconcile() {
 	if s.mirror != nil {
 		s.mirror.Reconcile()
 	}
+}
+
+type archiveBody struct {
+	// Mailbox is the folder to archive to; empty is the one the server names.
+	Mailbox string `json:"mailbox"`
+}
+
+// putArchive chooses the folder an email config archives to, for a server that names none, or
+// names one other than the one wanted. See docs/reading.md.
+func (s *Server) putArchive(w http.ResponseWriter, r *http.Request) {
+	var body archiveBody
+	if !decode(w, r, &body) {
+		return
+	}
+	u := userOf(r)
+	if err := s.store.SetArchiveMailbox(r.Context(), u.ID, r.PathValue("id"), body.Mailbox); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	c, err := s.store.EmailConfig(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.store.Notify(u.ID)
+	writeJSON(w, http.StatusOK, toJSON(c))
 }
