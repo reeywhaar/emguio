@@ -52,6 +52,23 @@ export type Check = { ok: boolean; message: string };
 
 export type TestResult = { incoming: Check; outgoing: Check | null };
 
+/** A mail domain's servers as looked up: a guess to check before saving. */
+export type Settings =
+  | {
+      found: false;
+      /** What was found signs in only with OAuth. */
+      oauth_only?: boolean;
+    }
+  | {
+      found: true;
+      /** Where they were found: the provider's own settings, Mozilla's list, or DNS. */
+      source: "provider" | "mozilla" | "dns";
+      /** The domain they are for: the address's, or the provider its MX names. */
+      domain: string;
+      incoming: Server & { protocol: Protocol };
+      outgoing: Server | null;
+    };
+
 /** What a mailbox is for, from the server's own flags or guessed from its name. */
 export type SpecialUse =
   | "inbox"

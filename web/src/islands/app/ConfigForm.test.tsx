@@ -12,6 +12,7 @@ const putEmailConfigsById = vi.fn();
 const postEmailConfigsTest = vi.fn();
 const postEmailConfigsByIdTest = vi.fn();
 const onClose = vi.fn();
+const lookup = vi.fn();
 
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
@@ -21,6 +22,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   postEmailConfigsTest: (body: unknown) => postEmailConfigsTest(body),
   postEmailConfigsByIdTest: (id: string, body: unknown) =>
     postEmailConfigsByIdTest(id, body),
+  postEmailConfigsAutoconfig: (email: string) => lookup(email),
 }));
 
 const saved: EmailConfig = {
@@ -61,6 +63,89 @@ const field = (label: string) =>
 
 const type = (label: string, value: string) =>
   fireEvent.change(field(label), { target: { value } });
+
+const found = {
+  found: true,
+  source: "mozilla",
+  domain: "example.com",
+  incoming: {
+    protocol: "imap",
+    host: "imap.example.com",
+    port: 993,
+    tls: "implicit",
+    username: "misha@example.com",
+  },
+  outgoing: {
+    host: "smtp.example.com",
+    port: 587,
+    tls: "starttls",
+    username: "misha@example.com",
+  },
+};
+
+describe("looking up a new config's servers", () => {
+  // Once the address is typed, and said where from: a guess to test.
+  it("fills in the servers found for the address", async () => {
+    lookup.mockResolvedValue(found);
+    mount(<ConfigForm open id={null} onClose={onClose} />);
+    type("Email address", "misha@example.com");
+    fireEvent.blur(field("Email address"));
+    await screen.findByText(
+      "Filled in from Mozilla's list of providers. Check them, then test the connection.",
+    );
+    expect(lookup).toHaveBeenCalledWith("misha@example.com");
+    const hosts = screen.getAllByLabelText<HTMLInputElement>("Host");
+    expect(hosts.map((h) => h.value)).toEqual([
+      "imap.example.com",
+      "smtp.example.com",
+    ]);
+    expect(screen.getAllByLabelText<HTMLInputElement>("Port")[1]!.value).toBe(
+      "587",
+    );
+    expect(
+      screen.getByRole<HTMLInputElement>("checkbox", {
+        name: "Sign in with the incoming username and password",
+      }).checked,
+    ).toBe(true);
+  });
+
+  it("leaves a server somebody typed alone, even while looking", async () => {
+    let answer!: (v: unknown) => void;
+    lookup.mockReturnValue(new Promise((r) => (answer = r)));
+    mount(<ConfigForm open id={null} onClose={onClose} />);
+    type("Email address", "misha@example.com");
+    fireEvent.blur(field("Email address"));
+    type("Host", "mine.example.com");
+    answer(found);
+    await waitFor(() => expect(lookup).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/Looking up/)).toBeNull());
+    expect(field("Host").value).toBe("mine.example.com");
+
+    type("Email address", "misha@example.org");
+    fireEvent.blur(field("Email address"));
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("says when the provider signs in only with OAuth", async () => {
+    lookup.mockResolvedValue({ found: false, oauth_only: true });
+    mount(<ConfigForm open id={null} onClose={onClose} />);
+    type("Email address", "misha@outlook.com");
+    fireEvent.blur(field("Email address"));
+    await screen.findByText(
+      "outlook.com signs in only with OAuth, and emguio signs in with a password alone.",
+    );
+  });
+
+  it("says when nothing was found", async () => {
+    lookup.mockResolvedValue({ found: false });
+    mount(<ConfigForm open id={null} onClose={onClose} />);
+    type("Email address", "misha@example.com");
+    fireEvent.blur(field("Email address"));
+    await screen.findByText(
+      "No settings found for example.com. Your provider's help pages have them.",
+    );
+  });
+});
 
 describe("adding an email config", () => {
   it("sends the whole draft and closes", async () => {

@@ -9,6 +9,7 @@ import type {
   MessagePage,
   Outgoing,
   ReadMessage,
+  Settings,
   TestResult,
 } from "@app/api/types";
 
@@ -36,6 +37,13 @@ export const deleteEmailConfigsById = (id: string) =>
 /** Signs in to a draft that is not saved yet. */
 export const postEmailConfigsTest = (body: EmailConfigDraft) =>
   request<TestResult>("/api/email-configs/test", { method: "POST", body });
+
+/** Looks up the servers of an address's domain, for a new config to start from. */
+export const postEmailConfigsAutoconfig = (email: string) =>
+  request<Settings>("/api/email-configs/autoconfig", {
+    method: "POST",
+    body: { email },
+  });
 
 /** Signs in to a draft of a saved config, with its saved passwords where the draft has none. */
 export const postEmailConfigsByIdTest = (id: string, body: EmailConfigDraft) =>

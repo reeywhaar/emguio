@@ -216,6 +216,32 @@ answers `400 invalid`. Tests are limited per user to a burst of ten, then one ev
 past that, `429 rate_limited`.
 
 ```
+POST /api/email-configs/autoconfig
+```
+
+Looks up the servers of an address's domain, for filling in a new email config: the body is
+`{"email": "…"}`. Where it looks, most trusted first: the provider's own settings at
+`https://autoconfig.{domain}/mail/config-v1.1.xml` or
+`https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml`; Mozilla's list of providers;
+the domain's DNS SRV records; and Mozilla's list for the provider the domain's MX names. Only
+IMAP and SMTP over TLS, signed in to with a password, count. The lookup takes at most eight
+seconds.
+
+```json
+{"found": true, "source": "mozilla", "domain": "example.com",
+ "incoming": {"protocol": "imap", "host": "imap.example.com", "port": 993, "tls": "implicit", "username": "ann@example.com"},
+ "outgoing": {"host": "smtp.example.com", "port": 465, "tls": "implicit", "username": "ann@example.com"}}
+```
+
+`source` is `provider`, `mozilla` or `dns`, and `domain` the domain the settings are for —
+another than the address's when they were found by its MX. `outgoing` is `null` when no
+outgoing server was found. Nothing found is `200 {"found": false}`, with `"oauth_only": true`
+when what was found signs in only with OAuth, which emguio does not do. What is not an address
+answers `400 invalid`. Lookups are limited per user like tests: a burst of ten, then one every
+six seconds; past that, `429 rate_limited`. Nothing is saved, and what is found is a guess to
+check, with a test, before saving.
+
+```
 POST /api/email-configs/{id}/sync
 ```
 

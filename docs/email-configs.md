@@ -85,6 +85,30 @@ other.
 A test dials whatever it is given, so it is limited per user: a burst of ten, then one every six
 seconds. Without that, a loop of tests would make an instance somebody's port scanner.
 
+## Settings are looked up from the address, to be checked
+
+Adding a mail account, the form looks up its servers once the address is typed, and fills in the
+server fields it finds while they are empty, or still as it last filled them: `POST
+/api/email-configs/autoconfig`. Four places are asked at once, and the most trusted that knows
+wins:
+
+1. The provider's own settings, `https://autoconfig.{domain}/mail/config-v1.1.xml` or
+   `https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml`.
+2. Mozilla's list of providers, the one Thunderbird uses: `autoconfig.thunderbird.net`, by domain.
+3. The domain's DNS: `_imaps._tcp` and `_imap._tcp`, `_submissions._tcp` and `_submission._tcp`
+   (RFC 6186 and 8314).
+4. Mozilla's list for the provider the domain's MX names — a domain of one's own whose mail
+   Google or Microsoft handles, say.
+
+Only IMAP and SMTP over TLS, signed in to with a password, count. A provider whose servers take
+only OAuth — Microsoft's — is said to, since emguio signs in with a password alone. Settings files are read over https only, a redirect included, through the same
+screened dialer as everything else, since `autoconfig.{domain}` is an address a user typed. Mozilla
+is told the domain and nothing more. emguio does not try guessing names like `imap.{domain}` by
+connecting to them: a guess is the user's to make, with Test connection.
+
+What is found is a guess, said with where it came from, and checked by testing before saving. The
+lookup is limited per user like a test, and bounded at eight seconds.
+
 ## What a server says is shown, made safe
 
 A refusal carries the server's own words — "Invalid credentials", a link to the provider's help

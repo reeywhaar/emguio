@@ -1,9 +1,10 @@
-import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   getEmailConfigs,
   postEmailConfigs,
+  postEmailConfigsAutoconfig,
   postEmailConfigsByIdTest,
   postEmailConfigsTest,
   putEmailConfigsById,
@@ -15,6 +16,7 @@ import type {
   EmailConfigDraft,
   Protocol,
   Security,
+  Settings,
 } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
@@ -194,6 +196,49 @@ function Form({
         : postEmailConfigsTest(bodyOf(draft)),
   });
 
+  // A new config's servers, looked up from its address, fill the server fields while nobody has
+  // typed in them: empty, or still as the last lookup left them.
+  const latest = useRef(draft);
+  latest.current = draft;
+  const filled = useRef("");
+  const [asked, setAsked] = useState("");
+  const [note, setNote] = useState("");
+  const lookup = useMutation({
+    mutationFn: (email: string) => postEmailConfigsAutoconfig(email),
+    onSuccess: (found, email) => {
+      const domain = domainOf(email);
+      if (!found.found) {
+        setNote(
+          found.oauth_only
+            ? `${domain} signs in only with OAuth, and emguio signs in with a password alone.`
+            : `No settings found for ${domain}. Your provider's help pages have them.`,
+        );
+        return;
+      }
+      const host = latest.current.incoming.host;
+      if (host !== "" && host !== filled.current) {
+        setNote("");
+        return;
+      }
+      filled.current = found.incoming.host;
+      setOwnUsername(found.incoming.username !== email);
+      change((d) => withSettings(d, found));
+      setNote(`${whence(found, domain)} Check them, then test the connection.`);
+    },
+    onError: (err) => setNote(messageOf(err)),
+  });
+  const lookUp = () => {
+    const email = draft.email.trim();
+    const domain = domainOf(email);
+    if (editing || !domain.includes(".") || domain === asked) return;
+    if (draft.incoming.host !== "" && draft.incoming.host !== filled.current) {
+      return;
+    }
+    setAsked(domain);
+    setNote("");
+    lookup.mutate(email);
+  };
+
   // Any change makes the last test's answer about something else.
   const change = (next: (d: Draft) => Draft) => {
     test.reset();
@@ -281,6 +326,7 @@ function Form({
                     : { ...d.incoming, username: email },
                 }));
               }}
+              onBlur={lookUp}
               data-autofocus={editing ? undefined : true}
             />
           </Field>
@@ -295,6 +341,12 @@ function Form({
             />
           </Field>
         </div>
+
+        {lookup.isPending || note ? (
+          <p aria-live="polite" className="-mt-2 text-sm text-muted">
+            {lookup.isPending ? `Looking up the settings for ${asked}…` : note}
+          </p>
+        ) : null}
 
         <Box legend="Incoming server">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -473,4 +525,48 @@ function Box({ legend, children }: { legend: string; children: ReactNode }) {
       {children}
     </fieldset>
   );
+}
+
+const domainOf = (email: string) =>
+  email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+
+/** A draft with the servers a lookup found. */
+function withSettings(d: Draft, s: Extract<Settings, { found: true }>): Draft {
+  const o = s.outgoing;
+  const shared = o !== null && o.username === s.incoming.username;
+  return {
+    ...d,
+    incoming: {
+      ...d.incoming,
+      host: s.incoming.host,
+      port: String(s.incoming.port),
+      tls: s.incoming.tls,
+      username: s.incoming.username,
+    },
+    outgoing: o
+      ? {
+          ...d.outgoing,
+          on: true,
+          host: o.host,
+          port: String(o.port),
+          tls: o.tls,
+          shared,
+          username: shared ? "" : o.username,
+        }
+      : d.outgoing,
+  };
+}
+
+/** Where a lookup found what it filled in. */
+function whence(s: Extract<Settings, { found: true }>, domain: string): string {
+  switch (s.source) {
+    case "provider":
+      return `Filled in from ${domain}'s own settings.`;
+    case "dns":
+      return `Filled in from ${domain}'s DNS.`;
+    default:
+      return s.domain === domain
+        ? "Filled in from Mozilla's list of providers."
+        : `Filled in from Mozilla's list, for ${s.domain}, which handles ${domain}'s mail.`;
+  }
 }

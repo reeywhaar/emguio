@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"emguio/internal/app"
+	"emguio/internal/autoconfig"
 	"emguio/internal/config"
 	"emguio/internal/connect"
 	"emguio/internal/session"
@@ -42,6 +43,8 @@ type Server struct {
 	connector *connect.Connector
 	// mirror is nil in tests that do not need mail to arrive.
 	mirror Mirror
+	// finder looks up a mail domain's settings; a field so a test can stand in for the web.
+	finder *autoconfig.Finder
 	// imageClient fetches what the image proxy relays, and proxyKey signs what it may fetch.
 	imageClient *http.Client
 	proxyKey    []byte
@@ -49,6 +52,7 @@ type Server struct {
 	loginAll  *limiter
 	loginUser *limiter
 	tests     *limiter
+	lookups   *limiter
 	images    *limiter
 
 	// writeDeadline is how long a request that changes something may run. A field so a test
@@ -93,12 +97,14 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		loginAll:  newLimiter(30, 2*time.Second),
 		loginUser: newLimiter(5, 20*time.Second),
 		tests:     newLimiter(10, 6*time.Second),
+		lookups:   newLimiter(10, 6*time.Second),
 		images:    newLimiter(200, 100*time.Millisecond),
 
 		writeDeadline: WriteDeadline,
 	}
 
 	s.imageClient = imageClient(s.connector)
+	s.finder = finderOf(s.connector)
 
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 
@@ -119,6 +125,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("GET /api/email-configs", s.requireSession(s.listEmailConfigs))
 	s.handle("POST /api/email-configs", s.requireSession(s.createEmailConfig))
 	s.handle("POST /api/email-configs/test", s.requireSession(s.testEmailConfig))
+	s.handle("POST /api/email-configs/autoconfig", s.requireSession(s.lookUpSettings))
 	s.handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
 	s.handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
 	s.handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
