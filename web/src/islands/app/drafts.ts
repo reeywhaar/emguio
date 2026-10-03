@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import type { Address, Part, ReadMessage } from "@app/api/types";
+import type { Address, Kept, Part, ReadMessage } from "@app/api/types";
 import { full } from "@app/format";
 
 /**
@@ -18,10 +18,14 @@ export type Draft = {
   /** Files from this device. */
   files: File[];
   /** The message it answers. */
-  reply: { mailbox: string; message: string } | null;
-  /** The message it passes on, and the parts of it that go with it. */
-  forward: { mailbox: string; message: string; parts: Part[] } | null;
+  reply: Ref | null;
+  /** A message some of whose parts go with it: the one it forwards, or the draft it was saved as. */
+  carry: (Ref & { parts: Part[] }) | null;
+  /** The draft it was last saved as. */
+  draft: Ref | null;
 };
+
+type Ref = { mailbox: string; message: string };
 
 /** A draft opened, numbered so that another opening is another window rather than this one. */
 export type Writing = { id: number; draft: Draft };
@@ -58,7 +62,8 @@ export const blank = (config: string): Draft => ({
   text: "",
   files: [],
   reply: null,
-  forward: null,
+  carry: null,
+  draft: null,
 });
 
 /** An address as typed into a field: quoted where its name holds what would split it. */
@@ -142,7 +147,7 @@ export function forwardOf(m: ReadMessage, config: string): Draft {
     ...blank(config),
     subject: prefixed("Fwd:", /^(fwd?|fw)\s*:/i, m.subject),
     text: `\n\n${head.join("\n")}\n\n${textOf(m)}\n`,
-    forward: {
+    carry: {
       mailbox: m.mailbox,
       message: m.id,
       parts: m.parts.filter((p) => p.listed),
@@ -155,4 +160,68 @@ export function others(m: ReadMessage, self: string): boolean {
   const me = { name: "", email: self };
   const sender = m.reply_to.length > 0 ? m.reply_to : [m.from];
   return only([...m.to, ...m.cc], [me, ...sender]).length > 0;
+}
+
+/** A draft opened again from Drafts, to be written on and saved in place of itself. */
+export function resumed(m: ReadMessage, config: string): Draft {
+  const at = { mailbox: m.mailbox, message: m.id };
+  return {
+    ...blank(config),
+    to: m.to.map(typed).join(", "),
+    cc: m.cc.map(typed).join(", "),
+    bcc: m.bcc.map(typed).join(", "),
+    subject: m.subject,
+    text: m.text || m.html_text,
+    carry: { ...at, parts: m.parts.filter((p) => p.listed) },
+    draft: at,
+  };
+}
+
+/** Whether a has anything b does not, or b anything a does not. */
+export function differs(a: Draft, b: Draft): boolean {
+  const sections = (d: Draft) =>
+    d.carry ? [d.carry.message, ...d.carry.parts.map((p) => p.section)] : [];
+  return (
+    a.to !== b.to ||
+    a.cc !== b.cc ||
+    a.bcc !== b.bcc ||
+    a.subject !== b.subject ||
+    a.text !== b.text ||
+    a.files.length !== b.files.length ||
+    a.files.some((f, i) => f !== b.files[i]) ||
+    sections(a).join(" ") !== sections(b).join(" ")
+  );
+}
+
+/**
+ * now, once saved was kept as at: its files and what it carried are the new draft's parts from
+ * then on. What was removed while it was being kept stays removed, and files added meanwhile
+ * wait for the next save.
+ */
+export function settled(now: Draft, saved: Draft, at: Kept): Draft {
+  const carried = saved.carry?.parts ?? [];
+  const parts: Part[] = [];
+  carried.forEach((p, i) => {
+    if (now.carry?.parts.some((q) => q.section === p.section)) {
+      parts.push({ ...p, section: at.parts[i] ?? p.section });
+    }
+  });
+  saved.files.forEach((f, i) => {
+    if (now.files.includes(f)) {
+      parts.push({
+        section: at.parts[carried.length + i] ?? "",
+        name: f.name,
+        type: f.type || "application/octet-stream",
+        size: f.size,
+        listed: true,
+      });
+    }
+  });
+  const ref = { mailbox: at.mailbox, message: at.message };
+  return {
+    ...now,
+    files: now.files.filter((f) => !saved.files.includes(f)),
+    carry: { ...ref, parts },
+    draft: ref,
+  };
 }

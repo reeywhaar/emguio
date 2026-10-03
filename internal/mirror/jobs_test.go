@@ -202,7 +202,7 @@ func TestASentMessageIsFiledOnceAndItsOriginalAnswered(t *testing.T) {
 
 	raw := []byte("From: misha@example.com\r\nTo: alice@example.com\r\nSubject: Re: Question\r\nMessage-ID: <reply@example.com>\r\n\r\nYes.\r\n")
 	w.mirror.Sent(w.target, Sending{Sent: sent, ID: "<reply@example.com>", Raw: raw,
-		Answers: &Answering{Mailbox: inbox, UIDValidity: inbox.UIDValidity, UID: 1}})
+		Answers: &Located{Mailbox: inbox, UIDValidity: inbox.UIDValidity, UID: 1}})
 	filed := func() []store.Header {
 		listing, err := w.mirror.List(ctx, w.target, "Sent", 0, 0, 10, "")
 		if err != nil {
@@ -217,4 +217,50 @@ func TestASentMessageIsFiledOnceAndItsOriginalAnswered(t *testing.T) {
 	if err := w.mirror.file(ctx, w.target, "Sent", "<reply@example.com>", raw); err != nil || len(filed()) != 1 {
 		t.Errorf("filed again: %v, %d in Sent", err, len(filed()))
 	}
+}
+
+// A draft is kept read and marked a draft, each save in place of the last, says what it answers
+// when opened again, and is deleted once sent.
+func TestADraftReplacesTheLastAndGoesOnceSent(t *testing.T) {
+	was := fileAfter
+	fileAfter = 0
+	defer func() { fileAfter = was }()
+	w := newWorld(t, "hunter2")
+	w.create("Drafts")
+	w.sync()
+	drafts := w.mailbox("Drafts")
+	ctx := context.Background()
+	kept := func() []store.Header {
+		listing, err := w.mirror.List(ctx, w.target, "Drafts", 0, 0, 10, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return listing.Headers
+	}
+
+	first := []byte("From: misha@example.com\r\nSubject: Half\r\nIn-Reply-To: <q@example.com>\r\nReferences: <root@example.com> <q@example.com>\r\n\r\nHalf a thought\r\n")
+	uidValidity, uid, err := w.mirror.SaveDraft(ctx, w.target, "Drafts", first, nil)
+	if err != nil || uidValidity != drafts.UIDValidity || uid == 0 {
+		t.Fatalf("first = %d %d %v", uidValidity, uid, err)
+	}
+	second := []byte("From: misha@example.com\r\nSubject: Whole\r\n\r\nA whole thought\r\n")
+	_, again, err := w.mirror.SaveDraft(ctx, w.target, "Drafts", second, &Located{Mailbox: drafts, UIDValidity: uidValidity, UID: uid})
+	if err != nil || again == uid {
+		t.Fatalf("second = %d %v", again, err)
+	}
+	if h := kept(); len(h) != 1 || h[0].Subject != "Whole" || !h[0].Flags.Seen {
+		t.Fatalf("Drafts holds %+v", h)
+	}
+
+	origin, err := w.mirror.Origin(ctx, w.target, "Drafts", uidValidity, again)
+	if err != nil || origin.InReplyTo != "" {
+		t.Errorf("origin of the second = %+v, %v", origin, err)
+	}
+	_, third, _ := w.mirror.SaveDraft(ctx, w.target, "Drafts", first, &Located{Mailbox: drafts, UIDValidity: uidValidity, UID: again})
+	if origin, err := w.mirror.Origin(ctx, w.target, "Drafts", uidValidity, third); err != nil || origin.InReplyTo != "<q@example.com>" {
+		t.Errorf("origin of the third = %+v, %v", origin, err)
+	}
+
+	w.mirror.Sent(w.target, Sending{ID: "<x@example.com>", Draft: &Located{Mailbox: drafts, UIDValidity: uidValidity, UID: third}})
+	eventually(t, func() bool { return len(kept()) == 0 })
 }

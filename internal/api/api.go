@@ -103,6 +103,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 	s.mux.Handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
 	s.mux.Handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
 	s.mux.Handle("POST /api/email-configs/{id}/send", s.requireSession(s.sendMessage))
+	s.mux.Handle("POST /api/email-configs/{id}/drafts", s.requireSession(s.saveDraft))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
 

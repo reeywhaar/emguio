@@ -1,12 +1,20 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import {
   getEmailConfigs,
+  postEmailConfigsByIdDrafts,
   postEmailConfigsByIdSend,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
-import { messageOf } from "@app/api/transport";
+import { ApiError, messageOf } from "@app/api/transport";
 import type { EmailConfig, Outgoing } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
@@ -15,7 +23,10 @@ import { Field } from "@app/components/Field";
 import { fieldLook, TextField } from "@app/components/TextField";
 import { Cross } from "@app/components/icons";
 import { size } from "@app/format";
+import { useAsk } from "@app/islands/app/ask";
 import {
+  differs,
+  settled,
   stopWriting,
   typed,
   useWriting,
@@ -28,6 +39,9 @@ import { paths } from "@app/islands/app/route";
 /** What most mail servers take, attachments and all; the server says the same. */
 const LIMIT = 25 * 1024 * 1024;
 
+/** How long writing pauses before what is written is kept in Drafts. */
+const AUTOSAVE = 2000;
+
 /** The compose window, over whatever is open, while something is being written. */
 export function Compose() {
   const writing = useWriting();
@@ -38,8 +52,13 @@ export function Compose() {
   return <Writer start={last.draft} open={writing !== null} key={last.id} />;
 }
 
+/**
+ * The window a message is written in. What is written is kept in Drafts as it is written, each
+ * save in place of the last; see docs/sending.md.
+ */
 function Writer({ start, open }: { start: Draft; open: boolean }) {
   const confirm = useConfirm();
+  const ask = useAsk(start.config);
   const form = useId();
   const [draft, setDraft] = useState(start);
   const [copies, setCopies] = useState(Boolean(start.cc || start.bcc));
@@ -50,47 +69,147 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
   });
   const config = configs.data?.find((c) => c.id === draft.config);
 
+  // What is written, for saves that finish after the render they started in.
+  const latest = useRef(draft);
+  latest.current = draft;
+  // As Drafts has it, or as it was opened while nothing has been kept.
+  const kept = useRef(start);
+  // One at a time, so each replaces the one before it.
+  const saves = useRef(Promise.resolve(true));
+  // False once the account turns out to have nowhere to keep drafts.
+  const keeps = useRef(true);
+  // Set while sending or discarding, when another save would be one too many.
+  const stopped = useRef(false);
+  const closing = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [unsaved, setUnsaved] = useState("");
+
+  /** Keeps what is written, once any save on its way is done; says whether all of it is kept. */
+  const keep = useCallback(() => {
+    saves.current = saves.current.then(async () => {
+      const now = latest.current;
+      if (stopped.current || !differs(now, kept.current)) return true;
+      if (!keeps.current) return false;
+      setSaving(true);
+      try {
+        const at = await postEmailConfigsByIdDrafts(
+          now.config,
+          await outgoing(now),
+        );
+        kept.current = settled(now, now, at);
+        latest.current = settled(latest.current, now, at);
+        setDraft((d) => settled(d, now, at));
+        setUnsaved("");
+        return true;
+      } catch (err) {
+        if (err instanceof ApiError && err.code === "conflict") {
+          keeps.current = false;
+        } else {
+          setUnsaved(messageOf(err));
+        }
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    });
+    return saves.current;
+  }, []);
+
+  const changed = differs(draft, kept.current);
+  useEffect(() => {
+    if (!open || !changed) return;
+    const timer = setTimeout(keep, AUTOSAVE);
+    return () => clearTimeout(timer);
+  }, [open, changed, draft, keep]);
+
   const send = useMutation({
-    mutationFn: async (d: Draft) =>
-      postEmailConfigsByIdSend(d.config, await outgoing(d)),
+    mutationFn: async () => {
+      stopped.current = true;
+      await saves.current;
+      const d = latest.current;
+      return postEmailConfigsByIdSend(d.config, await outgoing(d));
+    },
     onSuccess: () => {
       stopWriting();
       say("Sent.");
     },
+    onError: () => {
+      stopped.current = false;
+    },
   });
 
-  const changed =
-    draft.to !== start.to ||
-    draft.cc !== start.cc ||
-    draft.bcc !== start.bcc ||
-    draft.subject !== start.subject ||
-    draft.text !== start.text ||
-    draft.files.length > 0;
-
   useEffect(() => {
-    if (!open || !changed || send.isSuccess) return;
+    if (!open || !(changed || saving) || send.isSuccess) return;
     const stay = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", stay);
     return () => window.removeEventListener("beforeunload", stay);
-  }, [open, changed, send.isSuccess]);
+  }, [open, changed, saving, send.isSuccess]);
 
   const text = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (start.reply) text.current?.setSelectionRange(0, 0);
   }, [start.reply]);
 
+  // Closing keeps what is written, and asks only when it could not be.
   const close = async () => {
-    if (send.isPending) return;
+    if (send.isPending || closing.current) return;
+    closing.current = true;
+    try {
+      if (await keep()) {
+        stopWriting();
+        if (kept.current !== start) say("Saved to Drafts.");
+        return;
+      }
+      const has = kept.current.draft !== null;
+      if (
+        await confirm({
+          title: has ? "Close without saving?" : "Discard this message?",
+          message: has
+            ? "What was written since it was last saved is lost."
+            : "What is written here is not kept anywhere.",
+          confirm: has ? "Close" : "Discard",
+          danger: true,
+        })
+      ) {
+        stopWriting();
+      }
+    } finally {
+      closing.current = false;
+    }
+  };
+
+  const discard = async () => {
+    if (send.isPending || closing.current) return;
+    const has = kept.current.draft !== null || saving;
     if (
-      changed &&
+      (has || differs(latest.current, start)) &&
       !(await confirm({
-        title: "Discard this message?",
-        message: "What is written here is not kept anywhere.",
+        title: has ? "Discard this draft?" : "Discard this message?",
+        message: has
+          ? "It is deleted from Drafts."
+          : "What is written here is not kept anywhere.",
         confirm: "Discard",
         danger: true,
       }))
     ) {
       return;
+    }
+    stopped.current = true;
+    await saves.current;
+    const d = kept.current.draft;
+    if (d) {
+      ask([
+        {
+          email_config: start.config,
+          mailbox: d.mailbox,
+          message: d.message,
+          kind: "delete",
+          value: false,
+          target: "",
+          seen: true,
+          label: kept.current.subject || "(no subject)",
+        },
+      ]);
     }
     stopWriting();
   };
@@ -99,7 +218,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     e?.preventDefault();
     const total =
       draft.files.reduce((n, f) => n + f.size, 0) +
-      (draft.forward?.parts ?? []).reduce((n, p) => n + p.size, 0);
+      (draft.carry?.parts ?? []).reduce((n, p) => n + p.size, 0);
     if (total > LIMIT) {
       setProblem(
         "Attachments come to more than 25 MB, which most mail servers will not take.",
@@ -107,15 +226,17 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
       return;
     }
     setProblem("");
-    send.mutate(draft);
+    send.mutate();
   };
 
   const edit = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
-  const title = draft.reply
-    ? "Reply"
-    : draft.forward
-      ? "Forward"
-      : "New message";
+  const title = start.draft
+    ? "Draft"
+    : start.reply
+      ? "Reply"
+      : start.carry
+        ? "Forward"
+        : "New message";
 
   if (config && !config.outgoing) {
     return (
@@ -134,7 +255,10 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     );
   }
 
-  const error = problem || (send.error ? messageOf(send.error) : "");
+  const error =
+    problem ||
+    (send.error ? messageOf(send.error) : "") ||
+    (unsaved ? `Not saved. ${unsaved}` : "");
   return (
     <Dialog
       open={open}
@@ -148,7 +272,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
               {error}
             </p>
           ) : null}
-          <label className="mr-auto">
+          <label>
             <span className="sr-only">Attach files</span>
             <input
               type="file"
@@ -167,7 +291,10 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
               Attach files
             </span>
           </label>
-          <Button onClick={close} disabled={send.isPending}>
+          <span aria-live="polite" className="mr-auto text-xs text-faint">
+            {saving ? "Saving…" : kept.current.draft && !changed ? "Saved" : ""}
+          </span>
+          <Button onClick={discard} disabled={send.isPending}>
             Discard
           </Button>
           <Button
@@ -197,7 +324,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
               spellCheck={false}
               value={draft.to}
               onChange={(e) => edit({ to: e.target.value })}
-              data-autofocus={draft.reply ? undefined : true}
+              data-autofocus={start.reply || start.draft ? undefined : true}
             />
           </Field>
           {copies ? null : (
@@ -237,7 +364,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
             rows={14}
             value={draft.text}
             onChange={(e) => edit({ text: e.target.value })}
-            data-autofocus={draft.reply ? true : undefined}
+            data-autofocus={start.reply || start.draft ? true : undefined}
             className={`${fieldLook} min-h-48 resize-y py-2 leading-relaxed`}
           />
         </label>
@@ -246,9 +373,9 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
           onForgetPart={(section) =>
             setDraft((d) => ({
               ...d,
-              forward: d.forward && {
-                ...d.forward,
-                parts: d.forward.parts.filter((p) => p.section !== section),
+              carry: d.carry && {
+                ...d.carry,
+                parts: d.carry.parts.filter((p) => p.section !== section),
               },
             }))
           }
@@ -273,7 +400,7 @@ function From({ config }: { config: EmailConfig }) {
   );
 }
 
-/** What goes with it: the forwarded message's attachments, and files from this device. */
+/** What goes with it: what it carries from another message, and files from this device. */
 function Attached({
   draft,
   onForgetPart,
@@ -283,7 +410,7 @@ function Attached({
   onForgetPart: (section: string) => void;
   onForgetFile: (index: number) => void;
 }) {
-  const parts = draft.forward?.parts ?? [];
+  const parts = draft.carry?.parts ?? [];
   if (parts.length === 0 && draft.files.length === 0) return null;
   return (
     <ul aria-label="Attachments" className="flex flex-wrap gap-2">
@@ -332,7 +459,7 @@ function Chip({
   );
 }
 
-/** A draft as the server is asked to send it, files read into base64. */
+/** A draft as the server is asked to send or keep it, files read into base64. */
 async function outgoing(d: Draft): Promise<Outgoing> {
   return {
     to: d.to,
@@ -348,11 +475,12 @@ async function outgoing(d: Draft): Promise<Outgoing> {
       })),
     ),
     reply: d.reply,
-    forward: d.forward && {
-      mailbox: d.forward.mailbox,
-      message: d.forward.message,
-      parts: d.forward.parts.map((p) => p.section),
+    carry: d.carry && {
+      mailbox: d.carry.mailbox,
+      message: d.carry.message,
+      parts: d.carry.parts.map((p) => p.section),
     },
+    draft: d.draft,
   };
 }
 

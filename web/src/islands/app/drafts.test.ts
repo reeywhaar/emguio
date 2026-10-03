@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import type { ReadMessage } from "@app/api/types";
 import { full } from "@app/format";
-import { forwardOf, others, replyTo, typed } from "@app/islands/app/drafts";
+import {
+  differs,
+  forwardOf,
+  others,
+  replyTo,
+  resumed,
+  settled,
+  typed,
+} from "@app/islands/app/drafts";
 
 const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   id: "7-1",
@@ -17,6 +25,7 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
     { name: "Alice", email: "alice@example.com" },
   ],
   reply_to: [],
+  bcc: [],
   subject: "Lunch",
   date: 1_790_000_000,
   sent: null,
@@ -111,7 +120,7 @@ it("a forward carries the text and the attachments, not the pictures the HTML sh
     "Subject: Lunch\nTo: Misha <Misha@Example.com>, Robin <robin@example.com>",
   );
   expect(d.text).toContain("\n\nPizza?\n\nOr sushi.\n");
-  expect(d.forward?.parts.map((p) => p.name)).toEqual(["menu.pdf"]);
+  expect(d.carry?.parts.map((p) => p.name)).toEqual(["menu.pdf"]);
 });
 
 it("an address is quoted where its name would split it", () => {
@@ -119,4 +128,64 @@ it("an address is quoted where its name would split it", () => {
     '"Kim, K." <kim@example.com>',
   );
   expect(typed({ name: "", email: "kim@example.com" })).toBe("kim@example.com");
+});
+
+// Once kept, what it carried and the files it sent are the draft's own parts, under the sections
+// the server gave them. What was removed while it was being kept stays removed; a file added
+// meanwhile waits for the next save.
+it("a draft kept carries its attachments from itself from then on", () => {
+  const notes = new File(["notes"], "notes.txt", { type: "text/plain" });
+  const late = new File(["late"], "late.txt");
+  const saved = {
+    ...forwardOf(read(), "ec_1"),
+    files: [notes],
+  };
+  const now = {
+    ...saved,
+    text: "typed meanwhile",
+    files: [notes, late],
+    carry: { ...saved.carry!, parts: [] },
+  };
+  const at = { mailbox: "mb_drafts", message: "9-100", parts: ["2", "3"] };
+  const d = settled(now, saved, at);
+  expect(d.draft).toEqual({ mailbox: "mb_drafts", message: "9-100" });
+  expect(d.carry).toEqual({
+    mailbox: "mb_drafts",
+    message: "9-100",
+    parts: [
+      {
+        section: "3",
+        name: "notes.txt",
+        type: "text/plain",
+        size: 5,
+        listed: true,
+      },
+    ],
+  });
+  expect(d.files).toEqual([late]);
+  expect(d.text).toBe("typed meanwhile");
+  expect(differs(settled(saved, saved, at), d)).toBe(true);
+  expect(differs(d, { ...d })).toBe(false);
+});
+
+it("a draft opened again has what it had, its Bcc too, and replaces itself", () => {
+  const d = resumed(
+    read({
+      mailbox: "mb_drafts",
+      id: "9-100",
+      bcc: [{ name: "", email: "secret@example.com" }],
+    }),
+    "ec_1",
+  );
+  expect(d).toMatchObject({
+    config: "ec_1",
+    reply: null,
+    to: "Misha <Misha@Example.com>, Robin <robin@example.com>",
+    cc: "kim@example.com, Alice <alice@example.com>",
+    bcc: "secret@example.com",
+    subject: "Lunch",
+    text: "Pizza?\n\nOr sushi.\n",
+    draft: { mailbox: "mb_drafts", message: "9-100" },
+  });
+  expect(d.carry?.parts.map((p) => p.name)).toEqual(["menu.pdf"]);
 });

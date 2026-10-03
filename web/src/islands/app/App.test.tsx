@@ -64,6 +64,7 @@ beforeEach(() => {
       selectable: true,
       messages: 0,
       unseen: 0,
+      uid_next: 1,
     },
   ]);
   getMessages.mockResolvedValue({ messages: [] });

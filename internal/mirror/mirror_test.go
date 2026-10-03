@@ -891,7 +891,7 @@ func TestAMessageIsMovedAndDeletedOnTheServer(t *testing.T) {
 }
 
 // Without MOVE or UIDPLUS, removing one message means an EXPUNGE that removes whatever else
-// another client marked deleted too, so neither is tried.
+// another client marked deleted too, so neither is tried; nor is a draft, which replaces one.
 func TestWithoutMoveOrUIDPlusNothingIsRemoved(t *testing.T) {
 	w := newWorldWith(t, "hunter2", connecttest.Bare)
 	w.create("Archive")
@@ -904,6 +904,9 @@ func TestWithoutMoveOrUIDPlusNothingIsRemoved(t *testing.T) {
 	}
 	if _, err := w.mirror.Delete(ctx, w.target, "INBOX", inbox.UIDValidity, []uint32{1}); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("delete = %v, want unsupported", err)
+	}
+	if _, _, err := w.mirror.SaveDraft(ctx, w.target, "Archive", []byte("Subject: x\r\n\r\nx\r\n"), nil); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("draft = %v, want unsupported", err)
 	}
 	w.sync()
 	if got := subjects(w.window()); got != "Stay" {

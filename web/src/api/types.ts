@@ -74,6 +74,8 @@ export type Mailbox = {
   selectable: boolean;
   messages: number;
   unseen: number;
+  /** Moves on with each message put in it, so a list can tell it changed when its counts did not. */
+  uid_next: number;
 };
 
 export type Address = { name: string; email: string };
@@ -120,6 +122,8 @@ export type ReadMessage = Message & {
   mailbox: string;
   /** Where its sender asks replies to go. */
   reply_to: Address[];
+  /** There only as its sender keeps it, in a draft. */
+  bcc: Address[];
   text: string;
   /** The HTML as text, for a message with no text of its own: what a reply quotes. */
   html_text: string;
@@ -168,6 +172,14 @@ export type Outgoing = {
   attachments: { name: string; type: string; data: string }[];
   /** The message it answers: threaded under it, and marked answered. */
   reply: { mailbox: string; message: string } | null;
-  /** The message it passes on, and the sections of its parts that go with it. */
-  forward: { mailbox: string; message: string; parts: string[] } | null;
+  /**
+   * A message some of whose parts go with this one, by section: the one it forwards, or the
+   * draft it was saved as.
+   */
+  carry: { mailbox: string; message: string; parts: string[] } | null;
+  /** The draft it was saved as, which what is sent or saved now replaces. */
+  draft: { mailbox: string; message: string } | null;
 };
+
+/** Where a draft was kept, and its attachments' sections: what it carried, then the files. */
+export type Kept = { mailbox: string; message: string; parts: string[] };

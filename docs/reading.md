@@ -226,7 +226,8 @@ list. A list read from the server, a search, and the open message, are not refet
 event: each would be a trip to the mail server on every change. A list or a search is read again
 once its folder's counts, read on that event, are not what they were — the server changed what
 is in it, mail another client moved into Trash say, and the list would otherwise disagree with the
-number beside its folder. Fetch new mail asks for them again.
+number beside its folder. Its `UIDNEXT` counts too: a draft saved again replaces one, and leaves
+the numbers as they were. Fetch new mail asks for them again.
 
 Events are at least a second apart. Changes closer together than that are one event, sent when
 the second is up: INBOX's list past its window is read from the mail server, and a burst of

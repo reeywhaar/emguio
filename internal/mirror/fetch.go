@@ -191,7 +191,9 @@ func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, u
 type Opened struct {
 	Header store.Header
 	// ReplyTo is where its sender asks replies to go, when the server says.
-	ReplyTo   []store.Address
+	ReplyTo []store.Address
+	// Bcc is in a message only as its sender keeps it: a draft, or sent mail some clients file.
+	Bcc       []store.Address
 	Structure message.Structure
 }
 
@@ -223,6 +225,7 @@ func (m *Mirror) Read(ctx context.Context, t store.SyncTarget, mailbox string, u
 		out = &Opened{Header: header(msgs[0])}
 		if env := msgs[0].Envelope; env != nil {
 			out.ReplyTo = addresses(env.ReplyTo)
+			out.Bcc = addresses(env.Bcc)
 		}
 
 		texts := previewParts(msgs[0].BodyStructure)

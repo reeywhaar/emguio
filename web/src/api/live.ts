@@ -47,7 +47,10 @@ export function useLive() {
   }, [client]);
 }
 
-/** Every config's mailboxes' counts as last read, by config and mailbox. */
+/**
+ * Every config's mailboxes' counts as last read, by config and mailbox, with where the next
+ * message goes: a draft saved again replaces one, and the counts stay as they were.
+ */
 export function counts(client: QueryClient): Map<string, string> {
   const out = new Map<string, string>();
   const read = client.getQueriesData<Mailbox[]>({
@@ -56,7 +59,10 @@ export function counts(client: QueryClient): Map<string, string> {
   });
   for (const [key, boxes] of read) {
     for (const mb of boxes ?? []) {
-      out.set(`${String(key[1])} ${mb.id}`, `${mb.messages} ${mb.unseen}`);
+      out.set(
+        `${String(key[1])} ${mb.id}`,
+        `${mb.messages} ${mb.unseen} ${mb.uid_next}`,
+      );
     }
   }
   return out;

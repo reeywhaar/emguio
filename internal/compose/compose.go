@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/mail"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,11 @@ type Mail struct {
 	InReplyTo  string
 	References []string
 	Date       time.Time
+	// Draft is a message kept to be written on: its Bcc in a header, and it may go to nobody
+	// yet.
+	Draft bool
+	// Typed are a draft's address fields that are not addresses yet, by header, as written.
+	Typed map[string]string
 }
 
 // Attachment is a file carried with a message.
@@ -41,6 +48,8 @@ type Built struct {
 	Raw        []byte
 	ID         string
 	Recipients []string
+	// Parts are the attachments' sections, in order, as IMAP numbers them.
+	Parts []string
 }
 
 // Build makes m into a message.
@@ -68,21 +77,47 @@ func Build(m Mail) (*Built, error) {
 	for _, a := range m.Attachments {
 		b = b.AddAttachment(a.Data, a.Type, a.Name)
 	}
+	if m.Draft {
+		// enmime wants somebody to send to, which a draft may not have yet: a Bcc, which it
+		// never writes.
+		b = b.BCCAddrs(append(slices.Clone(m.Bcc), mail.Address{Address: "draft@emguio.invalid"}))
+	}
 	part, err := b.Build()
 	if err != nil {
 		return nil, fmt.Errorf("compose: %w", err)
+	}
+	if m.Draft {
+		if len(m.Bcc) > 0 {
+			part.Header.Set("Bcc", joined(m.Bcc))
+		}
+		for name, typed := range m.Typed {
+			part.Header.Set(name, typed)
+		}
 	}
 	var raw bytes.Buffer
 	if err := part.Encode(&raw); err != nil {
 		return nil, fmt.Errorf("compose: %w", err)
 	}
 	out := &Built{Raw: raw.Bytes(), ID: id}
+	// After the text, in a multipart/mixed.
+	for i := range m.Attachments {
+		out.Parts = append(out.Parts, strconv.Itoa(i+2))
+	}
 	for _, list := range [][]mail.Address{m.To, m.Cc, m.Bcc} {
 		for _, a := range list {
 			out.Recipients = append(out.Recipients, a.Address)
 		}
 	}
 	return out, nil
+}
+
+// joined is addresses as a header holds them, names encoded where they need it.
+func joined(list []mail.Address) string {
+	out := make([]string, len(list))
+	for i, a := range list {
+		out[i] = a.String()
+	}
+	return strings.Join(out, ", ")
 }
 
 // messageID is a new Message-ID, at the sender's own domain as RFC 5322 asks.

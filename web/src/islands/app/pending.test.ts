@@ -34,6 +34,7 @@ const box = (id: string, messages: number, unseen: number): Mailbox => ({
   selectable: true,
   messages,
   unseen,
+  uid_next: 1,
 });
 
 const job = (
@@ -115,6 +116,7 @@ it("reads a message again when a job is done on it while it is being read", asyn
     cc: [],
     mailbox: "mb_in",
     reply_to: [],
+    bcc: [],
     text: "",
     html_text: "",
     html: "",
@@ -127,6 +129,7 @@ it("reads a message again when a job is done on it while it is being read", asyn
     cc: [],
     mailbox: "mb_in",
     reply_to: [],
+    bcc: [],
     text: "",
     html_text: "",
     html: "",

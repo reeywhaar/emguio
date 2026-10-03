@@ -102,6 +102,7 @@ const box = (
   selectable: true,
   messages: 10,
   unseen,
+  uid_next: 1,
 });
 
 const boxes = [

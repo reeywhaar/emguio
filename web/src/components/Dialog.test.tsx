@@ -34,6 +34,30 @@ describe("a dialog", () => {
     await waitFor(() => expect(screen.queryByText("Inside")).toBeNull());
   });
 
+  // The close event fires for a close the caller made too, which is no one leaving.
+  it("tells only of a close its caller did not make", () => {
+    const onClose = vi.fn();
+    function Caller() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen((o) => !o)}>
+            Toggle
+          </button>
+          <Dialog open={open} onClose={onClose} title="Folders">
+            <p>Inside</p>
+          </Dialog>
+        </>
+      );
+    }
+    mount(<Caller />);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   // showModal focuses the first control it finds, and a ring on Delete reads as armed.
   it("leaves nothing lit when no field asked for focus", () => {
     mount(

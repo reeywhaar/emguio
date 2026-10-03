@@ -37,7 +37,25 @@ type fakeMirror struct {
 	// origin is what a reply reads of its original, and sendings what was sent.
 	origin   *mirror.Origin
 	sendings []mirror.Sending
-	err      error
+	// drafts are the drafts kept, each where, what, and in place of which.
+	drafts []savedDraft
+	err    error
+}
+
+type savedDraft struct {
+	mailbox  string
+	raw      string
+	replaces *mirror.Located
+}
+
+func (f *fakeMirror) SaveDraft(_ context.Context, _ store.SyncTarget, mailbox string, raw []byte, replaces *mirror.Located) (uint32, uint32, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, 0, f.err
+	}
+	f.drafts = append(f.drafts, savedDraft{mailbox, string(raw), replaces})
+	return 9, uint32(99 + len(f.drafts)), nil
 }
 
 func (f *fakeMirror) Origin(context.Context, store.SyncTarget, string, uint32, uint32) (*mirror.Origin, error) {

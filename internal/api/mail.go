@@ -33,6 +33,8 @@ type Mirror interface {
 	Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Origin, error)
 	// Sent files a sent message in Sent and marks what it answers, in the background.
 	Sent(t store.SyncTarget, s mirror.Sending)
+	// SaveDraft keeps a draft in place of the one it replaces, and says its UIDVALIDITY and UID.
+	SaveDraft(ctx context.Context, t store.SyncTarget, mailbox string, raw []byte, replaces *mirror.Located) (uint32, uint32, error)
 }
 
 // targetOf is an email config as the mirror is asked about it.
@@ -66,6 +68,9 @@ type mailboxJSON struct {
 	Selectable bool     `json:"selectable"`
 	Messages   uint32   `json:"messages"`
 	Unseen     uint32   `json:"unseen"`
+	// UIDNext moves on with each message put in it, so a list can tell it changed when its
+	// counts did not.
+	UIDNext uint32 `json:"uid_next"`
 }
 
 func (s *Server) listMailboxes(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +89,7 @@ func (s *Server) listMailboxes(w http.ResponseWriter, r *http.Request) {
 			Selectable: mb.Selectable,
 			Messages:   mb.Messages,
 			Unseen:     mb.Unseen,
+			UIDNext:    mb.UIDNext,
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"mailboxes": out})

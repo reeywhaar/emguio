@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -11,17 +12,19 @@ import (
 	"emguio/internal/store"
 )
 
-// Origin is what a reply needs of the message it answers, to be threaded under it.
+// Origin is what a reply needs of the message it answers, to be threaded under it, and what a
+// draft says it answers itself.
 type Origin struct {
 	MessageID  string
+	InReplyTo  string
 	References []string
 }
 
 // msgID is one message id in a References header.
 var msgID = regexp.MustCompile(`<[^<>\s]+>`)
 
-// Origin reads a message's Message-ID and the References it carries, for a reply's In-Reply-To
-// and References.
+// Origin reads a message's Message-ID, In-Reply-To and the References it carries, for a reply's
+// In-Reply-To and References.
 func (m *Mirror) Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*Origin, error) {
 	var out *Origin
 	err := m.use(ctx, t, func(f *fetcher) error {
@@ -41,13 +44,23 @@ func (m *Mirror) Origin(ctx context.Context, t store.SyncTarget, mailbox string,
 			return ErrGone
 		}
 		out = &Origin{References: msgID.FindAllString(string(msgs[0].FindBodySection(refs)), -1)}
-		// The envelope gives it without its angle brackets, which In-Reply-To wants back.
-		if env := msgs[0].Envelope; env != nil && env.MessageID != "" {
-			out.MessageID = "<" + strings.Trim(clean(env.MessageID), "<>") + ">"
+		// The envelope gives them without their angle brackets, which the headers want back.
+		if env := msgs[0].Envelope; env != nil {
+			out.MessageID = bracketed(env.MessageID)
+			if len(env.InReplyTo) > 0 {
+				out.InReplyTo = bracketed(env.InReplyTo[0])
+			}
 		}
 		return nil
 	})
 	return out, err
+}
+
+func bracketed(id string) string {
+	if id = strings.Trim(clean(id), "<>"); id == "" {
+		return ""
+	}
+	return "<" + id + ">"
 }
 
 // Sending is what follows a message's sending, once the server has taken it.
@@ -58,11 +71,13 @@ type Sending struct {
 	ID  string
 	Raw []byte
 	// Answers is the message it replies to, marked answered; nil for none.
-	Answers *Answering
+	Answers *Located
+	// Draft is the draft it was written in, deleted; nil for none.
+	Draft *Located
 }
 
-// Answering is the message a reply answers.
-type Answering struct {
+// Located is a message where the server holds it.
+type Located struct {
 	Mailbox     *store.Mailbox
 	UIDValidity uint32
 	UID         uint32
@@ -101,6 +116,11 @@ func (m *Mirror) Sent(t store.SyncTarget, s Sending) {
 				m.log.Warn("mirror could not mark a message answered", "email_config", t.ID, "err", err)
 			}
 		}
+		if d := s.Draft; d != nil {
+			if _, err := m.Delete(ctx, t, d.Mailbox.Name, d.UIDValidity, []uint32{d.UID}); err != nil && !errors.Is(err, ErrGone) && ctx.Err() == nil {
+				m.log.Warn("mirror could not delete a sent draft", "email_config", t.ID, "err", err)
+			}
+		}
 		m.store.Notify(t.UserID)
 		m.Refresh(t.ID)
 	}()
@@ -135,4 +155,41 @@ func (m *Mirror) file(ctx context.Context, t store.SyncTarget, mailbox, id strin
 		_, err = cmd.Wait()
 		return refused(err)
 	})
+}
+
+// SaveDraft keeps a draft in mailbox, read and marked \Draft, in place of the one it replaces,
+// and says where the server put it. The new one first, so a failure leaves the old. Refused on
+// a server without UIDPLUS: it neither says where a message went nor removes one alone.
+func (m *Mirror) SaveDraft(ctx context.Context, t store.SyncTarget, mailbox string, raw []byte, replaces *Located) (uint32, uint32, error) {
+	var at *imap.AppendData
+	err := m.use(ctx, t, func(f *fetcher) error {
+		if !f.session.client.Caps().Has(imap.CapUIDPlus) {
+			return ErrUnsupported
+		}
+		cmd := f.session.client.Append(mailbox, int64(len(raw)), &imap.AppendOptions{
+			Flags: []imap.Flag{imap.FlagSeen, imap.FlagDraft},
+			Time:  time.Now(),
+		})
+		if _, err := cmd.Write(raw); err != nil {
+			cmd.Close()
+			return err
+		}
+		if err := cmd.Close(); err != nil {
+			return refused(err)
+		}
+		var err error
+		if at, err = cmd.Wait(); err != nil {
+			return refused(err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	if replaces != nil {
+		if _, err := m.Delete(ctx, t, replaces.Mailbox.Name, replaces.UIDValidity, []uint32{replaces.UID}); err != nil && !errors.Is(err, ErrGone) {
+			m.log.Warn("mirror could not delete a replaced draft", "email_config", t.ID, "err", err)
+		}
+	}
+	return at.UIDValidity, uint32(at.UID), nil
 }

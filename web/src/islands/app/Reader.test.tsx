@@ -19,6 +19,7 @@ const getMailboxes = vi.fn();
 const postJob = vi.fn();
 
 const postSend = vi.fn();
+const postDraft = vi.fn();
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
@@ -53,6 +54,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     },
   ],
   postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),
+  postEmailConfigsByIdDrafts: (id: string, body: unknown) =>
+    postDraft(id, body),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
@@ -71,11 +74,13 @@ const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({
   selectable: true,
   messages: 1,
   unseen: 0,
+  uid_next: 1,
 });
 const archive = box("mb_archive", "archive");
 const trash = box("mb_trash", "trash");
 const junk = box("mb_junk", "junk");
 const work = box("mb_work", "");
+const drafts = box("mb_drafts", "drafts");
 
 const inbox: Mailbox = {
   id: "mb_inbox",
@@ -85,6 +90,7 @@ const inbox: Mailbox = {
   selectable: true,
   messages: 1,
   unseen: 0,
+  uid_next: 1,
 };
 
 /** The message as a list has it. */
@@ -109,6 +115,7 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   cc: [{ name: "Bob", email: "bob@example.com" }],
   mailbox: "mb_inbox",
   reply_to: [],
+  bcc: [],
   text: "The numbers are in.",
   html_text: "",
   html: "",
@@ -432,7 +439,8 @@ describe("the reading pane", () => {
       to: "Alice <alice@example.com>",
       subject: "Re: Quarterly numbers",
       reply: { mailbox: "mb_inbox", message: "m_1" },
-      forward: null,
+      carry: null,
+      draft: null,
       attachments: [],
     });
     expect(body.text).toMatch(
@@ -466,7 +474,7 @@ describe("the reading pane", () => {
     });
     fireEvent.click(dialog.getByRole("button", { name: "Send" }));
     await dialog.findByText(/refused the message: No such user here/);
-    expect((postSend.mock.calls[0] as [string, Outgoing])[1].forward).toEqual({
+    expect((postSend.mock.calls[0] as [string, Outgoing])[1].carry).toEqual({
       mailbox: "mb_inbox",
       message: "m_1",
       parts: ["2"],
@@ -474,5 +482,152 @@ describe("the reading pane", () => {
     expect(
       dialog.getByRole<HTMLInputElement>("textbox", { name: "To" }).value,
     ).toBe("nobody@example.com");
+  });
+});
+
+/** What each save of a draft asked the server to keep. */
+const saved = (): Outgoing[] =>
+  postDraft.mock.calls.map((c) => (c as [string, Outgoing])[1]);
+
+describe("drafts", () => {
+  // Closing keeps what is written; nothing asks.
+  it("keeps a reply in Drafts on closing", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    postDraft.mockResolvedValue({
+      mailbox: "mb_drafts",
+      message: "9-100",
+      parts: [],
+    });
+    open();
+    fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    const text = dialog.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Message",
+    });
+    fireEvent.change(text, { target: { value: `Thanks!${text.value}` } });
+    fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    screen.getByText("Saved to Drafts.");
+    expect(saved()).toHaveLength(1);
+    expect(saved()[0]).toMatchObject({
+      reply: { mailbox: "mb_inbox", message: "m_1" },
+      draft: null,
+    });
+  });
+
+  // Each save replaces the last and carries its attachments from it, and the message sent
+  // replaces the last of all.
+  it("saves as it is written, each save in place of the last", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      getMessage.mockResolvedValue(read({ seen: true }));
+      postDraft
+        .mockResolvedValueOnce({
+          mailbox: "mb_drafts",
+          message: "9-100",
+          parts: ["2"],
+        })
+        .mockResolvedValueOnce({
+          mailbox: "mb_drafts",
+          message: "9-101",
+          parts: ["2"],
+        });
+      postSend.mockResolvedValue({ message_id: "<f@example.com>" });
+      open();
+      await screen.findByRole("button", { name: "Forward" });
+      fireEvent.keyDown(document.body, { key: "f" });
+      const dialog = within(await screen.findByRole("dialog"));
+      const to = dialog.getByRole("textbox", { name: "To" });
+      fireEvent.change(to, { target: { value: "kim@example.com" } });
+      expect(postDraft).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2000);
+      await dialog.findByText("Saved");
+      expect(saved()[0]).toMatchObject({
+        to: "kim@example.com",
+        draft: null,
+        carry: { mailbox: "mb_inbox", message: "m_1", parts: ["2"] },
+      });
+
+      fireEvent.change(to, {
+        target: { value: "kim@example.com, robin@example.com" },
+      });
+      expect(dialog.queryByText("Saved")).toBeNull();
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitFor(() => expect(saved()).toHaveLength(2));
+      const kept = { mailbox: "mb_drafts", message: "9-100" };
+      expect(saved()[1]).toMatchObject({
+        draft: kept,
+        carry: { ...kept, parts: ["2"] },
+      });
+      await dialog.findByText("Saved");
+
+      fireEvent.click(dialog.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(postSend).toHaveBeenCalledTimes(1));
+      const last = { mailbox: "mb_drafts", message: "9-101" };
+      expect((postSend.mock.calls[0] as [string, Outgoing])[1]).toMatchObject({
+        draft: last,
+        carry: { ...last, parts: ["2"] },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens a draft again as it was, and deletes it when it is discarded", async () => {
+    getMailboxes.mockResolvedValue([inbox, drafts]);
+    getMessage.mockResolvedValue(
+      read({
+        seen: true,
+        mailbox: "mb_drafts",
+        bcc: [{ name: "", email: "secret@example.com" }],
+      }),
+    );
+    open(drafts);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit draft" }));
+    expect(screen.queryByRole("button", { name: "Reply" })).toBeNull();
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Draft" });
+    expect(
+      dialog.getByRole<HTMLInputElement>("textbox", { name: "Bcc" }).value,
+    ).toBe("secret@example.com");
+    within(dialog.getByRole("list", { name: "Attachments" })).getByText(
+      "q3.pdf",
+    );
+
+    fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+    screen.getByText("Discard this draft?");
+    const sure = screen.getAllByRole("button", { name: "Discard" });
+    fireEvent.click(sure[sure.length - 1]!);
+    await waitFor(() =>
+      expect(asked()).toContainEqual(
+        expect.objectContaining({
+          kind: "delete",
+          mailbox: "mb_drafts",
+          message: "m_1",
+        }),
+      ),
+    );
+    expect(postDraft).not.toHaveBeenCalled();
+  });
+
+  // Without a Drafts folder, closing asks, as it did before there were drafts.
+  it("asks before closing where there is nowhere to keep it", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    postDraft.mockRejectedValue(
+      new ApiError(
+        409,
+        "conflict",
+        "This mail account has no Drafts folder to keep drafts in.",
+      ),
+    );
+    open();
+    fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    fireEvent.change(dialog.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Thanks!" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+    await screen.findByText("Discard this message?");
+    expect(saved()).toHaveLength(1);
   });
 });

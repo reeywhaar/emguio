@@ -106,8 +106,9 @@ export function Dialog({
       ref={ref}
       tabIndex={-1}
       // close and cancel do not bubble in the DOM, but React delivers them as though they did,
-      // so a dialog opened inside this one would close this one too.
-      onClose={(e) => e.target === ref.current && onClose()}
+      // so a dialog opened inside this one would close this one too. Not when open says it is
+      // shut: that close is the caller's own.
+      onClose={(e) => e.target === ref.current && open && onClose()}
       // Escape fires cancel before close; one way out.
       onCancel={(e) => {
         if (e.target !== ref.current) return;

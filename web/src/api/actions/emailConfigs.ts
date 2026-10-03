@@ -2,6 +2,7 @@ import { query, request } from "@app/api/transport";
 import type {
   EmailConfig,
   EmailConfigDraft,
+  Kept,
   Mailbox,
   MessagePage,
   Outgoing,
@@ -53,6 +54,13 @@ export const postEmailConfigsByIdSend = (id: string, body: Outgoing) =>
     `/api/email-configs/${encodeURIComponent(id)}/send`,
     { method: "POST", body },
   );
+
+/** Keeps a draft in Drafts, in place of the one it was saved as before. */
+export const postEmailConfigsByIdDrafts = (id: string, body: Outgoing) =>
+  request<Kept>(`/api/email-configs/${encodeURIComponent(id)}/drafts`, {
+    method: "POST",
+    body,
+  });
 
 export const getEmailConfigsByIdMailboxes = (id: string) =>
   request<{ mailboxes: Mailbox[] }>(

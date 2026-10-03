@@ -40,7 +40,9 @@ type readJSON struct {
 	Mailbox string          `json:"mailbox"`
 	// ReplyTo is where its sender asks replies to go.
 	ReplyTo []store.Address `json:"reply_to"`
-	Text    string          `json:"text"`
+	// Bcc is there only as its sender keeps it, in a draft.
+	Bcc  []store.Address `json:"bcc"`
+	Text string          `json:"text"`
 	// HTMLText is the HTML as text, for a message with no text of its own: what a reply quotes.
 	HTMLText string `json:"html_text"`
 	// HTML is sanitized, and empty for a message with none. It is still a stranger's, and the
@@ -111,6 +113,7 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 		Cc:          nonNil(m.Cc),
 		Mailbox:     mb.ID,
 		ReplyTo:     nonNil(opened.ReplyTo),
+		Bcc:         nonNil(opened.Bcc),
 		Text:        read.Text,
 		HTMLText:    read.HTMLText,
 		HTML:        read.HTML,

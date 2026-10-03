@@ -23,10 +23,17 @@ import {
   Paperclip,
   ReplyAllMark,
   ReplyMark,
+  WriteMark,
 } from "@app/components/icons";
 import { full, size } from "@app/format";
 import { Actions } from "@app/islands/app/Actions";
-import { forwardOf, others, replyTo, write } from "@app/islands/app/drafts";
+import {
+  forwardOf,
+  others,
+  replyTo,
+  resumed,
+  write,
+} from "@app/islands/app/drafts";
 import { Frame } from "@app/islands/app/Frame";
 import { usePending, withPending } from "@app/islands/app/pending";
 import { useCached } from "@app/api/cached";
@@ -166,7 +173,16 @@ export function Reader({
               {m.text}
             </pre>
           )}
-          <Replies config={config} m={m} />
+          {mailbox.special_use === "drafts" ? (
+            <div className="sticky bottom-0 mt-auto flex shrink-0 gap-2 border-t border-line bg-bg px-4 py-2">
+              <Button size="bar" onClick={() => write(resumed(m, config))}>
+                <WriteMark />
+                Edit draft
+              </Button>
+            </div>
+          ) : (
+            <Replies config={config} m={m} />
+          )}
         </>
       ) : null}
     </article>
