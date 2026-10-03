@@ -68,6 +68,7 @@ func (s *Server) createDraft(w http.ResponseWriter, r *http.Request) {
 		DraftFields:   fieldsOf(&body),
 		InReplyTo:     wr.inReplyTo,
 		References:    wr.references,
+		Closed:        body.Close,
 	}
 	if a := wr.answers; a != nil {
 		d.ReplyMailbox, d.ReplyMessage = a.Mailbox.ID, body.Reply.Message
@@ -86,7 +87,7 @@ func (s *Server) createDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mirror.WakeDrafts()
 	if body.Close {
-		s.closeDraft(w, r, made.ID)
+		s.closeDraft(w, r, made.ID, true)
 		return
 	}
 	writeJSON(w, http.StatusOK, draftOf(made, held))
@@ -135,7 +136,7 @@ func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mirror.WakeDrafts()
 	if body.Close {
-		s.closeDraft(w, r, saved.ID)
+		s.closeDraft(w, r, saved.ID, false)
 		return
 	}
 	writeJSON(w, http.StatusOK, draftOf(saved, held))
@@ -143,8 +144,9 @@ func (s *Server) saveDraft(w http.ResponseWriter, r *http.Request) {
 
 // closeDraft writes a draft whose window closed to the mail server now, and it goes from here.
 // One the server cannot take now stays, tried again later; one that has nowhere to go is refused,
-// for the writer to choose whether to discard it.
-func (s *Server) closeDraft(w http.ResponseWriter, r *http.Request, id string) {
+// for the writer to choose whether to discard it — or, made by this request, whose id the writer
+// was never told, goes.
+func (s *Server) closeDraft(w http.ResponseWriter, r *http.Request, id string, made bool) {
 	err := s.mirror.WriteDraft(context.WithoutCancel(r.Context()), id)
 	if err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"closed": true})
@@ -152,6 +154,11 @@ func (s *Server) closeDraft(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	sentence, final := mirror.DraftProblem(err)
 	if final {
+		if made {
+			if _, err := s.mirror.ForgetDraft(context.WithoutCancel(r.Context()), userOf(r).ID, id); err != nil {
+				s.log.Warn("could not forget a draft with nowhere to go", "draft", id, "err", err)
+			}
+		}
 		refuse(w, http.StatusConflict, CodeConflict, sentence)
 		return
 	}

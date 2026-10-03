@@ -14,6 +14,9 @@ const ListenAddr = ":80"
 // this program is rather than what it was told.
 const WebDir = "/srv/web"
 
+// DocsDir is where the image puts docs/, the source of what /docs serves.
+const DocsDir = "/srv/docs"
+
 // Version is stamped at link time:
 //
 //	-ldflags "-X emguio/internal/app.Version=$(git rev-parse --short HEAD)"

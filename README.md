@@ -36,6 +36,7 @@ docker logs emguio
 ```
 
 More users with `docker exec emguio emguio invite`. The environment, the image and running from a
-checkout are in [docs/deploy.md](docs/deploy.md); how mail is read is in
+checkout are in [docs/deploy.md](docs/deploy.md); the HTTP API is at `/docs` on any instance, from
+[docs/api.md](docs/api.md); how mail is read is in
 [docs/reading.md](docs/reading.md); how the code is written is in
 [docs/conventions.md](docs/conventions.md).

@@ -148,6 +148,18 @@ Embedding would make every stylesheet an input to the Go compiler, so a one-line
 would invalidate the layer that compiles the binary. Reading from disk is what lets the two
 image stages be independent, and what lets `go test ./...` pass with no frontend build present.
 
+## The API reference is built with the bundle
+
+`/docs` is `docs/api.md` rendered to HTML by the web build, `node scripts/docs.mjs`, into the
+bundle beside the app as `docs.html` and `docs.md`; `docs/` is a build input for that. Static,
+the whole text in the page, and served to anybody, signed in or not: a program does one GET and
+reads it. `/docs.md` is the markdown, and `/llms.txt` points at it. The examples are written
+against `https://emguio.example.com`, which the server replaces with `EMGUIO_PUBLIC_URL`.
+
+The image also carries `docs/` at `/srv/docs`, so a checkout with no bundle still serves the
+markdown. A test holds the reference to the route table, both ways, and to the error codes the
+API sends.
+
 A missing bundle is the placeholder page rather than a failure.
 
 ## CI

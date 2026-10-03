@@ -77,6 +77,15 @@ func serveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The bundle carries the API reference rendered; the source is the fallback for a
+			// checkout with no bundle.
+			var sourceFS fs.FS
+			if _, err := os.Stat(app.DocsDir); err == nil {
+				sourceFS = os.DirFS(app.DocsDir)
+			} else if _, err := os.Stat("docs"); err == nil {
+				sourceFS = os.DirFS("docs")
+			}
+			docs := api.NewDocs(webFS, sourceFS, cfg.PublicURL.String())
 
 			if err := firstRun(cmd.Context(), cfg, st, log); err != nil {
 				return err
@@ -94,7 +103,7 @@ func serveCmd() *cobra.Command {
 			reader := mirror.New(st, connect.New(cfg.AllowNetworks), log)
 			srv := &http.Server{
 				Addr:              app.ListenAddr,
-				Handler:           api.New(cfg, log, st, spa, reader),
+				Handler:           api.New(cfg, log, st, spa, docs, reader),
 				ReadHeaderTimeout: 10 * time.Second,
 				BaseContext:       func(net.Listener) context.Context { return streams },
 			}

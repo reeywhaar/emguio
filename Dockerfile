@@ -12,10 +12,14 @@ COPY web/tsconfig.json web/vite.config.ts web/vitest.config.ts ./
 COPY web/index.html web/login.html ./
 COPY web/public ./public
 COPY web/src ./src
+COPY web/scripts ./scripts
+# docs/ is a build input, because /docs is rendered from it.
+COPY docs /docs
 RUN npm run build
 # An empty bundle is otherwise invisible until somebody loads the page and gets the
 # placeholder, which looks like a server problem rather than a build one.
-RUN test -s dist/index.html && test -s dist/login.html && test -s dist/favicon.svg
+RUN test -s dist/index.html && test -s dist/login.html && test -s dist/favicon.svg \
+ && test -s dist/docs.html && test -s dist/docs.md
 
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 WORKDIR /src
@@ -33,6 +37,7 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/emguio /usr/local/bin/emguio
 COPY --from=web /src/dist /srv/web
+COPY docs /srv/docs
 EXPOSE 80
 # Runs the binary's own subcommand, so the image needs no HTTP client.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["emguio", "healthcheck"]

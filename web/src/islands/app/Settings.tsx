@@ -55,6 +55,13 @@ export function Settings({
         )}
       </section>
       <Account />
+      <p className="text-sm text-muted">
+        A program can do what this page does, through the API:{" "}
+        <a href="/docs" className="underline">
+          its reference
+        </a>
+        .
+      </p>
       {last.editing ? (
         <ConfigForm
           id={last.editing.id}

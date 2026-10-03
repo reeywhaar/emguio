@@ -34,6 +34,8 @@ type Server struct {
 	sessions *session.Manager
 	spa      *SPA
 	mux      *http.ServeMux
+	// routes is every API pattern registered, which docs/api.md has to cover.
+	routes []string
 
 	// connector is the only way out to a mail server. A field so a test can trust its own
 	// certificates and reach loopback.
@@ -60,9 +62,22 @@ type Server struct {
 // longer than any write here takes, so it only ever stops one that is not going to finish.
 const WriteDeadline = 2 * time.Minute
 
+// handle registers an API pattern: recorded here rather than matched by prefix in a test, so a
+// route is one docs/api.md has to cover the moment it is registered.
+func (s *Server) handle(pattern string, h http.Handler) {
+	s.routes = append(s.routes, pattern)
+	s.mux.Handle(pattern, h)
+}
+
+// Routes is every API pattern registered.
+func (s *Server) Routes() []string { return append([]string(nil), s.routes...) }
+
 // New wires the routes. Authorization is decided at registration, so a handler cannot forget
 // to check: one registered without its guard is visibly registered without it.
-func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror Mirror) *Server {
+func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *Docs, mirror Mirror) *Server {
+	if docs == nil {
+		docs = NewDocs(nil, nil, "")
+	}
 	s := &Server{
 		cfg:      cfg,
 		log:      log,
@@ -87,44 +102,49 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 
 	s.mux.HandleFunc("GET /healthz", s.healthz)
 
+	// Unauthenticated, because a reader has to read it before there is any question of
+	// signing in.
+	s.mux.Handle("GET /docs", docs)
+	s.mux.Handle("GET /docs.md", docs)
+	s.mux.HandleFunc("GET /llms.txt", s.llms)
+
 	// Everything about proving who you are is under one root. An invitation belongs here
 	// rather than under a resource of its own: accepting one is how a user starts.
-	s.mux.HandleFunc("POST /api/auth/login", s.login)
-	s.mux.HandleFunc("GET /api/auth/invites/{token}", s.getInvite)
-	s.mux.HandleFunc("POST /api/auth/invites/{token}/accept", s.acceptInvite)
-	s.mux.Handle("POST /api/auth/logout", s.requireSession(s.logout))
-	s.mux.Handle("GET /api/auth/me", s.requireSession(s.me))
+	s.handle("POST /api/auth/login", http.HandlerFunc(s.login))
+	s.handle("GET /api/auth/invites/{token}", http.HandlerFunc(s.getInvite))
+	s.handle("POST /api/auth/invites/{token}/accept", http.HandlerFunc(s.acceptInvite))
+	s.handle("POST /api/auth/logout", s.requireSession(s.logout))
+	s.handle("GET /api/auth/me", s.requireSession(s.me))
 
-	s.mux.Handle("GET /api/email-configs", s.requireSession(s.listEmailConfigs))
-	s.mux.Handle("POST /api/email-configs", s.requireSession(s.createEmailConfig))
-	s.mux.Handle("POST /api/email-configs/test", s.requireSession(s.testEmailConfig))
-	s.mux.Handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
-	s.mux.Handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
-	s.mux.Handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
-	s.mux.Handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
-	s.mux.Handle("POST /api/email-configs/{id}/send", s.requireSession(s.sendMessage))
-	s.mux.Handle("POST /api/email-configs/{id}/drafts", s.requireSession(s.createDraft))
-	s.mux.Handle("PUT /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.saveDraft))
-	s.mux.Handle("DELETE /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.deleteDraft))
-	s.mux.Handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
-	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
+	s.handle("GET /api/email-configs", s.requireSession(s.listEmailConfigs))
+	s.handle("POST /api/email-configs", s.requireSession(s.createEmailConfig))
+	s.handle("POST /api/email-configs/test", s.requireSession(s.testEmailConfig))
+	s.handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
+	s.handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
+	s.handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
+	s.handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
+	s.handle("POST /api/email-configs/{id}/send", s.requireSession(s.sendMessage))
+	s.handle("POST /api/email-configs/{id}/drafts", s.requireSession(s.createDraft))
+	s.handle("PUT /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.saveDraft))
+	s.handle("DELETE /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.deleteDraft))
+	s.handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/threads", s.requireSession(s.threadCounts))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.readMessage))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/conversation", s.requireSession(s.conversation))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireSession(s.readPart))
+	s.handle("GET /api/proxy", s.requireSession(s.proxyImage))
 
-	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/threads", s.requireSession(s.threadCounts))
-	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.readMessage))
-	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/conversation", s.requireSession(s.conversation))
-	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireSession(s.readPart))
-	s.mux.Handle("GET /api/proxy", s.requireSession(s.proxyImage))
+	s.handle("GET /api/jobs", s.requireSession(s.listJobs))
+	s.handle("POST /api/jobs", s.requireSession(s.postJobs))
+	s.handle("DELETE /api/jobs/{job}", s.requireSession(s.dismissJob))
 
-	s.mux.Handle("GET /api/jobs", s.requireSession(s.listJobs))
-	s.mux.Handle("POST /api/jobs", s.requireSession(s.postJobs))
-	s.mux.Handle("DELETE /api/jobs/{job}", s.requireSession(s.dismissJob))
-
-	s.mux.Handle("GET /api/events", s.requireSession(s.events))
+	s.handle("GET /api/events", s.requireSession(s.events))
 
 	// Catch-all, so a mistyped API path never falls through to the SPA and reaches a fetch as
 	// an HTML document it cannot parse.
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		refuse(w, http.StatusNotFound, CodeNotFound, "There is no such endpoint.")
+		refuse(w, http.StatusNotFound, CodeNotFound, "There is no such endpoint. /docs lists them all.")
 	})
 
 	s.mux.Handle("/", s.gate(spa))

@@ -42,7 +42,7 @@ func newServerStore(t *testing.T, files fstest.MapFS) (*Server, *store.Store) {
 
 	u, _ := url.Parse("https://mail.example.com")
 	cfg := &config.Config{PublicURL: u, Secure: true}
-	return New(cfg, slog.New(slog.DiscardHandler), st, spa, nil), st
+	return New(cfg, slog.New(slog.DiscardHandler), st, spa, nil, nil), st
 }
 
 func do(t *testing.T, s *Server, method, path string, body string, hdr map[string]string) *http.Response {

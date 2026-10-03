@@ -114,6 +114,10 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 				s.mirror.WakeDrafts()
 			}
 		}()
+		if held.EmailConfigID != c.ID {
+			s.fail(w, r, store.NotFound("This draft is no longer here."))
+			return
+		}
 	}
 	wr, ok := s.gather(w, r, c, t, &body, held, parts)
 	if !ok {

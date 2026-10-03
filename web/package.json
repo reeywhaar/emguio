@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/docs.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src",
     "test": "vitest run",
@@ -24,6 +24,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "jsdom": "^30.0.1",
+    "marked": "^18.0.14",
     "oxlint": "^1.83.0",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",

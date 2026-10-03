@@ -12,6 +12,7 @@ import (
 	"emguio/internal/connect"
 	"emguio/internal/connect/connecttest"
 	"emguio/internal/mirror"
+	"emguio/internal/store"
 )
 
 func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
@@ -135,5 +136,52 @@ func TestADraftNeedsADraftsFolder(t *testing.T) {
 	resp := nowhere.do("POST", "/api/email-configs/"+nowhereConfig(t, nowhere)+"/drafts", `{"text":"x"}`)
 	if got := nowhere.json(resp); resp.StatusCode != http.StatusConflict || !strings.Contains(got["message"].(string), "no Drafts folder") {
 		t.Errorf("without Drafts = %s %v", resp.Status, got)
+	}
+}
+
+// A draft made as its window closes is written at once and goes from here; one that has nowhere
+// to go goes too, since nobody was told its id to discard it by.
+func TestADraftMadeAsItClosesDoesNotStay(t *testing.T) {
+	c, cfg, _, _, fake := withOutbox(t)
+	ctx := context.Background()
+	resp := c.do("POST", "/api/email-configs/"+cfg+"/drafts", `{"text":"Quick note","close":true}`)
+	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["closed"] != true || len(fake.written) != 1 {
+		t.Fatalf("close = %s %v, written %v", resp.Status, got, fake.written)
+	}
+	if d, err := fake.store.MirrorDraft(ctx, fake.written[0]); err != nil || !d.Closed {
+		t.Errorf("made = %+v, %v", d, err)
+	}
+
+	fake.err = mirror.ErrUnsupported
+	resp = c.do("POST", "/api/email-configs/"+cfg+"/drafts", `{"text":"Nowhere","close":true}`)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("nowhere = %s", resp.Status)
+	}
+	if _, err := fake.store.MirrorDraft(ctx, fake.written[1]); err == nil {
+		t.Error("a draft with nowhere to go stayed")
+	}
+}
+
+// A draft is sent only from its own mail account, and is named by an id that is one.
+func TestADraftIsItsAccountsAlone(t *testing.T) {
+	c, cfg, _, box, fake := withOutbox(t)
+	ctx := context.Background()
+	mine := c.json(c.do("POST", "/api/email-configs/"+cfg+"/drafts", `{"text":"Mine"}`))["id"].(string)
+	d, err := fake.store.MirrorDraft(ctx, mine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := c.json(c.do("POST", "/api/email-configs", fmt.Sprintf(`{"name":"Home","email":"home@example.com","sender_name":"",
+		"incoming":{"protocol":"imap","host":%q,"port":993,"tls":"implicit","username":"misha","password":"hunter2"},"outgoing":null}`, connecttest.Host)))["id"].(string)
+	theirs, _, err := fake.store.CreateDraft(ctx, store.Draft{UserID: d.UserID, EmailConfigID: other}, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := c.do("POST", "/api/email-configs/"+cfg+"/send", fmt.Sprintf(`{"to":"robin@example.com","draft_id":%q}`, theirs.ID))
+	if resp.StatusCode != http.StatusNotFound || len(box.Sent()) != 0 {
+		t.Errorf("another account's draft = %s, %d sent", resp.Status, len(box.Sent()))
+	}
+	if resp := c.do("PUT", "/api/email-configs/"+cfg+"/drafts/nope", `{"text":"x"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("not an id = %s", resp.Status)
 	}
 }

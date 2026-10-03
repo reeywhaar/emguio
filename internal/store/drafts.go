@@ -81,7 +81,15 @@ func scanDraft(sc interface{ Scan(...any) error }) (*Draft, error) {
 
 var errNoDraft = NotFound("This draft is no longer here.")
 
-// CreateDraft keeps a new draft, with parts, due to be written at due.
+// draftID refuses what is not a draft id, before it reaches a query.
+func draftID(id string) error {
+	if !ids.Valid(ids.Draft, id) {
+		return Invalid("%q is not a draft id.", id)
+	}
+	return nil
+}
+
+// CreateDraft keeps a new draft, with parts, due to be written at due; a closed one at once.
 func (s *Store) CreateDraft(ctx context.Context, d Draft, parts []DraftPart, due time.Time) (*Draft, []DraftPart, error) {
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
@@ -89,14 +97,17 @@ func (s *Store) CreateDraft(ctx context.Context, d Draft, parts []DraftPart, due
 	}
 	defer tx.Rollback()
 	now := s.Now()
+	if d.Closed {
+		due = now
+	}
 	d.ID, d.Version, d.DueAt, d.CreatedAt, d.UpdatedAt = ids.New(ids.Draft, now.UnixMilli()), 1, due, now, now
 	if _, err := tx.ExecContext(ctx, `INSERT INTO drafts (id, user_id, email_config_id, to_field,
   cc_field, bcc_field, subject, body, reply_mailbox, reply_message, in_reply_to, refs,
-  kept_mailbox, kept_message, due_at, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  kept_mailbox, kept_message, closed, due_at, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		d.ID, d.UserID, d.EmailConfigID, d.To, d.Cc, d.Bcc, d.Subject, d.Text, d.ReplyMailbox,
 		d.ReplyMessage, d.InReplyTo, strings.Join(d.References, " "), d.KeptMailbox, d.KeptMessage,
-		unix(due), unix(now), unix(now)); err != nil {
+		d.Closed, unix(due), unix(now), unix(now)); err != nil {
 		return nil, nil, fmt.Errorf("create draft: %w", err)
 	}
 	out, err := addParts(ctx, tx, d.ID, 0, parts, now)
@@ -110,6 +121,9 @@ func (s *Store) CreateDraft(ctx context.Context, d Draft, parts []DraftPart, due
 // that order followed by add, and makes it due to be written by due unless it already is
 // sooner. A closed draft is due now.
 func (s *Store) SaveDraft(ctx context.Context, userID, id string, f DraftFields, keep []string, add []DraftPart, due time.Time, closed bool) (*Draft, []DraftPart, error) {
+	if err := draftID(id); err != nil {
+		return nil, nil, err
+	}
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("save draft: %w", err)
@@ -215,6 +229,9 @@ func (s *Store) Draft(ctx context.Context, userID, id string) (*Draft, error) {
 
 // MirrorDraft is a draft by id, for the mirror, which acts for its user.
 func (s *Store) MirrorDraft(ctx context.Context, id string) (*Draft, error) {
+	if err := draftID(id); err != nil {
+		return nil, err
+	}
 	d, err := scanDraft(s.reader.QueryRowContext(ctx, `SELECT `+draftColumns+` FROM drafts WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNoDraft
@@ -293,6 +310,9 @@ func (s *Store) DraftFailed(ctx context.Context, id, problem string, again time.
 
 // HoldDraft stops a draft being written while it is sent, and says it as it is.
 func (s *Store) HoldDraft(ctx context.Context, userID, id string) (*Draft, error) {
+	if err := draftID(id); err != nil {
+		return nil, err
+	}
 	res, err := s.writer.ExecContext(ctx, `UPDATE drafts SET due_at = 0 WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {
 		return nil, fmt.Errorf("hold draft: %w", err)
