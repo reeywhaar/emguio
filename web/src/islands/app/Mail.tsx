@@ -5,8 +5,10 @@ import {
   getEmailConfigs,
   getEmailConfigsByIdMailboxes,
   postEmailConfigsByIdSync,
+  putEmailConfigsByIdMailboxesOrder,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
+import { messageOf } from "@app/api/transport";
 import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
@@ -28,17 +30,26 @@ import {
 } from "@app/components/icons";
 import { PickerButton } from "@app/components/PickerButton";
 import { ago } from "@app/format";
+import { useCarry } from "@app/islands/app/carry";
 import { blank, write } from "@app/islands/app/drafts";
 import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { FolderMenu } from "@app/islands/app/FolderMenu";
-import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
+import {
+  arranged,
+  besideOf,
+  depthOf,
+  labelOfMailbox,
+  usual,
+  within,
+} from "@app/islands/app/mailbox";
 import {
   MessageDummies,
   MessageList,
   type Selecting,
 } from "@app/islands/app/MessageList";
+import { say } from "@app/islands/app/notices";
 import { Selection } from "@app/islands/app/Selection";
 import { countsWithPending, usePending } from "@app/islands/app/pending";
 import { Reader } from "@app/islands/app/Reader";
@@ -365,7 +376,8 @@ function Body({
 
 /**
  * The folders as a tree, and a way to make one; onPick is told when one is chosen or made, for a
- * list that closes then.
+ * list that closes then. A folder is dragged up or down among the ones beside it, and what is
+ * inside it goes along.
  */
 function FolderList({
   config,
@@ -378,16 +390,88 @@ function FolderList({
   current: Mailbox | undefined;
   onPick?: () => void;
 }) {
+  const client = useQueryClient();
+  // The folder being carried, and the one beside it that it would go before or after.
+  const [carrying, setCarrying] = useState<string | null>(null);
+  const [onto, setOnto] = useState<string | null>(null);
+  const arrange = useMutation({
+    mutationFn: (ids: string[]) =>
+      putEmailConfigsByIdMailboxesOrder(config, ids),
+    onMutate: async (ids) => {
+      await client.cancelQueries({ queryKey: qk.mailboxes(config) });
+      const before = client.getQueryData<Mailbox[]>(qk.mailboxes(config));
+      if (before) {
+        client.setQueryData(qk.mailboxes(config), arranged(before, ids));
+      }
+      return before;
+    },
+    onError: (err, _ids, before) => {
+      if (before) client.setQueryData(qk.mailboxes(config), before);
+      say(messageOf(err));
+    },
+    onSuccess: (now) => client.setQueryData(qk.mailboxes(config), now),
+  });
+
+  const carried = boxes.find((mb) => mb.id === carrying);
+  const target = boxes.find((mb) => mb.id === onto);
+  const beside = carried ? besideOf(boxes, carried).map((mb) => mb.id) : [];
+  const down =
+    carried && target
+      ? beside.indexOf(carried.id) < beside.indexOf(target.id)
+      : false;
+  // Going down it lands after the target and all inside it, so the bar goes under the last of
+  // those; going up, over the target. At the target's depth either way.
+  const marked = target
+    ? down
+      ? boxes.filter((mb) => mb === target || within(mb, target)).at(-1)
+      : target
+    : undefined;
+
+  const over = (mb: Mailbox, id: string | null) => {
+    setCarrying(mb.id);
+    const under = boxes.find((other) => other.id === id);
+    setOnto(
+      (under &&
+        besideOf(boxes, mb).find(
+          (other) =>
+            other.id !== mb.id &&
+            (other.id === under.id || within(under, other)),
+        )?.id) ??
+        null,
+    );
+  };
+  const drop = () => {
+    setCarrying(null);
+    setOnto(null);
+    if (!carried || !target) return;
+    const next = beside.filter((id) => id !== carried.id);
+    next.splice(beside.indexOf(target.id), 0, carried.id);
+    arrange.mutate(next);
+  };
+
   return (
     <ul className="flex flex-col">
       {boxes.map((mb) => (
-        <li key={mb.id}>
+        <li
+          key={mb.id}
+          className={`relative ${carried && (mb === carried || within(mb, carried)) ? "opacity-40" : ""}`}
+        >
           <FolderLink
             config={config}
             mb={mb}
             current={mb.id === current?.id}
             onPick={onPick}
+            onOver={(id) => over(mb, id)}
+            onDrop={drop}
           />
+          {/* Absolute, so it takes no room and the rows do not shift under the pointer. */}
+          {target && mb === marked ? (
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute right-3 h-0.5 rounded-full bg-fg ${down ? "-bottom-px" : "-top-px"}`}
+              style={{ left: `${0.75 + depthOf(target) * 0.875}rem` }}
+            />
+          ) : null}
         </li>
       ))}
       <li>
@@ -462,17 +546,40 @@ function FolderLink({
   mb,
   current,
   onPick,
+  onOver,
+  onDrop,
 }: {
   config: string;
   mb: Mailbox;
   current: boolean;
   onPick?: () => void;
+  /** Carried over the folder with this id, or over none. */
+  onOver: (id: string | null) => void;
+  onDrop: () => void;
 }) {
+  const carry = useCarry({
+    find: "[data-folder]",
+    onOver: (el) => onOver(el?.dataset.folder ?? null),
+    onDrop,
+  });
+  const carrying = {
+    "data-folder": mb.id,
+    ref: carry.hold,
+    draggable: false,
+    onPointerDown: carry.press,
+    onPointerMove: carry.move,
+    onPointerUp: carry.release,
+    onPointerCancel: carry.cancel,
+    onContextMenu: carry.menu,
+  };
+  // No selecting, and no long-press preview, of a row a finger may be picking up.
+  const still = "select-none [-webkit-touch-callout:none]";
   const indent = { paddingLeft: `${0.75 + depthOf(mb) * 0.875}rem` };
   if (!mb.selectable) {
     return (
       <span
-        className="flex min-h-8 items-center gap-2 px-3 text-sm text-faint"
+        {...carrying}
+        className={`flex min-h-8 items-center gap-2 px-3 text-sm text-faint ${still}`}
         style={indent}
       >
         <FolderIcon mb={mb} />
@@ -482,11 +589,19 @@ function FolderLink({
   }
   return (
     <Link
+      {...carrying}
       href={paths.mail(config, mb.id)}
       aria-current={current ? "page" : undefined}
-      className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${current ? "bg-shade font-medium" : "hover:bg-shade"}`}
+      className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${still} ${current ? "bg-shade font-medium" : "hover:bg-shade"}`}
       style={indent}
-      onClick={onPick}
+      onClick={(e) => {
+        if (carry.spent.current) {
+          carry.spent.current = false;
+          e.preventDefault();
+          return;
+        }
+        onPick?.();
+      }}
     >
       <span className="shrink-0 text-muted">
         <FolderIcon mb={mb} />

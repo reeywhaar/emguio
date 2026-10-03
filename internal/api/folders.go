@@ -235,3 +235,23 @@ func (s *Server) deleteMailbox(w http.ResponseWriter, r *http.Request) {
 	s.mirror.Refresh(c.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
+
+type orderBody struct {
+	IDs []string `json:"ids"`
+}
+
+// orderMailboxes puts folders side by side in the order given, kept here: the server keeps no
+// order. Answered with every folder, in the new order.
+func (s *Server) orderMailboxes(w http.ResponseWriter, r *http.Request) {
+	var body orderBody
+	if !decode(w, r, &body) {
+		return
+	}
+	u := userOf(r)
+	if err := s.store.SetMailboxOrder(r.Context(), u.ID, r.PathValue("id"), body.IDs); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.store.Notify(u.ID)
+	s.listMailboxes(w, r)
+}

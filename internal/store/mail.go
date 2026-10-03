@@ -41,6 +41,8 @@ type Mailbox struct {
 	Messages    uint32
 	Unseen      uint32
 	SyncedAt    *time.Time
+	// Position is where the user put it among the mailboxes beside it; nil for never.
+	Position *int
 }
 
 // Path is the name split at the server's delimiter: where the mailbox sits in the tree.
@@ -175,20 +177,25 @@ func (s *Store) SetSyncState(ctx context.Context, id, syncErr string) error {
 }
 
 const mailboxColumns = `id, email_config_id, name, delimiter, special_use, selectable,
-  uidvalidity, uidnext, messages, unseen, synced_at`
+  uidvalidity, uidnext, messages, unseen, synced_at, position`
 
 func scanMailbox(sc interface{ Scan(...any) error }) (*Mailbox, error) {
 	var (
-		m      Mailbox
-		synced sql.NullInt64
+		m        Mailbox
+		synced   sql.NullInt64
+		position sql.NullInt64
 	)
 	if err := sc.Scan(&m.ID, &m.EmailConfigID, &m.Name, &m.Delimiter, &m.SpecialUse, &m.Selectable,
-		&m.UIDValidity, &m.UIDNext, &m.Messages, &m.Unseen, &synced); err != nil {
+		&m.UIDValidity, &m.UIDNext, &m.Messages, &m.Unseen, &synced, &position); err != nil {
 		return nil, err
 	}
 	if synced.Valid {
 		at := fromUnix(synced.Int64)
 		m.SyncedAt = &at
+	}
+	if position.Valid {
+		at := int(position.Int64)
+		m.Position = &at
 	}
 	return &m, nil
 }
@@ -476,36 +483,64 @@ var useOrder = map[string]int{
 	UseInbox: 0, UseDrafts: 1, UseSent: 2, UseArchive: 3, UseAll: 4, UseFlagged: 5, UseJunk: 6, UseTrash: 7,
 }
 
-// SortMailboxes puts mailboxes in the order a sidebar shows them: the special ones first in a
-// fixed order, each followed by the mailboxes inside it, then the rest by path.
-//
-// By path rather than by name, so a parent is followed by its children whatever characters
-// their names happen to sort by.
+// SortMailboxes puts mailboxes in the order a sidebar shows them: as a tree, each followed by
+// the mailboxes inside it, and the ones beside each other where the user put them, then the
+// rest — at the top, the special ones in a fixed order first — by name.
 func SortMailboxes(list []*Mailbox) {
-	rootUse := map[string]string{}
+	byPath := map[string]*Mailbox{}
 	for _, m := range list {
-		if len(m.Path()) == 1 {
-			rootUse[m.Name] = m.SpecialUse
-		}
-	}
-	rank := func(m *Mailbox) int {
-		use := rootUse[m.Path()[0]]
-		if len(m.Path()) == 1 {
-			use = m.SpecialUse
-		}
-		if r, ok := useOrder[use]; ok {
-			return r
-		}
-		return len(useOrder)
+		byPath[strings.Join(m.Path(), "\x00")] = m
 	}
 	slices.SortStableFunc(list, func(a, b *Mailbox) int {
-		if ra, rb := rank(a), rank(b); ra != rb {
-			return ra - rb
+		pa, pb := a.Path(), b.Path()
+		i := 0
+		for i < len(pa) && i < len(pb) && pa[i] == pb[i] {
+			i++
 		}
-		return slices.CompareFunc(a.Path(), b.Path(), func(x, y string) int {
-			return strings.Compare(strings.ToLower(x), strings.ToLower(y))
-		})
+		if i == len(pa) || i == len(pb) {
+			return len(pa) - len(pb)
+		}
+		// Where they part, two mailboxes beside each other, listed or not.
+		return besides(byPath[strings.Join(pa[:i+1], "\x00")], byPath[strings.Join(pb[:i+1], "\x00")], pa[i], pb[i], i == 0)
 	})
+}
+
+// besides orders two mailboxes with the same parent, named x and y, either of them unlisted.
+func besides(a, b *Mailbox, x, y string, top bool) int {
+	pa, pb := placeOf(a), placeOf(b)
+	switch {
+	case pa != nil && pb != nil && *pa != *pb:
+		return *pa - *pb
+	case pa != nil && pb == nil:
+		return -1
+	case pa == nil && pb != nil:
+		return 1
+	}
+	if top {
+		if d := rankOf(a) - rankOf(b); d != 0 {
+			return d
+		}
+	}
+	if d := strings.Compare(strings.ToLower(x), strings.ToLower(y)); d != 0 {
+		return d
+	}
+	return strings.Compare(x, y)
+}
+
+func placeOf(m *Mailbox) *int {
+	if m == nil {
+		return nil
+	}
+	return m.Position
+}
+
+func rankOf(m *Mailbox) int {
+	if m != nil {
+		if r, ok := useOrder[m.SpecialUse]; ok {
+			return r
+		}
+	}
+	return len(useOrder)
 }
 
 // SetPreview replaces a kept message's preview, when reading it whole gives a better one than
@@ -585,18 +620,77 @@ func (s *Store) RenameMailboxes(ctx context.Context, configID, from, to, delimit
 	if err != nil {
 		return err
 	}
+	// Moved elsewhere, it has new mailboxes beside it and no place among them yet.
+	moved := !slices.Equal(parentOf(from, delimiter), parentOf(to, delimiter))
 	for _, m := range known {
-		var name string
+		var err error
 		switch {
+		case m.Name == from && moved:
+			_, err = tx.ExecContext(ctx, `UPDATE mailboxes SET name = ?, position = NULL WHERE id = ?`, to, m.ID)
 		case m.Name == from:
-			name = to
+			_, err = tx.ExecContext(ctx, `UPDATE mailboxes SET name = ? WHERE id = ?`, to, m.ID)
 		case delimiter != "" && strings.HasPrefix(m.Name, from+delimiter):
-			name = to + strings.TrimPrefix(m.Name, from)
-		default:
-			continue
+			_, err = tx.ExecContext(ctx, `UPDATE mailboxes SET name = ? WHERE id = ?`, to+strings.TrimPrefix(m.Name, from), m.ID)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE mailboxes SET name = ? WHERE id = ?`, name, m.ID); err != nil {
+		if err != nil {
 			return fmt.Errorf("rename mailboxes: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func parentOf(name, delimiter string) []string {
+	p := (&Mailbox{Name: name, Delimiter: delimiter}).Path()
+	return p[:len(p)-1]
+}
+
+// SetMailboxOrder puts mailboxes beside each other in the order given, all with the same parent:
+// the listed ones first, then the others beside them as they were.
+func (s *Store) SetMailboxOrder(ctx context.Context, userID, configID string, order []string) error {
+	boxes, err := s.Mailboxes(ctx, userID, configID)
+	if err != nil {
+		return err
+	}
+	if len(order) == 0 {
+		return Invalid("List the folders in their new order.")
+	}
+	byID := map[string]*Mailbox{}
+	for _, m := range boxes {
+		byID[m.ID] = m
+	}
+	var parent []string
+	listed := map[string]bool{}
+	for i, id := range order {
+		m := byID[id]
+		switch {
+		case !ids.Valid(ids.Mailbox, id):
+			return Invalid("%q is not a mailbox id.", id)
+		case m == nil:
+			return NotFound("There is no such mailbox.")
+		case listed[id]:
+			return Invalid("Each folder is listed once.")
+		case i > 0 && !slices.Equal(parentOf(m.Name, m.Delimiter), parent):
+			return Invalid("Only folders side by side can be put in order.")
+		}
+		listed[id] = true
+		parent = parentOf(m.Name, m.Delimiter)
+	}
+	// boxes is sorted, so the others come in their order already.
+	next := slices.Clone(order)
+	for _, m := range boxes {
+		if !listed[m.ID] && slices.Equal(parentOf(m.Name, m.Delimiter), parent) {
+			next = append(next, m.ID)
+		}
+	}
+
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("mailbox order: %w", err)
+	}
+	defer tx.Rollback()
+	for i, id := range next {
+		if _, err := tx.ExecContext(ctx, `UPDATE mailboxes SET position = ? WHERE id = ?`, i, id); err != nil {
+			return fmt.Errorf("mailbox order: %w", err)
 		}
 	}
 	return tx.Commit()

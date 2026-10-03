@@ -137,6 +137,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("DELETE /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.deleteDraft))
 	s.handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
 	s.handle("POST /api/email-configs/{id}/mailboxes", s.requireSession(s.createMailbox))
+	s.handle("PUT /api/email-configs/{id}/mailboxes/order", s.requireSession(s.orderMailboxes))
 	s.handle("PUT /api/email-configs/{id}/mailboxes/{mailbox}", s.requireSession(s.renameMailbox))
 	s.handle("DELETE /api/email-configs/{id}/mailboxes/{mailbox}", s.requireSession(s.deleteMailbox))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))

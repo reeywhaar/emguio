@@ -12,11 +12,7 @@ import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Field, Select } from "@app/components/Field";
 import { TextField } from "@app/components/TextField";
-import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
-
-/** Whether a's path starts with all of b's, and is longer: a is somewhere inside b. */
-const within = (a: Mailbox, b: Mailbox) =>
-  a.path.length > b.path.length && b.path.every((p, i) => a.path[i] === p);
+import { depthOf, labelOfMailbox, within } from "@app/islands/app/mailbox";
 
 /**
  * A folder on the mail server, named and placed — at the top or inside another: made on its own,

@@ -215,3 +215,101 @@ func TestASidebarIsSpecialMailboxesFirstEachWithItsChildren(t *testing.T) {
 		t.Errorf("order = %s\nwant    %s", strings.Join(got, ","), want)
 	}
 }
+
+func TestPlacedMailboxesComeFirstAmongTheOnesBesideThem(t *testing.T) {
+	at := func(n int) *int { return &n }
+	mb := func(name, use string, position *int) *Mailbox {
+		return &Mailbox{Name: name, Delimiter: "/", SpecialUse: use, Position: position}
+	}
+	list := []*Mailbox{
+		mb("INBOX", UseInbox, nil), mb("Sent", UseSent, nil), mb("Work/A", "", nil), mb("Zebra", "", at(1)),
+		mb("Work/B", "", at(0)), mb("Work", "", at(0)), mb("Work/B/Old", "", nil),
+	}
+	SortMailboxes(list)
+	var got []string
+	for _, m := range list {
+		got = append(got, m.Name)
+	}
+	want := "Work,Work/B,Work/B/Old,Work/A,Zebra,INBOX,Sent"
+	if strings.Join(got, ",") != want {
+		t.Errorf("order = %s\nwant    %s", strings.Join(got, ","), want)
+	}
+}
+
+func TestMailboxesArePutInOrderBesideEachOther(t *testing.T) {
+	st, u, cfg, _ := mailWorld(t, 0)
+	ctx := context.Background()
+	st.PutMailboxes(ctx, cfg.ID, []Listed{
+		{Name: "INBOX", Delimiter: "/", SpecialUse: UseInbox, Selectable: true},
+		{Name: "Sent", Delimiter: "/", SpecialUse: UseSent, Selectable: true},
+		{Name: "Work", Delimiter: "/", Selectable: true},
+		{Name: "Work/A", Delimiter: "/", Selectable: true},
+		{Name: "Work/B", Delimiter: "/", Selectable: true},
+		{Name: "Zebra", Delimiter: "/", Selectable: true},
+	})
+	id := map[string]string{}
+	boxes, _ := st.Mailboxes(ctx, u.ID, cfg.ID)
+	for _, m := range boxes {
+		id[m.Name] = m.ID
+	}
+	names := func() string {
+		boxes, _ := st.Mailboxes(ctx, u.ID, cfg.ID)
+		var got []string
+		for _, m := range boxes {
+			got = append(got, m.Name)
+		}
+		return strings.Join(got, ",")
+	}
+
+	if err := st.SetMailboxOrder(ctx, u.ID, cfg.ID, []string{id["Zebra"], id["Work"]}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := names(), "Zebra,Work,Work/A,Work/B,INBOX,Sent"; got != want {
+		t.Errorf("order = %s\nwant    %s", got, want)
+	}
+	if err := st.SetMailboxOrder(ctx, u.ID, cfg.ID, []string{id["Work/B"], id["Work/A"]}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := names(), "Zebra,Work,Work/B,Work/A,INBOX,Sent"; got != want {
+		t.Errorf("order = %s\nwant    %s", got, want)
+	}
+
+	// A new one from the server goes after the placed ones.
+	st.PutMailboxes(ctx, cfg.ID, append(listedOf(boxes), Listed{Name: "Alpha", Delimiter: "/", Selectable: true}))
+	if got, want := names(), "Zebra,Work,Work/B,Work/A,INBOX,Sent,Alpha"; got != want {
+		t.Errorf("order = %s\nwant    %s", got, want)
+	}
+
+	// Renamed in place it keeps its place; moved, it starts again among its new neighbours.
+	st.RenameMailboxes(ctx, cfg.ID, "Zebra", "Yak", "/")
+	if got, want := names(), "Yak,Work,Work/B,Work/A,INBOX,Sent,Alpha"; got != want {
+		t.Errorf("after a rename, order = %s\nwant    %s", got, want)
+	}
+	st.RenameMailboxes(ctx, cfg.ID, "Yak", "Work/Yak", "/")
+	if got, want := names(), "Work,Work/B,Work/A,Work/Yak,INBOX,Sent,Alpha"; got != want {
+		t.Errorf("after a move, order = %s\nwant    %s", got, want)
+	}
+
+	for name, order := range map[string][]string{
+		"none":       nil,
+		"not an id":  {"nope"},
+		"twice":      {id["Sent"], id["Sent"]},
+		"two levels": {id["Sent"], id["Work/A"]},
+	} {
+		if err := st.SetMailboxOrder(ctx, u.ID, cfg.ID, order); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want invalid", name, err)
+		}
+	}
+	other := newUser(t, st, "other")
+	if err := st.SetMailboxOrder(ctx, other.ID, cfg.ID, []string{id["Sent"]}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another user's: err = %v, want not found", err)
+	}
+}
+
+func listedOf(boxes []*Mailbox) []Listed {
+	out := make([]Listed, len(boxes))
+	for i, m := range boxes {
+		out[i] = Listed{Name: m.Name, Delimiter: m.Delimiter, SpecialUse: m.SpecialUse, Selectable: m.Selectable}
+	}
+	return out
+}

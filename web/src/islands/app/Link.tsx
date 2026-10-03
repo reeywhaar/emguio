@@ -1,4 +1,4 @@
-import type { AnchorHTMLAttributes, MouseEvent } from "react";
+import type { ComponentProps, MouseEvent } from "react";
 
 import { go } from "@app/islands/app/route";
 
@@ -10,7 +10,7 @@ export function Link({
   href,
   onClick,
   ...props
-}: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) {
+}: ComponentProps<"a"> & { href: string }) {
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
     if (e.defaultPrevented || e.button !== 0) return;

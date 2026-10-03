@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { qk } from "@app/api/keys";
+import { ApiError } from "@app/api/transport";
 import type {
   EmailConfig,
   Job,
@@ -31,6 +32,7 @@ const getThreads = vi.fn();
 const postMailbox = vi.fn();
 const putMailbox = vi.fn();
 const deleteMailbox = vi.fn();
+const putOrder = vi.fn();
 const postJob = vi.fn();
 const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
@@ -56,6 +58,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   ) => putMailbox(id, mailbox, body),
   deleteEmailConfigsByIdMailboxesByMailbox: (id: string, mailbox: string) =>
     deleteMailbox(id, mailbox),
+  putEmailConfigsByIdMailboxesOrder: (id: string, ids: string[]) =>
+    putOrder(id, ids),
   getEmailConfigsByIdMailboxesByMailboxThreads: (
     id: string,
     mailbox: string,
@@ -242,6 +246,41 @@ const selectedCount = () =>
     .textContent;
 const checkbox = (list: ReturnType<typeof within>, name: string) =>
   list.getByRole("checkbox", { name }) as HTMLInputElement;
+
+// The sidebar's folders, with what is said of them.
+const sidebar = async () => {
+  mount(
+    <>
+      <Mail named="ec_1" mailbox="mb_inbox" message={null} />
+      <Notice />
+    </>,
+  );
+  const nav = await screen.findByRole("navigation", { name: "Folders" });
+  await within(nav).findByRole("link", { name: /^Work/ });
+  return within(nav);
+};
+// A pointer pressed on a folder and moved; where it is over is elementFromPoint's to say.
+const press = (el: Element, pointerType: string, clientY = 50) =>
+  fireEvent.pointerDown(el, {
+    button: 0,
+    pointerId: 1,
+    pointerType,
+    clientX: 10,
+    clientY,
+  });
+const move = (el: Element, pointerType: string, clientY: number) =>
+  fireEvent.pointerMove(el, {
+    pointerId: 1,
+    pointerType,
+    clientX: 10,
+    clientY,
+  });
+// Long enough for a request that was going to be made to have been.
+const settled = () => act(() => new Promise((done) => setTimeout(done, 20)));
+const names = (nav: ReturnType<typeof within>) =>
+  nav
+    .getAllByRole("link")
+    .map((l: HTMLElement) => l.textContent?.split(",")[0]);
 
 describe("the mail view", () => {
   it("opens on the inbox and lists its messages", async () => {
@@ -436,6 +475,104 @@ describe("the mail view", () => {
     const nav = await screen.findByRole("navigation", { name: "Folders" });
     fireEvent.click(await within(nav).findByRole("link", { name: /Clients/ }));
     expect(window.location.pathname).toBe("/c/ec_1/mb_clients");
+  });
+
+  describe("dragging a folder", () => {
+    // Every row is somewhere to land; which one is the test's to say.
+    let under: Element | null = null;
+    beforeEach(() => {
+      document.elementFromPoint = () => under;
+      putOrder.mockImplementation(async (_id: string, ids: string[]) =>
+        ids.flatMap((id) => {
+          const top = boxes.find((mb) => mb.id === id)!;
+          return boxes.filter((mb) => mb.path[0] === top.path[0]);
+        }),
+      );
+    });
+    it("puts it among the ones beside it, with what is inside it, and does not open it", async () => {
+      const nav = await sidebar();
+      const folder = nav.getByRole("link", { name: /^Work/ });
+      under = nav.getByRole("link", { name: /^Inbox/ });
+      press(folder, "mouse");
+      move(folder, "mouse", 10);
+      fireEvent.pointerUp(folder, { pointerId: 1 });
+      fireEvent.click(folder);
+      await waitFor(() =>
+        expect(putOrder).toHaveBeenCalledWith("ec_1", [
+          "mb_work",
+          "mb_inbox",
+          "mb_sent",
+        ]),
+      );
+      expect(names(nav)).toEqual(["Work", "Clients", "Inbox", "Sent"]);
+      expect(window.location.pathname).toBe("/c/ec_1");
+    });
+
+    it("lands only beside its own, over what is inside them counting as them", async () => {
+      const nav = await sidebar();
+      const sent = nav.getByRole("link", { name: /^Sent/ });
+      under = nav.getByRole("link", { name: /^Clients/ });
+      press(sent, "mouse");
+      move(sent, "mouse", 90);
+      fireEvent.pointerUp(sent, { pointerId: 1 });
+      await waitFor(() =>
+        expect(putOrder).toHaveBeenCalledWith("ec_1", [
+          "mb_inbox",
+          "mb_work",
+          "mb_sent",
+        ]),
+      );
+
+      putOrder.mockClear();
+      const clients = nav.getByRole("link", { name: /^Clients/ });
+      under = nav.getByRole("link", { name: /^Inbox/ });
+      press(clients, "mouse");
+      move(clients, "mouse", 10);
+      fireEvent.pointerUp(clients, { pointerId: 1 });
+      await settled();
+      expect(putOrder).not.toHaveBeenCalled();
+    });
+
+    it("by finger, once it has rested; one that moves at once is scrolling", async () => {
+      const nav = await sidebar();
+      const folder = nav.getByRole("link", { name: /^Work/ });
+      under = nav.getByRole("link", { name: /^Inbox/ });
+      press(folder, "touch");
+      move(folder, "touch", 10);
+      fireEvent.pointerUp(folder, { pointerId: 1 });
+      await settled();
+      expect(putOrder).not.toHaveBeenCalled();
+
+      press(folder, "touch");
+      await act(() => new Promise((done) => setTimeout(done, 450)));
+      move(folder, "touch", 10);
+      fireEvent.pointerUp(folder, { pointerId: 1 });
+      await waitFor(() =>
+        expect(putOrder).toHaveBeenCalledWith("ec_1", [
+          "mb_work",
+          "mb_inbox",
+          "mb_sent",
+        ]),
+      );
+    });
+
+    it("goes back where it was when the server refuses", async () => {
+      putOrder.mockRejectedValue(
+        new ApiError(
+          400,
+          "invalid",
+          "Only folders side by side can be put in order.",
+        ),
+      );
+      const nav = await sidebar();
+      const folder = nav.getByRole("link", { name: /^Work/ });
+      under = nav.getByRole("link", { name: /^Inbox/ });
+      press(folder, "mouse");
+      move(folder, "mouse", 10);
+      fireEvent.pointerUp(folder, { pointerId: 1 });
+      await screen.findByText("Only folders side by side can be put in order.");
+      expect(names(nav)).toEqual(["Inbox", "Sent", "Work", "Clients"]);
+    });
   });
 
   // In mail somebody sent, the useful name is who it went to.

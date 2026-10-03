@@ -24,5 +24,10 @@ if (typeof HTMLDialogElement !== "undefined") {
   HTMLDialogElement.prototype.close ??= close;
 }
 
+// Nor pointer capture, which a drag asks for and a test has no pointer to give.
+if (typeof HTMLElement !== "undefined") {
+  HTMLElement.prototype.setPointerCapture ??= () => {};
+}
+
 globalThis.IntersectionObserver ??=
   Watcher as unknown as typeof IntersectionObserver;

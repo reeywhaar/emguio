@@ -11,6 +11,36 @@ export function depthOf(mb: Mailbox): number {
   return mb.path.length - 1;
 }
 
+/** Whether a's path starts with all of b's, and is longer: a is somewhere inside b. */
+export const within = (a: Mailbox, b: Mailbox) =>
+  a.path.length > b.path.length && b.path.every((p, i) => a.path[i] === p);
+
+/** The mailboxes side by side with mb, mb among them, in the order listed. */
+export function besideOf(boxes: Mailbox[], mb: Mailbox): Mailbox[] {
+  const depth = mb.path.length - 1;
+  return boxes.filter(
+    (other) =>
+      other.path.length === mb.path.length &&
+      mb.path.slice(0, depth).every((p, i) => other.path[i] === p),
+  );
+}
+
+/**
+ * The tree with mailboxes side by side put in the order of ids, each taking what is inside it
+ * along.
+ */
+export function arranged(boxes: Mailbox[], ids: string[]): Mailbox[] {
+  const blocks = ids.flatMap((id) => {
+    const top = boxes.find((mb) => mb.id === id);
+    return top ? boxes.filter((mb) => mb === top || within(mb, top)) : [];
+  });
+  const moved = new Set(blocks);
+  const at = boxes.findIndex((mb) => moved.has(mb));
+  if (at < 0) return boxes;
+  const rest = boxes.filter((mb) => !moved.has(mb));
+  return [...rest.slice(0, at), ...blocks, ...rest.slice(at)];
+}
+
 /** The mailbox a view opens on when none is named: INBOX, or the first that can be opened. */
 export function usual(boxes: Mailbox[]): Mailbox | undefined {
   return (

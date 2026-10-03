@@ -69,6 +69,13 @@ export const deleteEmailConfigsByIdMailboxesByMailbox = (
     { method: "DELETE" },
   );
 
+/** Puts folders side by side in an order; answered with every folder, in the new order. */
+export const putEmailConfigsByIdMailboxesOrder = (id: string, ids: string[]) =>
+  request<{ mailboxes: Mailbox[] }>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/order`,
+    { method: "PUT", body: { ids } },
+  ).then((it) => it.mailboxes);
+
 /** Chooses the folder a config archives to; empty for the one the server names. */
 export const putEmailConfigsByIdArchive = (id: string, mailbox: string) =>
   request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}/archive`, {
