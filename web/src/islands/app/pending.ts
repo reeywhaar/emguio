@@ -7,6 +7,7 @@ import {
 import { useCached } from "@app/api/cached";
 import { mk, qk } from "@app/api/keys";
 import type {
+  Conversation,
   Job,
   JobDraft,
   Mailbox,
@@ -182,6 +183,18 @@ export function commit(client: QueryClient, j: JobDraft) {
     }
     rows((msgs) =>
       msgs.map((x) => (x.id === j.message ? { ...x, ...change(j) } : x)),
+    );
+    client.setQueriesData<Conversation>(
+      { queryKey: qk.conversations(j.email_config) },
+      (old) =>
+        old && {
+          ...old,
+          messages: old.messages.map((x) =>
+            x.mailbox === j.mailbox && x.id === j.message
+              ? { ...x, ...change(j) }
+              : x,
+          ),
+        },
     );
   }
   client.setQueryData<Mailbox[]>(

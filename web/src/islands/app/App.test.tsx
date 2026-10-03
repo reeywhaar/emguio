@@ -95,7 +95,7 @@ describe("the application", () => {
     within(dialog).getByRole("heading", { name: "Add mail account" });
   });
 
-  // One config at a time, chosen in the header from a list that marks those with unread mail,
+  // One config at a time, chosen in the header from a list that counts the unread in each Inbox,
   // and the address says which.
   it("switches mail account from the header", async () => {
     getEmailConfigs.mockResolvedValue([
@@ -111,7 +111,7 @@ describe("the application", () => {
     dialog.getByRole("heading", { name: "Mail accounts" });
     expect(dialog.getAllByRole("link").map((l) => l.textContent)).toEqual([
       "Workwork@example.com",
-      "Home, unread mailhome@example.com",
+      "Homehome@example.com, unread in Inbox: 2",
       "Add mail account",
     ]);
     fireEvent.click(dialog.getByRole("link", { name: /^Home/ }));

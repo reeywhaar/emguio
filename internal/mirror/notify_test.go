@@ -26,7 +26,7 @@ const (
 // Under NOTIFY, a folder other than INBOX is counted as soon as the server says it moved rather
 // than at the next full pass, and the user told; the session goes on waiting after.
 func TestAFolderTheServerSaysMovedIsCountedAtOnce(t *testing.T) {
-	w, n := newNotifyingWorld(t)
+	w, n := newFrontedWorld(t)
 	w.create("Work")
 	w.running()
 	if got := n.Asked(); len(got) != 1 || got[0] != notifyAll {
@@ -56,7 +56,7 @@ func TestAFolderTheServerSaysMovedIsCountedAtOnce(t *testing.T) {
 
 // A folder made elsewhere is listed as soon as the server says so.
 func TestAFolderMadeElsewhereIsListedAtOnce(t *testing.T) {
-	w, n := newNotifyingWorld(t)
+	w, n := newFrontedWorld(t)
 	w.running()
 	w.create("Later")
 	n.Tell(`* LIST () "/" "Later"`)
@@ -66,7 +66,7 @@ func TestAFolderMadeElsewhereIsListedAtOnce(t *testing.T) {
 // A server that will not say a change of flags elsewhere is asked for the rest, and one that drops
 // NOTIFY is asked again, after a full pass for what it did not say.
 func TestNotifyIsAskedForLessOrAgain(t *testing.T) {
-	w, n := newNotifyingWorld(t)
+	w, n := newFrontedWorld(t)
 	n.Refuse = func(asked string) bool { return strings.Count(asked, "FlagChange") > 1 }
 	w.running()
 	if got := n.Asked(); len(got) != 2 || got[1] != notifyLess {
@@ -79,7 +79,7 @@ func TestNotifyIsAskedForLessOrAgain(t *testing.T) {
 
 // Refused NOTIFY altogether, the session waits in INBOX as it would on a server without it.
 func TestARefusedNotifyLeavesTheWaitAsItWas(t *testing.T) {
-	w, n := newNotifyingWorld(t)
+	w, n := newFrontedWorld(t)
 	n.Refuse = func(string) bool { return true }
 	w.deliver("INBOX", 1, "alice@example.com", "First")
 	w.running()

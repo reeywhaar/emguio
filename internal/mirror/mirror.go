@@ -46,6 +46,8 @@ type Mirror struct {
 	fetchers map[string]*fetcher
 	runners  map[string]chan struct{}
 	kick     chan struct{}
+	// threads are the conversations of the mailboxes last asked about, most recent last.
+	threads []*keptThreads
 	// drafts wakes the draft writer, and drafting keeps it to one draft at a time.
 	drafts   chan struct{}
 	drafting sync.Mutex

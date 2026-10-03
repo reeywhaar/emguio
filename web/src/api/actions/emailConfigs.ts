@@ -3,6 +3,7 @@ import type {
   EmailConfig,
   EmailConfigDraft,
   ClosedDraft,
+  Conversation,
   KeptDraft,
   Mailbox,
   MessagePage,
@@ -113,6 +114,21 @@ export const getEmailConfigsByIdMailboxesByMailboxMessagesByMessage = (
   mailbox: string,
   message: string,
 ) => request<ReadMessage>(messagePath(id, mailbox, message));
+
+/** The conversation a message is in. */
+export const getEmailConfigsByIdMailboxesByMailboxMessagesByMessageConversation =
+  (id: string, mailbox: string, message: string) =>
+    request<Conversation>(`${messagePath(id, mailbox, message)}/conversation`);
+
+/** How many messages each of some is in a conversation with in its folder, those not alone. */
+export const getEmailConfigsByIdMailboxesByMailboxThreads = (
+  id: string,
+  mailbox: string,
+  messages: string[],
+) =>
+  request<{ counts: Record<string, number> }>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/threads${query({ messages: messages.join(",") })}`,
+  );
 
 /** Where a part of a message is downloaded from, by its section. */
 export const partURL = (

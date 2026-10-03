@@ -20,6 +20,7 @@ const postJob = vi.fn();
 
 const postSend = vi.fn();
 const postDraft = vi.fn();
+const getConversation = vi.fn();
 const putDraft = vi.fn();
 const deleteDraft = vi.fn();
 vi.mock("@app/api/actions/emailConfigs", () => ({
@@ -56,6 +57,11 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     },
   ],
   postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),
+  getEmailConfigsByIdMailboxesByMailboxMessagesByMessageConversation: (
+    id: string,
+    mailbox: string,
+    message: string,
+  ) => getConversation(id, mailbox, message),
   postEmailConfigsByIdDrafts: (id: string, body: unknown) =>
     postDraft(id, body),
   putEmailConfigsByIdDraftsByDraft: (
@@ -153,6 +159,7 @@ beforeEach(() => {
   window.history.pushState({}, "", "/c/ec_1/mb_inbox/m_1");
   getMailboxes.mockResolvedValue([inbox, archive, trash, junk, work]);
   getMessage.mockResolvedValue(read());
+  getConversation.mockResolvedValue({ messages: [], earlier: 0 });
   // The server takes every job at once, and does it later.
   postJob.mockImplementation(async (body: JobDraft) => ({
     ...body,
@@ -694,5 +701,69 @@ describe("drafts", () => {
     fireEvent.click(dialog.getByRole("button", { name: "Close" }));
     await screen.findByText("Discard this message?");
     expect(saved()).toHaveLength(1);
+  });
+});
+
+describe("a conversation", () => {
+  // Oldest first, the open message marked, and one's own replies from Sent among them; another
+  // reads in place, and opens from there.
+  it("shows the conversation the message is in, and reads another in place", async () => {
+    getConversation.mockResolvedValue({
+      messages: [
+        {
+          ...listed({
+            id: "m_0",
+            from: { name: "Misha", email: "misha@example.com" },
+            preview: "Any news?",
+            seen: true,
+          }),
+          mailbox: "mb_sent",
+        },
+        { ...listed(), mailbox: "mb_inbox" },
+      ],
+      earlier: 0,
+    });
+    getMessage.mockImplementation(
+      async (_c: string, _mb: string, id: string) =>
+        id === "m_0"
+          ? read({
+              id: "m_0",
+              mailbox: "mb_sent",
+              text: "Any news on the numbers?",
+            })
+          : read(),
+    );
+    open();
+    const talk = within(
+      await screen.findByRole("region", { name: "Conversation" }),
+    );
+    const lines = talk.getAllByRole("listitem");
+    expect(lines.map((li) => li.getAttribute("aria-current"))).toEqual([
+      null,
+      "true",
+    ]);
+    // Opening it reads it, which its line says at once.
+    await waitFor(() =>
+      expect(talk.getAllByRole("listitem")[1]!.textContent).not.toContain(
+        "Unread.",
+      ),
+    );
+    const mine = talk.getByRole("button", { name: /^You/ });
+    expect(mine.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(mine);
+    await talk.findByText("Any news on the numbers?");
+    expect(
+      talk
+        .getByRole("link", { name: "Open this message" })
+        .getAttribute("href"),
+    ).toBe("/c/ec_1/mb_sent/m_0");
+    expect(getMessage).toHaveBeenCalledWith("ec_1", "mb_sent", "m_0");
+  });
+
+  it("shows nothing for a message on its own", async () => {
+    open();
+    await screen.findByRole("heading", { name: "Quarterly numbers" });
+    await waitFor(() => expect(getConversation).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
   });
 });

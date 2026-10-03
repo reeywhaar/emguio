@@ -37,6 +37,12 @@ type fakeMirror struct {
 	// origin is what a reply reads of its original, and sendings what was sent.
 	origin   *mirror.Origin
 	sendings []mirror.Sending
+	// threads are the server's conversations, nil for a server without THREAD; heads what it holds
+	// of each UID; related what a search of another mailbox finds, and what each search asked.
+	threads *mirror.Threads
+	heads   map[uint32]store.Header
+	related *mirror.Listing
+	asked   [][]string
 	// store is where the drafts it holds and forgets are kept; written each draft written, and
 	// woken how many times it was told one was saved.
 	store   *store.Store
@@ -45,6 +51,28 @@ type fakeMirror struct {
 	err     error
 }
 
+func (f *fakeMirror) Threads(context.Context, store.SyncTarget, string) (*mirror.Threads, error) {
+	if f.threads == nil {
+		return nil, mirror.ErrUnsupported
+	}
+	return f.threads, nil
+}
+func (f *fakeMirror) Headers(_ context.Context, _ store.SyncTarget, _ string, _ uint32, uids []uint32) ([]store.Header, error) {
+	var out []store.Header
+	for _, uid := range uids {
+		out = append(out, f.heads[uid])
+	}
+	return out, nil
+}
+func (f *fakeMirror) Related(_ context.Context, _ store.SyncTarget, _ string, answered, answers []string) (*mirror.Listing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, append(append([]string{}, answered...), answers...))
+	if f.related == nil {
+		return &mirror.Listing{}, nil
+	}
+	return f.related, nil
+}
 func (f *fakeMirror) WakeDrafts() { f.mu.Lock(); f.woken++; f.mu.Unlock() }
 func (f *fakeMirror) WriteDraft(_ context.Context, id string) error {
 	f.mu.Lock()

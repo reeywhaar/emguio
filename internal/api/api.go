@@ -109,7 +109,9 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, mirror
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.listMessages))
 
+	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/threads", s.requireSession(s.threadCounts))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.readMessage))
+	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/conversation", s.requireSession(s.conversation))
 	s.mux.Handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireSession(s.readPart))
 	s.mux.Handle("GET /api/proxy", s.requireSession(s.proxyImage))
 

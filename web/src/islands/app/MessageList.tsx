@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 
-import { getEmailConfigsByIdMailboxesByMailboxMessages } from "@app/api/actions/emailConfigs";
+import {
+  getEmailConfigsByIdMailboxesByMailboxMessages,
+  getEmailConfigsByIdMailboxesByMailboxThreads,
+} from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
 import type { Mailbox, Message } from "@app/api/types";
@@ -88,6 +91,25 @@ export function MessageList({
     pages.data,
   ]);
 
+  // How many messages each row is in a conversation with, asked a page at a time once the page is
+  // shown: the list never waits for it.
+  const conversations = useQueries({
+    queries: (pages.data?.pages ?? []).map((page) => {
+      const ids = page.messages.map((m) => m.id);
+      return {
+        queryKey: qk.threads(config, mailbox.id, ids.join(",")),
+        queryFn: () =>
+          getEmailConfigsByIdMailboxesByMailboxThreads(config, mailbox.id, ids),
+        enabled: ids.length > 0,
+      };
+    }),
+    combine: (results) =>
+      Object.assign({}, ...results.map((r) => r.data?.counts ?? {})) as Record<
+        string,
+        number
+      >,
+  });
+
   // Where a Shift-click's range starts: the last row toggled.
   const anchor = useRef<string | null>(null);
 
@@ -148,6 +170,7 @@ export function MessageList({
               message={m}
               q={q}
               open={m.id === open}
+              conversation={conversations[m.id]}
               selected={select ? select.selected.has(m.id) : undefined}
               onToggle={select ? (range) => toggle(m.id, range) : undefined}
             />
@@ -217,6 +240,7 @@ function Row({
   message: m,
   q,
   open,
+  conversation,
   selected,
   onToggle,
 }: {
@@ -225,6 +249,8 @@ function Row({
   message: Message;
   q: string;
   open: boolean;
+  /** How many messages of the folder its conversation holds, when it is in one. */
+  conversation?: number;
   /** Set while selecting: whether this row is. */
   selected?: boolean;
   onToggle?: (range: boolean) => void;
@@ -250,6 +276,13 @@ function Row({
           <Paperclip className="shrink-0 self-center text-muted" />
         ) : null}
         {m.flagged ? <Star className="shrink-0 self-center text-warn" /> : null}
+        {conversation ? (
+          <span className="shrink-0 text-xs text-faint tabular-nums">
+            <span className="sr-only">Conversation of </span>
+            {conversation}
+            <span className="sr-only">.</span>
+          </span>
+        ) : null}
         <time
           dateTime={new Date(m.date * 1000).toISOString()}
           title={full(m.date)}

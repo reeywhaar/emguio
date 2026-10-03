@@ -27,6 +27,7 @@ import {
 } from "@app/components/icons";
 import { full, size } from "@app/format";
 import { Actions } from "@app/islands/app/Actions";
+import { Conversation } from "@app/islands/app/Conversation";
 import {
   forwardOf,
   others,
@@ -108,6 +109,13 @@ export function Reader({
             <h2 className="text-xl font-semibold break-words">
               {known.subject || "(no subject)"}
             </h2>
+            {mailbox.special_use === "drafts" ? null : (
+              <Conversation
+                config={config}
+                mailbox={mailbox}
+                message={message}
+              />
+            )}
             <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
               <span className="font-medium">
                 {known.from.name || known.from.email || "(no sender)"}

@@ -32,11 +32,15 @@ export function useLive() {
       // changed what is in it, so the list on screen never disagrees with the number beside
       // its folder — mail another client moved into Trash, say.
       // Searches of a folder too, INBOX's included, which the server keeps nothing for.
+      // With them, what the folder's conversations hold, and every conversation open: a reply
+      // that arrived, or was filed in Sent, belongs in it.
       for (const [config, mailbox] of moved(before, counts(client))) {
         client.invalidateQueries({
           queryKey: qk.folder(config, mailbox),
           predicate: ({ queryKey }) => !kept(client, queryKey),
         });
+        client.invalidateQueries({ queryKey: qk.threadsOf(config, mailbox) });
+        client.invalidateQueries({ queryKey: qk.conversations(config) });
       }
     };
     source.addEventListener("changed", refresh);

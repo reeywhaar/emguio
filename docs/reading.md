@@ -225,6 +225,29 @@ the results stay beside it, and a reload or Back lands on them. The field sits a
 Enter searches, Escape or the cross goes back to the whole folder, and `/` reaches it from
 anywhere but a field. Actions on results, one or a selection, are what they are anywhere.
 
+## A conversation is the server's THREAD, with its other side from Sent
+
+Nothing is kept here to thread by either, so conversations are the server's `UID THREAD
+REFERENCES`: by References and In-Reply-To, then by subject for what has neither. Dovecot,
+Cyrus — Fastmail — and most servers of their kind have it; Gmail does not, and there a message
+stands on its own. `THREAD` answers for the whole folder at once, so its answer is kept in
+memory, for the last eight folders asked about, while each holds what it held: the same
+UIDVALIDITY, `UIDNEXT` and count.
+
+The list stays a message a row. Once a page of it shows, it asks
+`GET …/mailboxes/{mailbox}/threads?messages=…` how many messages each row's conversation holds
+in the folder, and draws the number left of the date: the list never waits for it, the window
+included. Opening a message asks for `GET …/messages/{message}/conversation`, shown under the
+subject oldest first, with the open message marked. The rest open in place, as their text, and
+from there in full; past six, the earlier ones wait to be asked for, and past a hundred in the
+folder, the oldest are not shown. Drafts have none.
+
+`THREAD` is one folder's, and one's own replies are in Sent. So a conversation is searched for
+there too, with `UID SEARCH` by Message-ID: what answers one of its messages, in In-Reply-To or
+References, and what one of them answers. For a message in Sent the other side is INBOX. A
+message filed in both shows once. When a folder's counts move, its rows' numbers and every
+conversation open are read again.
+
 ## What a special mailbox is for comes from the server, then from its name
 
 `SPECIAL-USE` flags name Sent, Drafts, Trash, Junk and Archive where the server has them. Where

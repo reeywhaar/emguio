@@ -11,14 +11,18 @@ import (
 	"testing"
 )
 
-// Notifier is an IMAP server here with NOTIFY (RFC 5465), which the one it fronts lacks: it takes
-// NOTIFY itself, and a test says for it what a server with NOTIFY would say unasked.
-type Notifier struct {
-	mu      sync.Mutex
-	asked   []string
-	clients []*notified
+// Front is an IMAP server here with what the one it fronts lacks, NOTIFY (RFC 5465) and THREAD
+// (RFC 5256): it takes those commands itself, and a test says for it what a server with them would
+// say.
+type Front struct {
+	mu       sync.Mutex
+	asked    []string
+	threaded int
+	clients  []*notified
 	// Refuse, when set, is whether to answer a NOTIFY with BAD, given what it asked.
 	Refuse func(asked string) bool
+	// Threads is the answer to THREAD, as the server says it: "(1 2)(3)".
+	Threads string
 }
 
 // notified is one client's connection, written to one whole response at a time, so what is
@@ -36,12 +40,12 @@ func (c *notified) write(b []byte) error {
 	return err
 }
 
-// IMAPNotifying is IMAPSaying with "implicit" TLS and NOTIFY. said sees what passes to the server
-// behind, which is everything but NOTIFY and what is told.
-func IMAPNotifying(t testing.TB, cert *Cert, username, password string, said io.Writer) (int, *Notifier) {
+// IMAPFront is IMAPSaying with "implicit" TLS, NOTIFY and THREAD. said sees what passes to the
+// server behind, which is everything but those and what is told.
+func IMAPFront(t testing.TB, cert *Cert, username, password string, said io.Writer) (int, *Front) {
 	t.Helper()
 	behind := IMAPSaying(t, cert, "", username, password, Modern, said)
-	n := &Notifier{}
+	n := &Front{}
 	ln := listen(t, cert, "implicit")
 	go func() {
 		for {
@@ -56,7 +60,7 @@ func IMAPNotifying(t testing.TB, cert *Cert, username, password string, said io.
 }
 
 // Tell says line, an untagged response, to every client NOTIFY is set for.
-func (n *Notifier) Tell(line string) {
+func (n *Front) Tell(line string) {
 	n.mu.Lock()
 	clients := n.clients
 	n.mu.Unlock()
@@ -70,8 +74,15 @@ func (n *Notifier) Tell(line string) {
 	}
 }
 
+// Threaded is how many times THREAD was asked.
+func (n *Front) Threaded() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.threaded
+}
+
 // Asked is what each NOTIFY asked for, in order.
-func (n *Notifier) Asked() []string {
+func (n *Front) Asked() []string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return append([]string(nil), n.asked...)
@@ -81,10 +92,11 @@ var (
 	// literal ends a line followed by that many bytes as they are.
 	literal       = regexp.MustCompile(`\{(\d+)\+?\}\r?\n$`)
 	notifyCommand = regexp.MustCompile(`(?i)^(\S+) NOTIFY (.*?)\r?\n$`)
+	threadCommand = regexp.MustCompile(`(?i)^(\S+) UID THREAD `)
 	capability    = regexp.MustCompile(`^(\* CAPABILITY|\* OK \[CAPABILITY|\S+ OK \[CAPABILITY)`)
 )
 
-func (n *Notifier) serve(t testing.TB, client net.Conn, behind int) {
+func (n *Front) serve(t testing.TB, client net.Conn, behind int) {
 	defer client.Close()
 	server, err := net.Dial("tcp", net.JoinHostPort(Host, strconv.Itoa(behind)))
 	if err != nil {
@@ -106,7 +118,7 @@ func (n *Notifier) serve(t testing.TB, client net.Conn, behind int) {
 				return
 			}
 			// The server behind says only what it has itself.
-			response = capability.ReplaceAll(response, []byte("${1} NOTIFY"))
+			response = capability.ReplaceAll(response, []byte("${1} NOTIFY THREAD=REFERENCES"))
 			if c.write(response) != nil {
 				return
 			}
@@ -120,6 +132,14 @@ func (n *Notifier) serve(t testing.TB, client net.Conn, behind int) {
 		line, err := r.ReadString('\n')
 		if err != nil {
 			return
+		}
+		if m := threadCommand.FindStringSubmatch(line); m != nil {
+			n.mu.Lock()
+			n.threaded++
+			threads := n.Threads
+			n.mu.Unlock()
+			c.write([]byte("* THREAD " + threads + "\r\n" + m[1] + " OK THREAD done\r\n"))
+			continue
 		}
 		if m := notifyCommand.FindStringSubmatch(line); m != nil {
 			n.mu.Lock()

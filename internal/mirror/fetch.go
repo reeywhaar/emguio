@@ -40,6 +40,7 @@ type fetcher struct {
 	mailbox     string
 	writable    bool
 	uidValidity uint32
+	uidNext     uint32
 }
 
 // fetcherFor is the config's session for reading, or for changing, a new one when the config
@@ -111,7 +112,7 @@ func (f *fetcher) open(mailbox string, writable, fresh bool) (uint32, uint32, er
 	if err != nil {
 		return 0, 0, err
 	}
-	f.mailbox, f.writable, f.uidValidity = mailbox, writable, data.UIDValidity
+	f.mailbox, f.writable, f.uidValidity, f.uidNext = mailbox, writable, data.UIDValidity, uint32(data.UIDNext)
 	return data.UIDValidity, data.NumMessages, nil
 }
 

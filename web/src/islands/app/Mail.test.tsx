@@ -27,6 +27,7 @@ const getEmailConfigsByIdMailboxes = vi.fn();
 const getMessages = vi.fn();
 const postEmailConfigsByIdSync = vi.fn();
 const getMessage = vi.fn();
+const getThreads = vi.fn();
 const postJob = vi.fn();
 const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
@@ -43,6 +44,13 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     q: string,
   ) => getMessages(id, mailbox, cursor, q),
   postEmailConfigsByIdSync: (id: string) => postEmailConfigsByIdSync(id),
+  getEmailConfigsByIdMailboxesByMailboxThreads: (
+    id: string,
+    mailbox: string,
+    messages: string[],
+  ) => getThreads(id, mailbox, messages),
+  getEmailConfigsByIdMailboxesByMailboxMessagesByMessageConversation:
+    async () => ({ messages: [], earlier: 0 }),
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
     mailbox: string,
@@ -146,6 +154,7 @@ beforeEach(() => {
     ],
   });
   postEmailConfigsByIdSync.mockResolvedValue(undefined);
+  getThreads.mockResolvedValue({ counts: {} });
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -233,6 +242,20 @@ describe("the mail view", () => {
     within(rows[0]!).getByRole("img", { name: "Attachment" });
     within(rows[1]!).getByRole("img", { name: "Flagged" });
     expect(within(rows[1]!).queryByText("Unread.")).toBeNull();
+  });
+
+  // Asked for once the rows show, a page at a time, and drawn beside the date.
+  it("tells how many messages each is in a conversation with", async () => {
+    getThreads.mockResolvedValue({ counts: { m_1: 3 } });
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
+    const rows = within(
+      await screen.findByRole("list", { name: "Messages" }),
+    ).getAllByRole("listitem");
+    await waitFor(() =>
+      expect(rows[0]!.textContent).toContain("Conversation of 3."),
+    );
+    expect(getThreads).toHaveBeenCalledWith("ec_1", "mb_inbox", ["m_1", "m_2"]);
+    expect(rows[1]!.textContent).not.toContain("Conversation");
   });
 
   it("lists folders in the server's tree, with what is unread and how many", async () => {

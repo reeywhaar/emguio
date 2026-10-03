@@ -79,12 +79,12 @@ func newWorldWith(t *testing.T, password string, caps imap.CapSet) *world {
 	return newWorldAt(t, password, cert, port, said)
 }
 
-// newNotifyingWorld is a world whose server has NOTIFY, and says unasked what a test tells it to.
-func newNotifyingWorld(t *testing.T) (*world, *connecttest.Notifier) {
+// newFrontedWorld is a world whose server has NOTIFY and THREAD, and says what a test tells it to.
+func newFrontedWorld(t *testing.T) (*world, *connecttest.Front) {
 	t.Helper()
 	cert := connecttest.NewCert(t)
 	said := &transcript{}
-	port, n := connecttest.IMAPNotifying(t, cert, "misha", "hunter2", said)
+	port, n := connecttest.IMAPFront(t, cert, "misha", "hunter2", said)
 	return newWorldAt(t, "hunter2", cert, port, said), n
 }
 

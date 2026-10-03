@@ -118,16 +118,15 @@ function ConfigPicker({
                 className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${c.id === current?.id ? "bg-shade font-medium" : "hover:bg-shade"}`}
                 onClick={close}
               >
-                <span
-                  aria-hidden="true"
-                  className={`size-2 shrink-0 rounded-full ${c.inbox_unseen ? "bg-brand" : ""}`}
-                />
                 <span className="min-w-0 flex-1 truncate">{labelOf(c)}</span>
-                {c.inbox_unseen ? (
-                  <span className="sr-only">, unread mail</span>
-                ) : null}
                 {c.name ? (
                   <span className="truncate text-xs text-faint">{c.email}</span>
+                ) : null}
+                {c.inbox_unseen ? (
+                  <span className="shrink-0 text-xs font-medium text-brand tabular-nums">
+                    <span className="sr-only">, unread in Inbox: </span>
+                    {c.inbox_unseen.toLocaleString()}
+                  </span>
                 ) : null}
               </Link>
             </li>

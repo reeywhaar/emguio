@@ -33,6 +33,12 @@ type Mirror interface {
 	Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Origin, error)
 	// Sent files a sent message in Sent and marks what it answers, in the background.
 	Sent(t store.SyncTarget, s mirror.Sending)
+	// Threads is how the server groups a mailbox into conversations, or mirror.ErrUnsupported;
+	// Headers is some of its messages as a list shows them; Related is what of another mailbox
+	// belongs to a conversation, by Message-IDs.
+	Threads(ctx context.Context, t store.SyncTarget, mailbox string) (*mirror.Threads, error)
+	Headers(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32) ([]store.Header, error)
+	Related(ctx context.Context, t store.SyncTarget, mailbox string, answered, answers []string) (*mirror.Listing, error)
 	// WakeDrafts says a draft was saved; WriteDraft writes one to the mail server now.
 	WakeDrafts()
 	WriteDraft(ctx context.Context, id string) error

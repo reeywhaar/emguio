@@ -19,6 +19,15 @@ export const qk = {
   /** A folder's list and every search of it, for what changes them all. */
   folder: (config: string, mailbox: string) =>
     ["mail", config, "messages", mailbox] as const,
+  /** How many messages each of a page of a folder's list is in a conversation with. */
+  threads: (config: string, mailbox: string, page: string) =>
+    ["mail", config, "threads", mailbox, page] as const,
+  threadsOf: (config: string, mailbox: string) =>
+    ["mail", config, "threads", mailbox] as const,
+  /** The conversation a message is in, and every one of a config's. */
+  conversation: (config: string, mailbox: string, message: string) =>
+    ["mail", config, "conversation", mailbox, message] as const,
+  conversations: (config: string) => ["mail", config, "conversation"] as const,
   /** Every message read whole from one config. */
   readings: (config: string) => ["mail", config, "message"] as const,
   message: (config: string, mailbox: string, message: string) =>

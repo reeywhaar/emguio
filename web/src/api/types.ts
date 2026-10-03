@@ -99,6 +99,17 @@ export type Message = {
 
 export type MessagePage = { messages: Message[]; next_cursor?: string };
 
+/**
+ * The conversation a message is in, oldest first: what the server threads it with in its folder,
+ * and the other side from Sent, or from INBOX for one in Sent. Empty where the server has no
+ * THREAD.
+ */
+export type Conversation = {
+  messages: (Message & { mailbox: string })[];
+  /** How many of the folder's messages in it are older than any shown. */
+  earlier: number;
+};
+
 /** What a message's flags are on the server now. */
 export type Flags = Pick<
   Message,
