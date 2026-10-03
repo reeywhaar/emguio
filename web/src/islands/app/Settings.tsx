@@ -11,7 +11,7 @@ import {
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
-import type { EmailConfig } from "@app/api/types";
+import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
@@ -192,6 +192,9 @@ function Card({ config }: { config: EmailConfig }) {
   );
 }
 
+/** Folders mail can be archived to: the server's own for it, and the user's. */
+const archivable = new Set<Mailbox["special_use"]>(["", "archive", "all"]);
+
 /**
  * Where archiving moves this config's mail: the folder the server names, or one chosen here, for
  * a server that names none or names another. Saved as it is chosen. See docs/reading.md.
@@ -233,7 +236,7 @@ function ArchiveTo({ config }: { config: EmailConfig }) {
             : "Automatic: the server names none"}
         </option>
         {usable
-          .filter((mb) => mb.special_use !== "inbox")
+          .filter((mb) => archivable.has(mb.special_use))
           .map((mb) => (
             <option key={mb.id} value={mb.id}>
               {" ".repeat(depthOf(mb))}

@@ -45,13 +45,14 @@ server that names none, or names one other than the one wanted. Saved with
 `PUT /api/email-configs/{id}/archive` and nothing else about the account, so its sessions go on as
 they are; a folder the server later drops goes back to the server's.
 
-The folder picker also makes a folder: New folder…, a name, and where it goes — at the top of the
-user's own folders, under the server's personal namespace (`INBOX.` on servers that keep
-everything under INBOX), or inside another. `POST /api/email-configs/{id}/mailboxes` sends
-`CREATE` on the session for changes, lists the folders again so the new one is kept like the
-rest, and answers with it; the move then goes to it as to any other. A name holding the
-server's delimiter is refused rather than read as nesting, which is what choosing where it goes
-is for, and so is one a sibling already has.
+A folder is made from the sidebar — New folder, beside Fetch new mail, and in the folder list on a
+phone — which opens it once made, and from the folder picker, which then moves to it: New folder…,
+a name, and where it goes — at the top of the user's own folders, under the server's personal
+namespace (`INBOX.` on servers that keep everything under INBOX), or inside another. `POST
+/api/email-configs/{id}/mailboxes` sends `CREATE` on the session for changes, lists the folders
+again so the new one is kept like the rest, and answers with it; the move then goes to it as to
+any other. A name holding the server's delimiter is refused rather than read as nesting, which is
+what choosing where it goes is for, and so is one a sibling already has.
 
 Deleting moves to Trash. In Trash, or on a server with none, it is a delete job, for good, and
 asked about first.

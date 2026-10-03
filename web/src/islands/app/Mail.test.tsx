@@ -282,6 +282,30 @@ describe("the mail view", () => {
     );
   });
 
+  // From the sidebar a folder is made on its own, nothing moved, and opened.
+  it("makes a folder and opens it", async () => {
+    postMailbox.mockResolvedValue(box("mb_projects", ["Projects"]));
+    mount(<Routed />);
+    fireEvent.click(await screen.findByRole("button", { name: "New folder" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "New folder" });
+    fireEvent.change(dialog.getByLabelText("Inside"), {
+      target: { value: "mb_work" },
+    });
+    fireEvent.change(dialog.getByLabelText("Name"), {
+      target: { value: "Projects" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Make" }));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/c/ec_1/mb_projects"),
+    );
+    expect(postMailbox).toHaveBeenCalledWith("ec_1", {
+      name: "Projects",
+      parent: "mb_work",
+    });
+    expect(postJob).not.toHaveBeenCalled();
+  });
+
   it("moves to a folder made for it", async () => {
     postMailbox.mockResolvedValue(box("mb_projects", ["Projects"]));
     opened("m_1");

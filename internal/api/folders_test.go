@@ -40,18 +40,24 @@ func TestAFolderIsMadeToMoveInto(t *testing.T) {
 	}
 }
 
-// The folder an email config archives to is its user's to choose, from its own folders, and to
-// hand back to the server's.
+// The folder an email config archives to is its user's to choose, from its own folders — not one
+// the server has for something else, Trash least of all — and to hand back to the server's.
 func TestTheArchiveFolderIsChosen(t *testing.T) {
 	c, cfg, boxes, _, _ := withOutbox(t)
+	old := c.json(c.do("POST", "/api/email-configs/"+cfg+"/mailboxes", `{"name":"Old"}`))["id"].(string)
 	path := "/api/email-configs/" + cfg + "/archive"
-	resp := c.do("PUT", path, fmt.Sprintf(`{"mailbox":%q}`, boxes["Sent"]))
-	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["archive_mailbox"] != boxes["Sent"] {
+	resp := c.do("PUT", path, fmt.Sprintf(`{"mailbox":%q}`, old))
+	if got := c.json(resp); resp.StatusCode != http.StatusOK || got["archive_mailbox"] != old {
 		t.Fatalf("chose = %s %v", resp.Status, got)
 	}
 	listed := c.json(c.do("GET", "/api/email-configs", ""))["email_configs"].([]any)[0].(map[string]any)
-	if listed["archive_mailbox"] != boxes["Sent"] {
+	if listed["archive_mailbox"] != old {
 		t.Errorf("listed = %v", listed["archive_mailbox"])
+	}
+	for _, name := range []string{"Sent", "Drafts", "INBOX"} {
+		if resp := c.do("PUT", path, fmt.Sprintf(`{"mailbox":%q}`, boxes[name])); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s = %s", name, resp.Status)
+		}
 	}
 	if got := c.json(c.do("PUT", path, `{"mailbox":""}`)); got["archive_mailbox"] != nil {
 		t.Errorf("automatic again = %v", got["archive_mailbox"])

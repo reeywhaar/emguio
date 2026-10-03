@@ -11,12 +11,18 @@ import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Dialog } from "@app/components/Dialog";
-import { Refresh, SelectMark, WriteMark } from "@app/components/icons";
+import {
+  NewFolderMark,
+  Refresh,
+  SelectMark,
+  WriteMark,
+} from "@app/components/icons";
 import { PickerButton } from "@app/components/PickerButton";
 import { ago } from "@app/format";
 import { blank, write } from "@app/islands/app/drafts";
 import { pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
+import { NewFolder } from "@app/islands/app/NewFolder";
 import { depthOf, labelOfMailbox, usual } from "@app/islands/app/mailbox";
 import {
   MessageDummies,
@@ -172,8 +178,9 @@ function Folders({
             </div>
           )}
         </nav>
-        <div className="flex border-t border-line px-3 py-2">
+        <div className="flex gap-2 border-t border-line px-3 py-2">
           <SyncState config={config} />
+          <MakeFolder config={config.id} boxes={boxes.data ?? []} />
         </div>
       </aside>
 
@@ -399,7 +406,16 @@ function FolderPicker({
         open={open}
         onClose={() => setOpen(false)}
         title="Folders"
-        footer={<SyncState config={config} />}
+        footer={
+          <>
+            <SyncState config={config} />
+            <MakeFolder
+              config={config.id}
+              boxes={boxes}
+              onMade={() => setOpen(false)}
+            />
+          </>
+        }
       >
         <FolderList
           config={config.id}
@@ -481,6 +497,48 @@ function SyncState({ config }: { config: EmailConfig }) {
       </span>
       <FetchMail config={config} />
     </div>
+  );
+}
+
+/** A new folder on the mail server, opened once it is made. */
+function MakeFolder({
+  config,
+  boxes,
+  onMade,
+}: {
+  config: string;
+  boxes: Mailbox[];
+  onMade?: () => void;
+}) {
+  const [making, setMaking] = useState(false);
+  // Each opening starts the form afresh.
+  const [opened, setOpened] = useState(0);
+  return (
+    <>
+      <Button
+        size="bar"
+        aria-label="New folder"
+        title="New folder"
+        onClick={() => {
+          setOpened((n) => n + 1);
+          setMaking(true);
+        }}
+      >
+        <NewFolderMark />
+      </Button>
+      <NewFolder
+        key={opened}
+        config={config}
+        boxes={boxes}
+        open={making}
+        onClose={() => setMaking(false)}
+        onMade={(made) => {
+          setMaking(false);
+          onMade?.();
+          go(paths.mail(config, made.id));
+        }}
+      />
+    </>
   );
 }
 

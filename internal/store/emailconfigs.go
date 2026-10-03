@@ -535,6 +535,11 @@ func (s *Store) SetArchiveMailbox(ctx context.Context, userID, configID, mailbox
 		if !mb.Selectable {
 			return Invalid("%s only holds other folders.", mb.Name)
 		}
+		// Archiving keeps mail; a folder the server has for something else is not where it goes.
+		switch mb.SpecialUse {
+		case UseInbox, UseDrafts, UseSent, UseJunk, UseTrash, UseFlagged:
+			return Invalid("%s is the server's folder for something else. Archive to one of your own.", mb.Name)
+		}
 		chosen = mb.ID
 	}
 	if _, err := s.writer.ExecContext(ctx,

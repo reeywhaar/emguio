@@ -32,6 +32,16 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
       uid_next: 2,
     },
     {
+      id: "mb_trash",
+      name: "Trash",
+      path: ["Trash"],
+      special_use: "trash",
+      selectable: true,
+      messages: 1,
+      unseen: 0,
+      uid_next: 2,
+    },
+    {
       id: "mb_old",
       name: "Old",
       path: ["Old"],
@@ -73,7 +83,8 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe("settings", () => {
-  // A server that names no archive is one to choose for, and the choice is saved as it is made.
+  // A server that names no archive is one to choose for, from folders that keep mail — not Trash —
+  // and the choice is saved as it is made.
   it("chooses where a config archives to", async () => {
     putArchive.mockResolvedValue({ ...work, archive_mailbox: "mb_old" });
     mount(<Settings editing={null} />);

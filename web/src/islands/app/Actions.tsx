@@ -49,9 +49,11 @@ export function targets(
     uses
       .map((use) => boxes.find((mb) => mb.special_use === use && mb.selectable))
       .find((mb) => mb !== undefined);
+  const chosen = boxes.find((mb) => mb.id === archiveTo && mb.selectable);
   const archive =
-    boxes.find((mb) => mb.id === archiveTo && mb.selectable) ??
-    find("archive", "all");
+    chosen && ["", "archive", "all"].includes(chosen.special_use)
+      ? chosen
+      : find("archive", "all");
   const trash = find("trash");
   const junk = find("junk");
   const inbox = find("inbox");
@@ -370,6 +372,7 @@ export function MovePicker({
         key={opened}
         config={config}
         boxes={boxes}
+        moving
         open={making}
         onClose={() => setMaking(false)}
         onMade={(made) => {

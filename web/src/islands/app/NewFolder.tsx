@@ -11,16 +11,22 @@ import { Field, Select } from "@app/components/Field";
 import { TextField } from "@app/components/TextField";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 
-/** A folder made on the mail server, at the top or inside another, for a move to go to. */
+/**
+ * A folder made on the mail server, at the top or inside another: on its own, or for a move to
+ * go to.
+ */
 export function NewFolder({
   config,
   boxes,
+  moving = false,
   open,
   onClose,
   onMade,
 }: {
   config: string;
   boxes: Mailbox[];
+  /** Made for what is being moved, which goes to it next. */
+  moving?: boolean;
   open: boolean;
   onClose: () => void;
   onMade: (made: Mailbox) => void;
@@ -47,7 +53,7 @@ export function NewFolder({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Move to a new folder"
+      title={moving ? "Move to a new folder" : "New folder"}
       footer={
         <>
           {make.error ? (
@@ -62,7 +68,7 @@ export function NewFolder({
             variant="solid"
             disabled={make.isPending || name.trim() === ""}
           >
-            {make.isPending ? "Making" : "Make and move"}
+            {make.isPending ? "Making" : moving ? "Make and move" : "Make"}
           </Button>
         </>
       }
