@@ -123,10 +123,6 @@ function Line({
   const row = (
     <>
       <span
-        aria-hidden="true"
-        className={`size-2 shrink-0 rounded-full ${m.seen ? "" : "bg-brand"}`}
-      />
-      <span
         className={`w-28 shrink-0 truncate ${m.seen ? "" : "font-semibold"}`}
       >
         {who}
@@ -135,6 +131,12 @@ function Line({
       <span className="min-w-0 flex-1 truncate text-muted">
         {m.preview || m.subject || "(no subject)"}
       </span>
+      {m.seen ? null : (
+        <span
+          aria-hidden="true"
+          className="size-2 shrink-0 rounded-full bg-brand"
+        />
+      )}
       <time
         dateTime={new Date(said * 1000).toISOString()}
         title={full(said)}

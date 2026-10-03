@@ -145,14 +145,16 @@ func TestAnEmptyFolderIsDeleted(t *testing.T) {
 	}
 }
 
-// Folders side by side are put in an order, kept here; ones in different places are not.
+// The user's folders side by side are put in an order, kept here; ones in different places, and
+// the server's own, are not.
 func TestFoldersArePutInOrder(t *testing.T) {
 	c, cfg, boxes, _, _ := withOutbox(t)
 	path := "/api/email-configs/" + cfg + "/mailboxes"
 	work := c.json(c.do("POST", path, `{"name":"Work"}`))["id"].(string)
 	inside := c.json(c.do("POST", path, fmt.Sprintf(`{"name":"Clients","parent":%q}`, work)))["id"].(string)
+	home := c.json(c.do("POST", path, `{"name":"Home"}`))["id"].(string)
 
-	resp := c.do("PUT", path+"/order", fmt.Sprintf(`{"ids":[%q,%q]}`, work, boxes["Sent"]))
+	resp := c.do("PUT", path+"/order", fmt.Sprintf(`{"ids":[%q,%q]}`, work, home))
 	got := c.json(resp)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("order = %s %v", resp.Status, got)
@@ -161,15 +163,16 @@ func TestFoldersArePutInOrder(t *testing.T) {
 	for _, mb := range got["mailboxes"].([]any) {
 		names = append(names, mb.(map[string]any)["name"].(string))
 	}
-	if !strings.HasPrefix(strings.Join(names, ","), "Work,Work/Clients,Sent,INBOX") {
+	if !strings.HasPrefix(strings.Join(names, ","), "INBOX,") || !strings.HasSuffix(strings.Join(names, ","), ",Work,Work/Clients,Home") {
 		t.Errorf("order = %v", names)
 	}
 
 	for body, want := range map[string]int{
-		fmt.Sprintf(`{"ids":[%q,%q]}`, inside, boxes["Sent"]): http.StatusBadRequest,
-		fmt.Sprintf(`{"ids":[%q,%q]}`, work, work):            http.StatusBadRequest,
+		fmt.Sprintf(`{"ids":[%q,%q]}`, inside, home): http.StatusBadRequest,
+		fmt.Sprintf(`{"ids":[%q,%q]}`, work, work):   http.StatusBadRequest,
 		`{"ids":[]}`: http.StatusBadRequest,
-		`{"ids":["mb_01k6r2p3q5s7t9v1w3x5y7z9a1"]}`: http.StatusNotFound,
+		`{"ids":["mb_01k6r2p3q5s7t9v1w3x5y7z9a1"]}`:         http.StatusNotFound,
+		fmt.Sprintf(`{"ids":[%q,%q]}`, work, boxes["Sent"]): http.StatusConflict,
 	} {
 		if resp := c.do("PUT", path+"/order", body); resp.StatusCode != want {
 			t.Errorf("%s = %s, want %d", body, resp.Status, want)

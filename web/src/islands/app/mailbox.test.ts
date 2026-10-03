@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Mailbox } from "@app/api/types";
-import { arranged, besideOf } from "@app/islands/app/mailbox";
+import { arranged, besideOf, serversOwn } from "@app/islands/app/mailbox";
 
 const box = (...path: string[]): Mailbox => ({
   id: path.join("/"),
@@ -47,5 +47,20 @@ describe("folders side by side", () => {
       "Work/A/Old",
       "Zebra",
     ]);
+  });
+});
+
+describe("the server's own folders", () => {
+  it("are those with a use, and those holding one", () => {
+    const gmail = [
+      { ...box("INBOX"), special_use: "inbox" as const },
+      box("[Gmail]"),
+      { ...box("[Gmail]", "Sent Mail"), special_use: "sent" as const },
+      box("[Gmail]", "Important"),
+      box("Work"),
+    ];
+    expect(
+      gmail.filter((mb) => serversOwn(gmail, mb)).map((mb) => mb.id),
+    ).toEqual(["INBOX", "[Gmail]", "[Gmail]/Sent Mail"]);
   });
 });

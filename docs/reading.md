@@ -62,14 +62,14 @@ keeps its id, and a link, a waiting job or the folder chosen to archive to goes 
 Nothing goes inside itself. Deleting is `DELETE`, of an empty folder only: one holding mail, which
 the server would delete with it, or other folders, is refused, with what to do first.
 
-Any folder, the server's own too, is dragged up or down among the ones beside it, and what is
-inside goes along; a finger rests on it first, since one that moves at once scrolls the list.
-Into another folder is a move, which is the menu's. IMAP keeps no order, so the order is
-emguio's: a position per folder, set for all of those beside it at once by
-`PUT /api/email-configs/{id}/mailboxes/order`. One never placed comes after the placed ones, in
-the usual order — INBOX and the server's own first, the rest by name — and a folder moved
-elsewhere starts again among its new neighbours. A rename on another client is a new folder
-here, with no place.
+The server's own folders — those with a use, and those holding one, like Gmail's `[Gmail]` —
+come first in a fixed order and stay there, with a wider gap after them. The user's follow, and
+one is dragged up or down among the user's beside it, what is inside going along; a finger rests
+on it first, since one that moves at once scrolls the list. Into another folder is a move, which
+is the menu's. IMAP keeps no order, so the order is emguio's: a position per folder, set for all
+of the user's beside it at once by `PUT /api/email-configs/{id}/mailboxes/order`. One never
+placed comes after the placed ones, by name, and a folder moved elsewhere starts again among its
+new neighbours. A rename on another client is a new folder here, with no place.
 
 Deleting moves to Trash. In Trash, or on a server with none, it is a delete job, for good, and
 asked about first.

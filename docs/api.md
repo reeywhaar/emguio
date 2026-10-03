@@ -272,9 +272,9 @@ GET /api/email-configs/{id}/mailboxes
 
 `{"mailboxes": [ … ]}`, read from what emguio keeps, so it answers at once. Empty until the first
 look after the email config is saved. In the order a sidebar shows them: as a tree, each folder
-followed by the ones inside it, and folders side by side in the order the user put them, then
-the rest — at the top INBOX, Drafts, Sent, Archive, All Mail, Flagged, Junk, Trash first — by
-name.
+followed by the ones inside it. Side by side, the server's own come first — INBOX, Drafts, Sent,
+Archive, All Mail, Flagged, Junk, Trash, then any holding one, like Gmail's `[Gmail]` — then the
+user's in the order they were put, then the rest by name.
 
 ```json
 {"id": "mb_01k6r2p3q5s7t9v1w3x5y7z9a1", "name": "INBOX", "path": ["INBOX"], "special_use": "inbox",
@@ -329,10 +329,11 @@ Deletes an empty folder from the mail server. One that holds messages, or other 
 PUT /api/email-configs/{id}/mailboxes/order
 ```
 
-Puts folders side by side in an order: `{"ids": ["mb_…", "mb_…"]}`, all with the same parent.
-They go first, in that order, and the others beside them follow as they were. The order is kept
-in emguio, not on the mail server. The answer is `200` with every folder, as listed above. Ids
-inside different folders, or one twice, answer `400 invalid`.
+Puts the user's folders side by side in an order: `{"ids": ["mb_…", "mb_…"]}`, all with the same
+parent. They go first among the user's, in that order, and the others beside them follow as they
+were. The order is kept in emguio, not on the mail server. The answer is `200` with every folder,
+as listed above. Ids inside different folders, or one twice, answer `400 invalid`; one of the
+server's own, which keep their places, `409 conflict`.
 
 ```
 GET /api/email-configs/{id}/mailboxes/{mailbox}/messages

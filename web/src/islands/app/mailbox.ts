@@ -15,6 +15,11 @@ export function depthOf(mb: Mailbox): number {
 export const within = (a: Mailbox, b: Mailbox) =>
   a.path.length > b.path.length && b.path.every((p, i) => a.path[i] === p);
 
+/** Whether the server keeps mb for a purpose, or mb holds one it does: it keeps its place. */
+export const serversOwn = (boxes: Mailbox[], mb: Mailbox) =>
+  mb.special_use !== "" ||
+  boxes.some((other) => other.special_use !== "" && within(other, mb));
+
 /** The mailboxes side by side with mb, mb among them, in the order listed. */
 export function besideOf(boxes: Mailbox[], mb: Mailbox): Mailbox[] {
   const depth = mb.path.length - 1;

@@ -480,79 +480,65 @@ describe("the mail view", () => {
   describe("dragging a folder", () => {
     // Every row is somewhere to land; which one is the test's to say.
     let under: Element | null = null;
+    const listed = [...boxes, box("mb_home", ["Home"])];
     beforeEach(() => {
       document.elementFromPoint = () => under;
-      putOrder.mockImplementation(async (_id: string, ids: string[]) =>
-        ids.flatMap((id) => {
-          const top = boxes.find((mb) => mb.id === id)!;
-          return boxes.filter((mb) => mb.path[0] === top.path[0]);
+      getEmailConfigsByIdMailboxes.mockResolvedValue(listed);
+      putOrder.mockImplementation(async (_id: string, ids: string[]) => [
+        ...listed.filter((mb) => mb.special_use),
+        ...ids.flatMap((id) => {
+          const top = listed.find((mb) => mb.id === id)!;
+          return listed.filter((mb) => mb.path[0] === top.path[0]);
         }),
-      );
+      ]);
     });
-    it("puts it among the ones beside it, with what is inside it, and does not open it", async () => {
-      const nav = await sidebar();
-      const folder = nav.getByRole("link", { name: /^Work/ });
-      under = nav.getByRole("link", { name: /^Inbox/ });
-      press(folder, "mouse");
-      move(folder, "mouse", 10);
+    const drag = (
+      nav: ReturnType<typeof within>,
+      from: RegExp,
+      to: RegExp,
+      pointerType = "mouse",
+    ) => {
+      const folder = nav.getByRole("link", { name: from });
+      under = nav.getByRole("link", { name: to });
+      press(folder, pointerType);
+      move(folder, pointerType, 10);
       fireEvent.pointerUp(folder, { pointerId: 1 });
-      fireEvent.click(folder);
+      return folder;
+    };
+
+    it("puts one of the user's among theirs, with what is inside it, and does not open it", async () => {
+      const nav = await sidebar();
+      fireEvent.click(drag(nav, /^Home/, /^Work/));
       await waitFor(() =>
-        expect(putOrder).toHaveBeenCalledWith("ec_1", [
-          "mb_work",
-          "mb_inbox",
-          "mb_sent",
-        ]),
+        expect(putOrder).toHaveBeenCalledWith("ec_1", ["mb_home", "mb_work"]),
       );
-      expect(names(nav)).toEqual(["Work", "Clients", "Inbox", "Sent"]);
+      expect(names(nav)).toEqual(["Inbox", "Sent", "Home", "Work", "Clients"]);
       expect(window.location.pathname).toBe("/c/ec_1");
     });
 
-    it("lands only beside its own, over what is inside them counting as them", async () => {
+    it("leaves the server's own where they are, and lands only beside its own", async () => {
       const nav = await sidebar();
-      const sent = nav.getByRole("link", { name: /^Sent/ });
-      under = nav.getByRole("link", { name: /^Clients/ });
-      press(sent, "mouse");
-      move(sent, "mouse", 90);
-      fireEvent.pointerUp(sent, { pointerId: 1 });
-      await waitFor(() =>
-        expect(putOrder).toHaveBeenCalledWith("ec_1", [
-          "mb_inbox",
-          "mb_work",
-          "mb_sent",
-        ]),
-      );
-
-      putOrder.mockClear();
-      const clients = nav.getByRole("link", { name: /^Clients/ });
-      under = nav.getByRole("link", { name: /^Inbox/ });
-      press(clients, "mouse");
-      move(clients, "mouse", 10);
-      fireEvent.pointerUp(clients, { pointerId: 1 });
+      drag(nav, /^Sent/, /^Inbox/);
+      drag(nav, /^Work/, /^Inbox/);
+      drag(nav, /^Clients/, /^Home/);
       await settled();
       expect(putOrder).not.toHaveBeenCalled();
+      expect(names(nav)).toEqual(["Inbox", "Sent", "Work", "Clients", "Home"]);
     });
 
     it("by finger, once it has rested; one that moves at once is scrolling", async () => {
       const nav = await sidebar();
-      const folder = nav.getByRole("link", { name: /^Work/ });
-      under = nav.getByRole("link", { name: /^Inbox/ });
-      press(folder, "touch");
-      move(folder, "touch", 10);
-      fireEvent.pointerUp(folder, { pointerId: 1 });
+      drag(nav, /^Home/, /^Work/, "touch");
       await settled();
       expect(putOrder).not.toHaveBeenCalled();
 
+      const folder = nav.getByRole("link", { name: /^Home/ });
       press(folder, "touch");
       await act(() => new Promise((done) => setTimeout(done, 450)));
       move(folder, "touch", 10);
       fireEvent.pointerUp(folder, { pointerId: 1 });
       await waitFor(() =>
-        expect(putOrder).toHaveBeenCalledWith("ec_1", [
-          "mb_work",
-          "mb_inbox",
-          "mb_sent",
-        ]),
+        expect(putOrder).toHaveBeenCalledWith("ec_1", ["mb_home", "mb_work"]),
       );
     });
 
@@ -565,13 +551,9 @@ describe("the mail view", () => {
         ),
       );
       const nav = await sidebar();
-      const folder = nav.getByRole("link", { name: /^Work/ });
-      under = nav.getByRole("link", { name: /^Inbox/ });
-      press(folder, "mouse");
-      move(folder, "mouse", 10);
-      fireEvent.pointerUp(folder, { pointerId: 1 });
+      drag(nav, /^Home/, /^Work/);
       await screen.findByText("Only folders side by side can be put in order.");
-      expect(names(nav)).toEqual(["Inbox", "Sent", "Work", "Clients"]);
+      expect(names(nav)).toEqual(["Inbox", "Sent", "Work", "Clients", "Home"]);
     });
   });
 

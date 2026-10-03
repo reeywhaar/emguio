@@ -484,13 +484,14 @@ var useOrder = map[string]int{
 }
 
 // SortMailboxes puts mailboxes in the order a sidebar shows them: as a tree, each followed by
-// the mailboxes inside it, and the ones beside each other where the user put them, then the
-// rest — at the top, the special ones in a fixed order first — by name.
+// the mailboxes inside it. Side by side, the server's own come first in a fixed order, then the
+// user's where they were put, then the rest by name.
 func SortMailboxes(list []*Mailbox) {
 	byPath := map[string]*Mailbox{}
 	for _, m := range list {
-		byPath[strings.Join(m.Path(), "\x00")] = m
+		byPath[pathKey(m.Path())] = m
 	}
+	own := serversOwn(list)
 	slices.SortStableFunc(list, func(a, b *Mailbox) int {
 		pa, pb := a.Path(), b.Path()
 		i := 0
@@ -500,25 +501,43 @@ func SortMailboxes(list []*Mailbox) {
 		if i == len(pa) || i == len(pb) {
 			return len(pa) - len(pb)
 		}
-		// Where they part, two mailboxes beside each other, listed or not.
-		return besides(byPath[strings.Join(pa[:i+1], "\x00")], byPath[strings.Join(pb[:i+1], "\x00")], pa[i], pb[i], i == 0)
+		// Where they part, two mailboxes side by side, listed or not.
+		ka, kb := pathKey(pa[:i+1]), pathKey(pb[:i+1])
+		return besides(byPath[ka], byPath[kb], own[ka], own[kb], pa[i], pb[i])
 	})
 }
 
-// besides orders two mailboxes with the same parent, named x and y, either of them unlisted.
-func besides(a, b *Mailbox, x, y string, top bool) int {
-	pa, pb := placeOf(a), placeOf(b)
-	switch {
-	case pa != nil && pb != nil && *pa != *pb:
-		return *pa - *pb
-	case pa != nil && pb == nil:
-		return -1
-	case pa == nil && pb != nil:
-		return 1
+func pathKey(path []string) string { return strings.Join(path, "\x00") }
+
+// serversOwn is the paths of the mailboxes the server keeps for a purpose, and of those holding
+// one, like Gmail's [Gmail]: they keep their places.
+func serversOwn(list []*Mailbox) map[string]bool {
+	own := map[string]bool{}
+	for _, m := range list {
+		if m.SpecialUse == "" {
+			continue
+		}
+		p := m.Path()
+		for i := 1; i <= len(p); i++ {
+			own[pathKey(p[:i])] = true
+		}
 	}
-	if top {
-		if d := rankOf(a) - rankOf(b); d != 0 {
-			return d
+	return own
+}
+
+// besides orders two mailboxes with the same parent, named x and y, either of them unlisted.
+func besides(a, b *Mailbox, ownA, ownB bool, x, y string) int {
+	if d := rankOf(a, ownA) - rankOf(b, ownB); d != 0 {
+		return d
+	}
+	if pa, pb := placeOf(a), placeOf(b); !ownA {
+		switch {
+		case pa != nil && pb != nil && *pa != *pb:
+			return *pa - *pb
+		case pa != nil && pb == nil:
+			return -1
+		case pa == nil && pb != nil:
+			return 1
 		}
 	}
 	if d := strings.Compare(strings.ToLower(x), strings.ToLower(y)); d != 0 {
@@ -534,7 +553,11 @@ func placeOf(m *Mailbox) *int {
 	return m.Position
 }
 
-func rankOf(m *Mailbox) int {
+// rankOf is the server's own by use, then those holding one, then the user's.
+func rankOf(m *Mailbox, own bool) int {
+	if !own {
+		return len(useOrder) + 1
+	}
 	if m != nil {
 		if r, ok := useOrder[m.SpecialUse]; ok {
 			return r
@@ -644,8 +667,8 @@ func parentOf(name, delimiter string) []string {
 	return p[:len(p)-1]
 }
 
-// SetMailboxOrder puts mailboxes beside each other in the order given, all with the same parent:
-// the listed ones first, then the others beside them as they were.
+// SetMailboxOrder puts the user's mailboxes side by side in the order given, all with the same
+// parent: the listed ones first, then the others beside them as they were.
 func (s *Store) SetMailboxOrder(ctx context.Context, userID, configID string, order []string) error {
 	boxes, err := s.Mailboxes(ctx, userID, configID)
 	if err != nil {
@@ -658,6 +681,7 @@ func (s *Store) SetMailboxOrder(ctx context.Context, userID, configID string, or
 	for _, m := range boxes {
 		byID[m.ID] = m
 	}
+	own := serversOwn(boxes)
 	var parent []string
 	listed := map[string]bool{}
 	for i, id := range order {
@@ -669,6 +693,8 @@ func (s *Store) SetMailboxOrder(ctx context.Context, userID, configID string, or
 			return NotFound("There is no such mailbox.")
 		case listed[id]:
 			return Invalid("Each folder is listed once.")
+		case own[pathKey(m.Path())]:
+			return Conflict("Inbox and the server's own folders keep their places.")
 		case i > 0 && !slices.Equal(parentOf(m.Name, m.Delimiter), parent):
 			return Invalid("Only folders side by side can be put in order.")
 		}
@@ -678,7 +704,7 @@ func (s *Store) SetMailboxOrder(ctx context.Context, userID, configID string, or
 	// boxes is sorted, so the others come in their order already.
 	next := slices.Clone(order)
 	for _, m := range boxes {
-		if !listed[m.ID] && slices.Equal(parentOf(m.Name, m.Delimiter), parent) {
+		if !listed[m.ID] && !own[pathKey(m.Path())] && slices.Equal(parentOf(m.Name, m.Delimiter), parent) {
 			next = append(next, m.ID)
 		}
 	}

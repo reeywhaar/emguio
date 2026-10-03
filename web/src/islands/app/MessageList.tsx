@@ -214,7 +214,6 @@ export function MessageDummies({ count }: { count: number }) {
           key={i}
           className="flex items-start gap-3 border-b border-line px-4 py-2.5"
         >
-          <span className="mt-1.5 size-2 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="flex h-5 items-center gap-2">
               <Dummy className="h-3.5 w-32" />
@@ -256,12 +255,6 @@ function Row({
   onToggle?: (range: boolean) => void;
 }) {
   const unread = !m.seen;
-  const dot = (
-    <span
-      aria-hidden="true"
-      className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : ""}`}
-    />
-  );
   const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"}`;
   const body = (
     <div className="min-w-0 flex-1">
@@ -282,6 +275,12 @@ function Row({
             {conversation}
             <span className="sr-only">.</span>
           </span>
+        ) : null}
+        {unread ? (
+          <span
+            aria-hidden="true"
+            className="size-2 shrink-0 self-center rounded-full bg-brand"
+          />
         ) : null}
         <time
           dateTime={new Date(m.date * 1000).toISOString()}
@@ -311,7 +310,6 @@ function Row({
             aria-label={m.subject || "(no subject)"}
             className="mt-1 size-4 shrink-0 accent-brand"
           />
-          {dot}
           {body}
         </label>
       ) : (
@@ -320,7 +318,6 @@ function Row({
           aria-current={open ? "true" : undefined}
           className={look}
         >
-          {dot}
           {body}
         </Link>
       )}

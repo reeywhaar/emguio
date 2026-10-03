@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -41,6 +41,7 @@ import {
   besideOf,
   depthOf,
   labelOfMailbox,
+  serversOwn,
   usual,
   within,
 } from "@app/islands/app/mailbox";
@@ -376,8 +377,8 @@ function Body({
 
 /**
  * The folders as a tree, and a way to make one; onPick is told when one is chosen or made, for a
- * list that closes then. A folder is dragged up or down among the ones beside it, and what is
- * inside it goes along.
+ * list that closes then. The server's own come first and stay; one of the user's is dragged up
+ * or down among the user's beside it, and what is inside it goes along.
  */
 function FolderList({
   config,
@@ -412,9 +413,14 @@ function FolderList({
     onSuccess: (now) => client.setQueryData(qk.mailboxes(config), now),
   });
 
+  const own = new Set(
+    boxes.filter((mb) => serversOwn(boxes, mb)).map((mb) => mb.id),
+  );
+  const ours = (mb: Mailbox) =>
+    besideOf(boxes, mb).filter((other) => !own.has(other.id));
   const carried = boxes.find((mb) => mb.id === carrying);
   const target = boxes.find((mb) => mb.id === onto);
-  const beside = carried ? besideOf(boxes, carried).map((mb) => mb.id) : [];
+  const beside = carried ? ours(carried).map((mb) => mb.id) : [];
   const down =
     carried && target
       ? beside.indexOf(carried.id) < beside.indexOf(target.id)
@@ -432,13 +438,20 @@ function FolderList({
     const under = boxes.find((other) => other.id === id);
     setOnto(
       (under &&
-        besideOf(boxes, mb).find(
+        ours(mb).find(
           (other) =>
             other.id !== mb.id &&
             (other.id === under.id || within(under, other)),
         )?.id) ??
         null,
     );
+  };
+  // A line between the server's own and the user's beside them.
+  const firstOfOurs = (mb: Mailbox) => {
+    if (own.has(mb.id)) return false;
+    const row = besideOf(boxes, mb);
+    const before = row[row.indexOf(mb) - 1];
+    return before !== undefined && own.has(before.id);
   };
   const drop = () => {
     setCarrying(null);
@@ -452,27 +465,36 @@ function FolderList({
   return (
     <ul className="flex flex-col">
       {boxes.map((mb) => (
-        <li
-          key={mb.id}
-          className={`relative ${carried && (mb === carried || within(mb, carried)) ? "opacity-40" : ""}`}
-        >
-          <FolderLink
-            config={config}
-            mb={mb}
-            current={mb.id === current?.id}
-            onPick={onPick}
-            onOver={(id) => over(mb, id)}
-            onDrop={drop}
-          />
-          {/* Absolute, so it takes no room and the rows do not shift under the pointer. */}
-          {target && mb === marked ? (
-            <span
+        <Fragment key={mb.id}>
+          {firstOfOurs(mb) ? (
+            <li
               aria-hidden="true"
-              className={`pointer-events-none absolute right-3 h-0.5 rounded-full bg-fg ${down ? "-bottom-px" : "-top-px"}`}
-              style={{ left: `${0.75 + depthOf(target) * 0.875}rem` }}
+              className="my-1 mr-3 border-t border-line"
+              style={{ marginLeft: `${0.75 + depthOf(mb) * 0.875}rem` }}
             />
           ) : null}
-        </li>
+          <li
+            className={`relative ${carried && (mb === carried || within(mb, carried)) ? "opacity-40" : ""}`}
+          >
+            <FolderLink
+              config={config}
+              mb={mb}
+              fixed={own.has(mb.id)}
+              current={mb.id === current?.id}
+              onPick={onPick}
+              onOver={(id) => over(mb, id)}
+              onDrop={drop}
+            />
+            {/* Absolute, so it takes no room and the rows do not shift under the pointer. */}
+            {target && mb === marked ? (
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none absolute right-3 h-0.5 rounded-full bg-fg ${down ? "-bottom-px" : "-top-px"}`}
+                style={{ left: `${0.75 + depthOf(target) * 0.875}rem` }}
+              />
+            ) : null}
+          </li>
+        </Fragment>
       ))}
       <li>
         <MakeFolder config={config} boxes={boxes} onMade={onPick} />
@@ -544,6 +566,7 @@ function Counts({ mb }: { mb: Mailbox }) {
 function FolderLink({
   config,
   mb,
+  fixed,
   current,
   onPick,
   onOver,
@@ -551,6 +574,8 @@ function FolderLink({
 }: {
   config: string;
   mb: Mailbox;
+  /** The server's own, which stays where it is. */
+  fixed: boolean;
   current: boolean;
   onPick?: () => void;
   /** Carried over the folder with this id, or over none. */
@@ -559,6 +584,7 @@ function FolderLink({
 }) {
   const carry = useCarry({
     find: "[data-folder]",
+    enabled: !fixed,
     onOver: (el) => onOver(el?.dataset.folder ?? null),
     onDrop,
   });
@@ -573,7 +599,7 @@ function FolderLink({
     onContextMenu: carry.menu,
   };
   // No selecting, and no long-press preview, of a row a finger may be picking up.
-  const still = "select-none [-webkit-touch-callout:none]";
+  const still = fixed ? "" : "select-none [-webkit-touch-callout:none]";
   const indent = { paddingLeft: `${0.75 + depthOf(mb) * 0.875}rem` };
   if (!mb.selectable) {
     return (
