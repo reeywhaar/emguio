@@ -808,8 +808,8 @@ function FetchMail({
     mutationFn: () => postEmailConfigsByIdSync(config.id),
     onMutate: onAsk,
     onError: onFail,
-    // A folder other than INBOX is listed from the server, and the event stream says nothing
-    // about it: asking for new mail asks for it again.
+    // A search is the server's, and the event stream says nothing about it: asking for new mail
+    // asks for it again.
     onSuccess: () =>
       client.invalidateQueries({ queryKey: qk.lists(config.id) }),
   });

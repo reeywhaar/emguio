@@ -26,18 +26,17 @@ export function useLive() {
       const before = counts(client);
       await client.invalidateQueries({
         queryKey: qk.mail,
-        predicate: ({ queryKey }) => kept(client, queryKey),
+        predicate: ({ queryKey }) => kept(queryKey),
       });
-      // A list read from the mail server is read again once its folder's counts say the server
-      // changed what is in it, so the list on screen never disagrees with the number beside
-      // its folder — mail another client moved into Trash, say.
-      // Searches of a folder too, INBOX's included, which the server keeps nothing for.
+      // A search, which nothing is kept for, is read again from the mail server once its
+      // folder's counts say the server changed what is in it, so what it found never disagrees
+      // with the number beside its folder — mail another client moved into Trash, say.
       // With them, what the folder's conversations hold, and every conversation open: a reply
       // that arrived, or was filed in Sent, belongs in it.
       for (const [config, mailbox] of moved(before, counts(client))) {
         client.invalidateQueries({
           queryKey: qk.folder(config, mailbox),
-          predicate: ({ queryKey }) => !kept(client, queryKey),
+          predicate: ({ queryKey }) => !kept(queryKey),
         });
         client.invalidateQueries({ queryKey: qk.threadsOf(config, mailbox) });
         client.invalidateQueries({ queryKey: qk.conversations(config) });
@@ -84,17 +83,11 @@ export function moved(
 
 /**
  * Whether a query reads what the server keeps, which is what the stream announces: each
- * config's mailboxes, and INBOX's list. Every other list, every search and every message is
- * fetched from the mail server, and asking again on each change would be a trip there every
- * time.
+ * config's mailboxes, and every folder's list, which opens on the newest kept of it. A search and
+ * a message are fetched from the mail server, and asking again on each change would be a trip
+ * there every time.
  */
-export function kept(client: QueryClient, key: readonly unknown[]): boolean {
-  const [, config, kind, mailbox, q] = key;
-  if (kind === "mailboxes") return true;
-  if (kind !== "messages" || typeof config !== "string" || q) return false;
-  return (
-    client
-      .getQueryData<Mailbox[]>(qk.mailboxes(config))
-      ?.some((mb) => mb.id === mailbox && mb.special_use === "inbox") ?? false
-  );
+export function kept(key: readonly unknown[]): boolean {
+  const [, , kind, , q] = key;
+  return kind === "mailboxes" || (kind === "messages" && !q);
 }

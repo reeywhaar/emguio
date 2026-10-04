@@ -317,7 +317,8 @@ func TestINBOXOpensOnTheWindowAndGoesOnFromTheServer(t *testing.T) {
 	}
 }
 
-func TestAnotherMailboxIsListedFromTheServer(t *testing.T) {
+// Before its first look, a folder is the server's.
+func TestAFolderNotLookedAtIsListedFromTheServer(t *testing.T) {
 	s, _, c, cfg, _ := withMail(t, 1)
 	fake := &fakeMirror{listing: &mirror.Listing{UIDValidity: 9, Headers: []store.Header{{UID: 5, Subject: "Contract"}, {UID: 2, Subject: "Brief"}}, More: true}}
 	s.mirror = fake
@@ -350,6 +351,23 @@ func TestASearchIsAskedOfTheServer(t *testing.T) {
 	}
 	if resp := c.do("GET", base+"?q="+strings.Repeat("a", queryMax+1), ""); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a query too long = %s", resp.Status)
+	}
+}
+
+// Every folder opens on what is kept of it, as INBOX does.
+func TestAFolderOpensOnItsWindow(t *testing.T) {
+	s, st, c, cfg, _ := withMail(t, 1)
+	fake := &fakeMirror{}
+	s.mirror = fake
+	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
+	work := boxes[1].(map[string]any)["id"].(string)
+	ctx := context.Background()
+	st.PutMessages(ctx, work, []store.Header{{UID: 4, Subject: "Kept"}})
+	st.SetMailboxStatus(ctx, work, store.MailboxStatus{UIDValidity: 9, Messages: 1})
+
+	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+work+"/messages", ""))
+	if got := subjectsOf(page); got != "Kept" || len(fake.listed) != 0 {
+		t.Errorf("page = %q, the server asked %v", got, fake.listed)
 	}
 }
 

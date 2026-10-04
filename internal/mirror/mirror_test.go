@@ -212,7 +212,7 @@ func (w *world) onServer(uid uint32, op imap.StoreFlagsOp, flags ...imap.Flag) {
 	}
 }
 
-func TestAFirstPassListsTheMailboxesAndKeepsINBOXsNewest(t *testing.T) {
+func TestAFirstPassListsTheMailboxesAndKeepsEachOnesNewest(t *testing.T) {
 	w := newWorld(t, "hunter2")
 	w.create("Sent", "Projects", "Projects/emguio")
 	w.deliver("INBOX", 1, "Alice <alice@example.com>", "First")
@@ -250,13 +250,11 @@ func TestAFirstPassListsTheMailboxesAndKeepsINBOXsNewest(t *testing.T) {
 		t.Errorf("id = %q", first.ID())
 	}
 
-	var kept int
-	for _, mb := range []string{"Sent", "Projects", "Projects/emguio"} {
-		got, _ := w.store.Window(context.Background(), w.mailbox(mb))
-		kept += len(got)
+	if got, _ := w.store.Window(context.Background(), w.mailbox("Sent")); subjects(got) != "Sent one" {
+		t.Errorf("Sent keeps %q", subjects(got))
 	}
-	if kept != 0 {
-		t.Errorf("%d messages kept outside INBOX", kept)
+	if got, _ := w.store.Window(context.Background(), w.mailbox("Projects")); len(got) != 0 {
+		t.Errorf("an empty folder keeps %d", len(got))
 	}
 }
 
@@ -277,6 +275,23 @@ func TestOnlyTheNewestAreKept(t *testing.T) {
 	msgs = w.window()
 	if len(msgs) != Window || msgs[0].Subject != "newest" || msgs[Window-1].Subject != "m04" {
 		t.Errorf("after one more: kept %d, from %q to %q", len(msgs), msgs[0].Subject, msgs[len(msgs)-1].Subject)
+	}
+}
+
+// Every other folder keeps fewer of its newest than INBOX does, and only those.
+func TestAFolderKeepsItsNewestTen(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Archive")
+	for i := 1; i <= FolderWindow+2; i++ {
+		w.deliver("Archive", i, "alice@example.com", fmt.Sprintf("a%02d", i))
+	}
+	w.sync()
+	msgs, err := w.store.Window(context.Background(), w.mailbox("Archive"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != FolderWindow || msgs[0].Subject != fmt.Sprintf("a%02d", FolderWindow+2) || msgs[FolderWindow-1].Subject != "a03" {
+		t.Errorf("kept %d, from %q to %q", len(msgs), msgs[0].Subject, msgs[len(msgs)-1].Subject)
 	}
 }
 

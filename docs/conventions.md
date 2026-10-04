@@ -194,8 +194,8 @@ typo is a `400` rather than an empty result that looks like a `404`.
 `internal/store` and the package that speaks the protocol, and the API, URLs and the interface
 use our own ids, so a server that renames a mailbox changes a row rather than links.
 
-A message is the exception because most messages have no row to name them by: only INBOX's
-newest are kept. Its id is its mailbox's UIDVALIDITY and its UID, which IMAP allows only as
+A message is the exception because most messages have no row to name them by: only each
+folder's newest are kept. Its id is its mailbox's UIDVALIDITY and its UID, which IMAP allows only as
 positive 32-bit numbers, and which a renumbering server changes — so an old link is `gone`,
 never another message. See [reading.md](reading.md).
 

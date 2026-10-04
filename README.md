@@ -8,7 +8,7 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 - **Email configs belong to the user.** Added in Settings rather than in a config file, and never
   mixed: one is shown at a time.
 
-Early: users add their email configs and read their mail — folders, lists, messages with their attachments, HTML shown safely, remote images through a proxy that hides the reader and held back in Junk. Only INBOX's newest headers are kept; everything else is read from the server when it is asked for. Read, star, archive, delete, spam and move — one message or a selection — are done on the server, and a folder is searched there too; a message shows the conversation it is in, where the server threads. Mail is written and sent from here: new, reply, reply all and forward, through the config's outgoing server, and kept in Drafts as it is written.
+Early: users add their email configs and read their mail — folders, lists, messages with their attachments, HTML shown safely, remote images through a proxy that hides the reader and held back in Junk. Only each folder's newest headers are kept, INBOX's 30 and every other's 10, so a folder opens at once; everything else is read from the server when it is asked for. Read, star, archive, delete, spam and move — one message or a selection — are done on the server, and a folder is searched there too; a message shows the conversation it is in, where the server threads. Mail is written and sent from here: new, reply, reply all and forward, through the config's outgoing server, and kept in Drafts as it is written.
 
 ## Install
 

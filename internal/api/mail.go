@@ -142,8 +142,8 @@ const (
 // queryMax bounds what a mailbox is searched for, in bytes: a line typed into a field.
 const queryMax = 500
 
-// listMessages is one run of a mailbox, newest first. INBOX opens on the window kept of it, and
-// everything past it, like every other mailbox, comes from the server.
+// listMessages is one run of a mailbox, newest first. A mailbox opens on the window kept of it, and
+// everything past it comes from the server, as does all of one not looked at yet.
 //
 // With q, the run is what the mail server finds in the mailbox for it, INBOX's included: nothing
 // is kept to search here. See docs/reading.md.
@@ -179,7 +179,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		msgs []*store.Message
 		more bool
 	)
-	if q == "" && before == 0 && mb.SpecialUse == store.UseInbox && mb.SyncedAt != nil {
+	if q == "" && before == 0 && mb.SyncedAt != nil {
 		window, err := s.store.Window(r.Context(), mb)
 		if err != nil {
 			s.fail(w, r, err)

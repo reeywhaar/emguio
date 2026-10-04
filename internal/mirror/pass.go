@@ -16,9 +16,20 @@ import (
 	"emguio/internal/store"
 )
 
-// Window is how many of INBOX's newest messages are kept, so a list opens on them without asking
-// the server. Everything else is read from the server when it is asked for.
-const Window = 30
+// How many of a mailbox's newest messages are kept, so its list opens on them without asking the
+// server: INBOX's, which is opened most, and every other's. Anything older is read from the server
+// when it is asked for.
+const (
+	Window       = 30
+	FolderWindow = 10
+)
+
+func windowOf(mb *store.Mailbox) uint32 {
+	if mb.SpecialUse == store.UseInbox {
+		return Window
+	}
+	return FolderWindow
+}
 
 // session is one signed-in IMAP connection for one email config.
 type session struct {
@@ -35,8 +46,8 @@ type session struct {
 	saw *store.MailboxStatus
 }
 
-// pass brings what is kept up to date: on a full pass the list of mailboxes, how many messages
-// each holds, and the window; otherwise the window, or only the mailboxes named.
+// pass brings what is kept up to date: on a full pass the list of mailboxes and every one's counts
+// and window; otherwise INBOX's, or only the mailboxes named.
 func (s *session) pass(ctx context.Context, full bool, named []string) (bool, error) {
 	changed := false
 	if full || !s.listed {
@@ -67,11 +78,7 @@ func (s *session) pass(ctx context.Context, full bool, named []string) (bool, er
 		case mb.SpecialUse != store.UseInbox:
 			continue
 		}
-		look := s.count
-		if mb.SpecialUse == store.UseInbox {
-			look = s.window
-		}
-		moved, err := look(ctx, mb)
+		moved, err := s.window(ctx, mb)
 		var refusal *imap.Error
 		if errors.As(err, &refusal) {
 			// One mailbox the server will not open is that mailbox's problem, not the session's.
@@ -176,22 +183,8 @@ func (s *session) status(mb *store.Mailbox) (store.MailboxStatus, error) {
 	}, nil
 }
 
-// count records how many messages a mailbox holds and how many are unread, for the sidebar, and
-// its UIDNEXT, which tells a list it changed when the counts did not.
-func (s *session) count(ctx context.Context, mb *store.Mailbox) (bool, error) {
-	now, err := s.status(mb)
-	if err != nil {
-		return false, err
-	}
-	was := store.MailboxStatus{UIDValidity: mb.UIDValidity, UIDNext: mb.UIDNext, Messages: mb.Messages, Unseen: mb.Unseen}
-	if mb.SyncedAt != nil && now == was {
-		return false, nil
-	}
-	return true, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
-}
-
-// window brings the kept newest messages of a mailbox up to date, and reports whether anything
-// a list shows moved.
+// window brings a mailbox's counts and its kept newest messages up to date, and reports whether
+// anything a list shows moved.
 //
 // The window is opened every time rather than only when STATUS has moved: a flag changed
 // elsewhere — a star — moves no number STATUS reports, and the window is small enough that its
@@ -218,8 +211,8 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 	current := map[uint32]store.Flags{}
 	if n := data.NumMessages; n > 0 {
 		from := uint32(1)
-		if n > Window {
-			from = n - Window + 1
+		if size := windowOf(mb); n > size {
+			from = n - size + 1
 		}
 		msgs, err := s.client.Fetch(seqRange(from, n), &imap.FetchOptions{UID: true, Flags: true}).Collect()
 		if err != nil {
@@ -269,7 +262,9 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 		}
 	}
 	changed = changed || len(gone) > 0 || len(moved) > 0 || len(missing) > 0
-	s.saw = &now
+	if mb.SpecialUse == store.UseInbox {
+		s.saw = &now
+	}
 	return changed, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
 }
 

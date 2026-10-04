@@ -102,9 +102,9 @@ renumbers a folder changes its UIDVALIDITY, and every message id from before the
 **Times** are Unix seconds, UTC, as JSON numbers. One that may be absent is `null`.
 
 **Some calls wait for the mail server.** emguio keeps each mail account's folders, with their
-counts, and the headers of INBOX's newest 30 messages — nothing else. Any other folder's list, an
-older page of INBOX, a search, a message, a part, a conversation and sending are each asked of
-the mail server while the request waits. They take as long as the server does, and can answer
+counts, and the headers of each one's newest messages, INBOX's 30 and every other's 10 — nothing
+else. An older page of a folder, a search, a message, a part, a conversation and sending are each
+asked of the mail server while the request waits. They take as long as the server does, and can answer
 `502 unreachable` (the server could not be reached, or refused, with its reason in `message`) or
 `404 gone` (what was named is no longer there as it was named).
 
@@ -357,8 +357,9 @@ page. Pages after the first are read by UID, so mail arriving or leaving in betw
 them. A cursor from before the folder's UIDVALIDITY changed answers `404 gone`: start the list
 again without one.
 
-INBOX's first page, without `q`, is the 30 newest messages emguio keeps: it answers at once,
-whatever `limit` says. Every other page, folder and search is read from the mail server.
+A folder's first page, without `q`, is the newest messages emguio keeps of it — INBOX's 30, any
+other's 10: it answers at once, whatever `limit` says. Every later page, a folder not looked at
+yet, and a search are read from the mail server.
 
 A message as a list shows it:
 

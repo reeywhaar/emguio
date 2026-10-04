@@ -1,16 +1,17 @@
 # Reading mail
 
-## Only INBOX's newest are kept, and everything else is read from the server
+## Only each folder's newest are kept, and everything else is read from the server
 
 emguio keeps the least that lets a list open at once: each email config's mailboxes, with how
-many messages each holds and how many are unread, and the headers of INBOX's newest 30 messages
-— the window. No body, no attachment and no other mailbox's messages are kept.
+many messages each holds and how many are unread, and the headers of each one's newest messages
+— the window: INBOX's newest 30, which is opened most, and every other folder's newest 10. No
+body and no attachment is kept.
 
-Everything else is asked for when somebody asks: another folder, an older page of INBOX, a
-message, one of its parts. It is slower than a copy, by a trip to the mail server, and there is
-no copy to grow, to fall out of step or to leak.
+Everything else is asked for when somebody asks: an older page of a folder, a message, one of its
+parts. It is slower than a copy, by a trip to the mail server, and there is no copy to grow, to
+fall out of step or to leak.
 
-The window is a constant, not a setting.
+The windows are constants, not settings.
 
 ## Read state is the server's
 
@@ -171,10 +172,10 @@ worker, so it never goes on signing in with what was saved before.
 The latest failure is the config's `sync_error`, in a sentence, shown above the list and cleared
 by the next pass that works.
 
-## INBOX as it changes, the counts every five minutes
+## INBOX as it changes, every folder every five minutes
 
-A quick pass brings the window up to date; a full pass also lists the mailboxes and asks each
-for its counts with `STATUS`, every five minutes. Fetch new mail, saving a config, and a run of
+A quick pass brings INBOX's window up to date; a full pass, every five minutes, also lists the
+mailboxes and brings every one's counts, with `STATUS`, and window up to date. Fetch new mail, saving a config, and a run of
 jobs that moved mail ask for a full pass now. A pass is said on the event stream when it moved
 something, and always when it was asked for: the button turns until `synced_at` moves, so a
 look that found nothing still ends. Mail that came in is lit in the list for a moment.
@@ -189,9 +190,9 @@ Mail that arrives while a pass is under way is said before anybody waits for it.
 opening INBOX, compares its count and `UIDNEXT` with what the pass found, and looks again when
 they differ rather than waiting for the next message to say so.
 
-The window is opened on every pass rather than only when `STATUS` has moved: a flag changed
-elsewhere — a star — moves no number `STATUS` reports, and the newest 30 messages' flags cost
-one short `FETCH`. A message that left the window, by being expunged or by newer mail pushing it
+A window is opened on every pass that looks at its folder rather than only when `STATUS` has
+moved: a flag changed elsewhere — a star — moves no number `STATUS` reports, and a window's flags
+cost one short `FETCH`. A message that left the window, by being expunged or by newer mail pushing it
 out, is dropped; one that entered it has its header fetched.
 
 ## Every folder as it changes, on a server with NOTIFY
@@ -224,7 +225,7 @@ and what is kept stays.
 
 ## A list is read a page at a time, by UID
 
-INBOX opens on the window, from here. Every other mailbox, and INBOX past its window, is read
+A folder opens on its window, from here. Past it, and all of a folder not looked at yet, is read
 from the server, fifty at a time and newest to arrive first. The first page is the last messages
 by sequence number, which needs only the count the mailbox opens with. A later page asks the
 server which UIDs are below the last one shown, so mail arriving or leaving between two pages
