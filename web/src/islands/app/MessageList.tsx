@@ -139,8 +139,14 @@ export function MessageList({
   const anchor = useRef<string | null>(null);
 
   const selecting = Boolean(select);
+  // The first row in sight takes focus, and the list stays where it was scrolled to.
   useEffect(() => {
-    if (selecting) scroller.current?.querySelector("input")?.focus();
+    const box = scroller.current;
+    if (!selecting || !box) return;
+    const top = box.getBoundingClientRect().top;
+    [...box.querySelectorAll("input")]
+      .find((input) => input.getBoundingClientRect().bottom >= top)
+      ?.focus({ preventScroll: true });
   }, [selecting]);
 
   if (!pages.data) {
