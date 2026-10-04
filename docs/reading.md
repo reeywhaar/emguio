@@ -132,7 +132,8 @@ them still applied, rather than showing the messages they were asked on as thoug
 been done.
 
 After a move or a delete the pane goes on to the message below it in the list, or else the one
-above, or else back to the folder. The mirror is asked for a look once the run is over: the
+above, or else back to the folder. Where the message is open in the list's place, on a phone, it
+is always back to the folder. The mirror is asked for a look once the run is over: the
 window has places to fill, and the counts are the server's to confirm.
 
 ## A selection is acted on in one request

@@ -834,6 +834,22 @@ describe("the mail view", () => {
         expect(window.location.pathname).toBe("/c/ec_1/mb_inbox"),
       );
     });
+
+    // On a phone the message is open in the list's place, and the list is what comes back.
+    it("or back to the folder on a phone, whatever is below it", async () => {
+      const wide = window.innerWidth;
+      window.innerWidth = 390;
+      try {
+        three();
+        opened("m_2");
+        await moveAway();
+        await waitFor(() =>
+          expect(window.location.pathname).toBe("/c/ec_1/mb_inbox"),
+        );
+      } finally {
+        window.innerWidth = wide;
+      }
+    });
   });
 
   // A pile of jobs is drawn as done on the press and taken by the server in the order pressed.

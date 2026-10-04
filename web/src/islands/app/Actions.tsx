@@ -34,6 +34,9 @@ import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
 
+/** Wide enough for the list and an open message side by side, as Mail lays them out: lg. */
+const SIDE_BY_SIDE = "(min-width: 64rem)";
+
 /**
  * Where each action sends a message: the folders the server says are for archiving, for
  * deleted mail and for spam. Archive is the folder the user chose, or else the server's Archive,
@@ -127,9 +130,11 @@ export function Actions({
       },
     ]);
 
-  // On the press: the pending layer takes the message out of the list, and the pane goes on to
-  // the one below it in the list as drawn, or else the one above, or else the folder.
+  // On the press: the pending layer takes the message out of the list. Beside the list, the pane
+  // goes on to the one below it as drawn, or else the one above, or else the folder; in the
+  // list's place, back to the list.
   const moveTo = (dest: Mailbox | null) => {
+    const beside = window.matchMedia(SIDE_BY_SIDE).matches;
     const drawn = listWithPending(
       client
         .getQueryData<InfiniteData<MessagePage>>(list)
@@ -138,7 +143,8 @@ export function Actions({
       pending,
     );
     const at = drawn.findIndex((x) => x.id === message);
-    const neighbor = at >= 0 ? (drawn[at + 1] ?? drawn[at - 1]) : undefined;
+    const neighbor =
+      beside && at >= 0 ? (drawn[at + 1] ?? drawn[at - 1]) : undefined;
     ask(dest ? { kind: "move", target: dest.id } : { kind: "delete" });
     go(paths.mail(config, mailbox.id, neighbor?.id, q));
   };

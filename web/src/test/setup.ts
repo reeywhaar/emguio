@@ -29,5 +29,22 @@ if (typeof HTMLElement !== "undefined") {
   HTMLElement.prototype.setPointerCapture ??= () => {};
 }
 
+/** Nor matchMedia: widths in rem are answered against innerWidth, and nothing else matches. */
+function matchMedia(query: string): MediaQueryList {
+  const rem = /\(min-width:\s*([\d.]+)rem\)/.exec(query);
+  return {
+    matches: rem ? window.innerWidth >= Number(rem[1]) * 16 : false,
+    media: query,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent: () => false,
+  };
+}
+
+if (typeof window !== "undefined") window.matchMedia ??= matchMedia;
+
 globalThis.IntersectionObserver ??=
   Watcher as unknown as typeof IntersectionObserver;
