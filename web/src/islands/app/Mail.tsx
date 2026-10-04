@@ -40,7 +40,7 @@ import { PickerButton } from "@app/components/PickerButton";
 import { ago } from "@app/format";
 import { useCarry } from "@app/islands/app/carry";
 import { blank, write } from "@app/islands/app/drafts";
-import { pick, rememberConfig } from "@app/islands/app/emailConfig";
+import { labelOf, pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { FolderMenu } from "@app/islands/app/FolderMenu";
@@ -186,6 +186,18 @@ function Folders({
       ? boxes.data.find((mb) => mb.id === mailbox)
       : usual(boxes.data)
     : undefined;
+
+  // The tab says where it is: the folder, then the account. Back to the page's own on leaving.
+  const title = [current && labelOfMailbox(current), labelOf(config)]
+    .filter(Boolean)
+    .join(" | ");
+  useEffect(() => {
+    const before = document.title;
+    document.title = title;
+    return () => {
+      document.title = before;
+    };
+  }, [title]);
 
   return (
     <div className="flex min-h-0 flex-1">

@@ -470,6 +470,17 @@ describe("the mail view", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("names the folder and the account in the tab, and gives the tab back", async () => {
+    document.title = "emguio";
+    const { unmount } = mount(<Routed />);
+    await waitFor(() => expect(document.title).toBe("Inbox | Work"));
+    const nav = await screen.findByRole("navigation", { name: "Folders" });
+    fireEvent.click(within(nav).getByRole("link", { name: /^Sent/ }));
+    await waitFor(() => expect(document.title).toBe("Sent | Work"));
+    unmount();
+    expect(document.title).toBe("emguio");
+  });
+
   it("opens another folder from the sidebar, and the address says which", async () => {
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const nav = await screen.findByRole("navigation", { name: "Folders" });
