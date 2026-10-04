@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/docs.mjs",
+    "screenshots": "node scripts/screenshots/capture.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src",
     "test": "vitest run",

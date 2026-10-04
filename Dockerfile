@@ -14,7 +14,7 @@ COPY web/public ./public
 COPY web/src ./src
 COPY web/scripts ./scripts
 # docs/ is a build input, because /docs is rendered from it.
-COPY docs /docs
+COPY docs/*.md /docs/
 RUN npm run build
 # An empty bundle is otherwise invisible until somebody loads the page and gets the
 # placeholder, which looks like a server problem rather than a build one.
@@ -37,7 +37,7 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/emguio /usr/local/bin/emguio
 COPY --from=web /src/dist /srv/web
-COPY docs /srv/docs
+COPY docs/*.md /srv/docs/
 EXPOSE 80
 # Runs the binary's own subcommand, so the image needs no HTTP client.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["emguio", "healthcheck"]
