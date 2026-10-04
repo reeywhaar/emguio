@@ -220,8 +220,9 @@ function Folders({
             </div>
           )}
         </nav>
-        <div className="flex border-t border-line px-3 py-2">
+        <div className="flex flex-col gap-1 border-t border-line px-3 py-2">
           <SyncState config={config} />
+          <Credits />
         </div>
       </aside>
 
@@ -572,7 +573,12 @@ function FolderPicker({
         open={open}
         onClose={() => setOpen(false)}
         title="Folders"
-        footer={<SyncState config={config} />}
+        footer={
+          <div className="flex w-full flex-col gap-1">
+            <SyncState config={config} />
+            <Credits />
+          </div>
+        }
       >
         <FolderList
           config={config.id}
@@ -702,6 +708,34 @@ function FolderIcon({ mb }: { mb: Mailbox }) {
     default:
       return <PlainFolderMark />;
   }
+}
+
+/** Who made it, and where it lives. */
+function Credits() {
+  const link = "underline-offset-2 hover:text-muted hover:underline";
+  return (
+    <p className="text-[10px] text-faint">
+      by{" "}
+      <a
+        href="https://vyrtsev.com"
+        target="_blank"
+        rel="noreferrer"
+        className={link}
+      >
+        Misha Vyrtsev
+      </a>{" "}
+      (
+      <a
+        href="https://github.com/reeywhaar/emguio"
+        target="_blank"
+        rel="noreferrer"
+        className={link}
+      >
+        GitHub
+      </a>
+      )
+    </p>
+  );
 }
 
 /** How long a look asked for is waited on before the button stops saying so. */

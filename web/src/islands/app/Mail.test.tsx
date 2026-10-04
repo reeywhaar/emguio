@@ -462,7 +462,11 @@ describe("the mail view", () => {
     fireEvent.click(open);
     const dialog = within(await screen.findByRole("dialog"));
     dialog.getByRole("heading", { name: "Folders" });
-    expect(dialog.getAllByRole("link").map((l) => l.textContent)).toEqual([
+    expect(
+      within(dialog.getByRole("list"))
+        .getAllByRole("link")
+        .map((l) => l.textContent),
+    ).toEqual([
       "Inbox, unread: 2, messages: /10",
       "Sent, messages: 10",
       "Work, messages: 10",
