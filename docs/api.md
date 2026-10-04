@@ -259,7 +259,8 @@ POST /api/email-configs/{id}/sync
 ```
 
 Asks for every folder to be looked at now, and answers `202` with no body at once. What the look
-finds shows in the folders, INBOX's list, `synced_at` and `sync_error`, and on the event stream.
+finds shows in the folders, INBOX's list, `synced_at` and `sync_error`, and on the event stream,
+which says the look is done even when it found nothing.
 
 ## Folders and messages
 

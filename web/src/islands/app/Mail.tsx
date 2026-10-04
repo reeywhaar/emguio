@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -685,18 +692,46 @@ function FolderIcon({ mb }: { mb: Mailbox }) {
   }
 }
 
+/** How long a look asked for is waited on before the button stops saying so. */
+const LOOK_WAIT = 60_000;
+
 /** When the mail was last brought up to date, and a way to ask for it now. */
 function SyncState({ config }: { config: EmailConfig }) {
+  // The config as it was when a look was asked for: the look is done once it is not.
+  const [asked, setAsked] = useState<EmailConfig | null>(null);
+  const waiting =
+    asked !== null &&
+    config.synced_at === asked.synced_at &&
+    config.sync_error === asked.sync_error;
+  useEffect(() => {
+    if (!asked) return;
+    const id = setTimeout(() => setAsked(null), LOOK_WAIT);
+    return () => clearTimeout(id);
+  }, [asked]);
+  // "Updated a minute ago" goes on getting older with nothing else changing.
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <span className="min-w-0 flex-1 truncate text-xs text-muted">
-        {config.synced_at
-          ? `Updated ${ago(config.synced_at)}`
-          : config.sync_error
-            ? ""
-            : "Not fetched yet"}
+        {waiting
+          ? "Updating…"
+          : config.synced_at
+            ? `Updated ${ago(config.synced_at)}`
+            : config.sync_error
+              ? ""
+              : "Not fetched yet"}
       </span>
-      <FetchMail config={config} />
+      <FetchMail
+        config={config}
+        waiting={waiting}
+        onAsk={() => setAsked(config)}
+        onFail={() => setAsked(null)}
+      />
     </div>
   );
 }
@@ -744,10 +779,23 @@ function MakeFolder({
   );
 }
 
-function FetchMail({ config }: { config: EmailConfig }) {
+function FetchMail({
+  config,
+  waiting,
+  onAsk,
+  onFail,
+}: {
+  config: EmailConfig;
+  /** A look asked for is underway. */
+  waiting: boolean;
+  onAsk: () => void;
+  onFail: () => void;
+}) {
   const client = useQueryClient();
   const sync = useMutation({
     mutationFn: () => postEmailConfigsByIdSync(config.id),
+    onMutate: onAsk,
+    onError: onFail,
     // A folder other than INBOX is listed from the server, and the event stream says nothing
     // about it: asking for new mail asks for it again.
     onSuccess: () =>
@@ -758,10 +806,10 @@ function FetchMail({ config }: { config: EmailConfig }) {
       size="bar"
       aria-label="Fetch new mail"
       title="Fetch new mail"
-      disabled={sync.isPending}
+      disabled={sync.isPending || waiting}
       onClick={() => sync.mutate()}
     >
-      <Refresh />
+      <Refresh className={waiting ? "motion-safe:animate-spin" : ""} />
     </Button>
   );
 }

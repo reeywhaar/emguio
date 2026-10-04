@@ -241,7 +241,7 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 	}
 	tick := time.NewTicker(every)
 	defer tick.Stop()
-	full, lastFull, synced := true, time.Time{}, false
+	full, lastFull, synced, asked := true, time.Time{}, false, false
 	var named []string
 	for {
 		began := time.Now()
@@ -256,13 +256,13 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 			return synced, err
 		}
 		// The first pass of a session always says so, which is what clears a failure shown
-		// from before.
-		if changed || !synced {
+		// from before; so does one somebody asked for, who is waiting to see it done.
+		if changed || !synced || asked {
 			m.store.Notify(w.target.UserID)
 		}
 		synced = true
 		why, err := s.wait(ctx, tick.C, w.wake)
-		named = nil
+		named, asked = nil, why == poked
 		switch {
 		case why == ended:
 			return true, nil

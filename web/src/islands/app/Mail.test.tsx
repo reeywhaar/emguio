@@ -689,15 +689,59 @@ describe("the mail view", () => {
     expect(screen.queryByText("Loading older messages.")).toBeNull();
   });
 
-  it("asks for a look now", async () => {
-    mount(<Mail named="ec_1" mailbox={null} message={null} />);
-    fireEvent.click(
-      (await screen.findAllByRole("button", { name: "Fetch new mail" }))[0]!,
+  // Underway until the server says the look is done, though it found nothing new.
+  it("asks for a look now, and says when it is done", async () => {
+    const { client } = mount(
+      <Mail named="ec_1" mailbox={null} message={null} />,
     );
+    const button = (
+      await screen.findAllByRole("button", { name: "Fetch new mail" })
+    )[0]!;
+    fireEvent.click(button);
     await waitFor(() =>
       expect(postEmailConfigsByIdSync).toHaveBeenCalledWith("ec_1"),
     );
-    screen.getByText(/Updated 2 minutes ago/);
+    expect(screen.getAllByText("Updating…").length).toBeGreaterThan(0);
+    expect(button.hasAttribute("disabled")).toBe(true);
+
+    getEmailConfigs.mockResolvedValue([
+      { ...work, synced_at: Math.round(Date.now() / 1000) },
+    ]);
+    await act(() => client.invalidateQueries({ queryKey: qk.emailConfigs }));
+    await waitFor(() =>
+      expect(screen.getAllByText("Updated just now").length).toBeGreaterThan(0),
+    );
+    expect(button.hasAttribute("disabled")).toBe(false);
+  });
+
+  // New mail is lit for a moment as it comes in; what was there already is not.
+  it("lights mail that has just come in", async () => {
+    const { client } = mount(
+      <Mail named="ec_1" mailbox="mb_inbox" message={null} />,
+    );
+    const list = within(await screen.findByRole("list", { name: "Messages" }));
+    expect(
+      list.getAllByRole("listitem")[0]!.querySelector(".arrived"),
+    ).toBeNull();
+
+    getMessages.mockResolvedValue({
+      messages: [
+        message("m_3", "Just in", { seen: false }),
+        message("m_1", "Quarterly numbers"),
+        message("m_2", "Lunch?"),
+      ],
+    });
+    await act(() =>
+      client.invalidateQueries({
+        queryKey: qk.messages("ec_1", "mb_inbox", ""),
+      }),
+    );
+    await screen.findByText("Just in");
+    const rows = within(
+      screen.getByRole("list", { name: "Messages" }),
+    ).getAllByRole("listitem");
+    expect(rows[0]!.querySelector(".arrived")).not.toBeNull();
+    expect(rows[1]!.querySelector(".arrived")).toBeNull();
   });
 
   it("says why the mail could not be fetched, and where to fix it", async () => {

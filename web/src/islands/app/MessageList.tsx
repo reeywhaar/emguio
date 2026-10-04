@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 
 import {
@@ -20,6 +20,9 @@ import { textOf, unreadOnly } from "@app/islands/app/Search";
 
 /** How far before the end of the list the next run starts loading. */
 const AHEAD = 200;
+
+/** How long a message that has just arrived stays lit; main.css fades it over the same. */
+const ARRIVED = 2000;
 
 /** Messages being selected, and a way to change which. */
 export type Selecting = {
@@ -111,6 +114,27 @@ export function MessageList({
       >,
   });
 
+  // The messages listed so far, and of the ones that came after the first read, those still lit.
+  const known = useRef<Set<string> | null>(null);
+  const [arrived, setArrived] = useState<Set<string>>(new Set());
+  const loaded = pages.data?.pages;
+  useEffect(() => {
+    if (!loaded) return;
+    const before = known.current;
+    known.current = new Set(loaded.flatMap((p) => p.messages.map((m) => m.id)));
+    if (!before) return;
+    const fresh = [...known.current].filter((id) => !before.has(id));
+    // An older run reached by scrolling is not news.
+    const newest = new Set(loaded[0]?.messages.map((m) => m.id));
+    const lit = fresh.filter((id) => newest.has(id));
+    if (lit.length > 0) setArrived(new Set(lit));
+  }, [loaded]);
+  useEffect(() => {
+    if (arrived.size === 0) return;
+    const id = setTimeout(() => setArrived(new Set()), ARRIVED);
+    return () => clearTimeout(id);
+  }, [arrived]);
+
   // Where a Shift-click's range starts: the last row toggled.
   const anchor = useRef<string | null>(null);
 
@@ -171,6 +195,7 @@ export function MessageList({
               message={m}
               q={q}
               open={m.id === open}
+              arrived={arrived.has(m.id)}
               conversation={conversations[m.id]}
               selected={select ? select.selected.has(m.id) : undefined}
               onToggle={select ? (range) => toggle(m.id, range) : undefined}
@@ -244,6 +269,7 @@ function Row({
   message: m,
   q,
   open,
+  arrived,
   conversation,
   selected,
   onToggle,
@@ -253,6 +279,8 @@ function Row({
   message: Message;
   q: string;
   open: boolean;
+  /** Has just come in, and is lit for a moment so it is seen to. */
+  arrived: boolean;
   /** How many messages of the folder its conversation holds, when it is in one. */
   conversation?: number;
   /** Set while selecting: whether this row is. */
@@ -260,7 +288,7 @@ function Row({
   onToggle?: (range: boolean) => void;
 }) {
   const unread = !m.seen;
-  const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"}`;
+  const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"} ${arrived ? "arrived" : ""}`;
   const body = (
     <div className="min-w-0 flex-1">
       <div className="flex items-baseline gap-2">

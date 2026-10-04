@@ -118,6 +118,22 @@ textarea {
   }
 }
 
+/* Mail that has just come in: lit, then back to the row's own ground over the moment MessageList
+   keeps it lit. */
+@keyframes arrived {
+  from {
+    background-color: color-mix(
+      in srgb,
+      var(--color-brand) 18%,
+      var(--color-bg)
+    );
+  }
+}
+
+.arrived {
+  animation: arrived 2s ease-out;
+}
+
 /* Labels are small caps. */
 @utility caps {
   font-variant-caps: all-small-caps;

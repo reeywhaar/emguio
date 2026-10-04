@@ -468,6 +468,25 @@ func TestNewMailIsKeptAsItArrives(t *testing.T) {
 	eventually(t, func() bool { return subjects(w.window()) == "Third, Second, First" })
 }
 
+// A look somebody asked for is said to be done though it found nothing new: they are waiting.
+func TestALookAskedForIsToldEvenWhenNothingMoved(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.deliver("INBOX", 1, "alice@example.com", "First")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.mirror.Run(ctx)
+	eventually(t, func() bool { return w.said.commands("IDLE") > 0 })
+
+	changes, stop := w.store.Watch(w.target.UserID)
+	defer stop()
+	w.mirror.Refresh(w.target.ID)
+	select {
+	case <-changes:
+	case <-time.After(5 * time.Second):
+		t.Fatal("nobody was told")
+	}
+}
+
 func TestAWorkerStartsForANewConfigAndStopsWhenItIsDeleted(t *testing.T) {
 	w := newWorld(t, "hunter2")
 	w.deliver("INBOX", 1, "alice@example.com", "Hello")
