@@ -209,6 +209,9 @@ const moveAway = async () => {
   await waitFor(() => expect(picker.disabled).toBe(false));
   fireEvent.change(picker, { target: { value: "mb_work" } });
 };
+// The row a subject is in, lit as just come into the list, or null.
+const lit = (subject: string) =>
+  screen.getByText(subject).closest("li")!.querySelector(".arrived");
 const subjectsListed = () =>
   within(screen.getByRole("list", { name: "Messages" }))
     .getAllByRole("listitem")
@@ -698,6 +701,24 @@ describe("the mail view", () => {
     await screen.findByText("Older");
     expect(getMessages).toHaveBeenLastCalledWith("ec_1", "mb_inbox", "c1", "");
     expect(screen.queryByText("Loading older messages.")).toBeNull();
+    // What took the stand-ins' place is lit; what was there already is not.
+    expect(lit("Older")).not.toBeNull();
+    expect(lit("Newer")).toBeNull();
+  });
+
+  // A list already read, opened again, shows as it was, with nothing lit.
+  it("lights nothing in a list opened again", async () => {
+    window.history.pushState({}, "", "/c/ec_1/mb_inbox");
+    mount(<Routed />);
+    await screen.findByText("Quarterly numbers");
+    const nav = await screen.findByRole("navigation", { name: "Folders" });
+    fireEvent.click(within(nav).getByRole("link", { name: /^Sent/ }));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/c/ec_1/mb_sent"),
+    );
+    fireEvent.click(within(nav).getByRole("link", { name: /^Inbox/ }));
+    const row = (await screen.findByText("Quarterly numbers")).closest("li")!;
+    expect(row.querySelector(".arrived")).toBeNull();
   });
 
   // Underway until the server says the look is done, though it found nothing new.
@@ -730,10 +751,11 @@ describe("the mail view", () => {
     const { client } = mount(
       <Mail named="ec_1" mailbox="mb_inbox" message={null} />,
     );
+    // The first rows took the place of stand-ins, so they are lit too.
     const list = within(await screen.findByRole("list", { name: "Messages" }));
     expect(
       list.getAllByRole("listitem")[0]!.querySelector(".arrived"),
-    ).toBeNull();
+    ).not.toBeNull();
 
     getMessages.mockResolvedValue({
       messages: [

@@ -114,20 +114,23 @@ export function MessageList({
       >,
   });
 
-  // The messages listed so far, and of the ones that came after the first read, those still lit.
+  // The messages listed so far, and those still lit: whatever came into the list after it first
+  // showed — arriving at the top, or reached by scrolling — and its first rows too when they took
+  // the place of stand-ins rather than being there already.
   const known = useRef<Set<string> | null>(null);
+  const waited = useRef(!pages.data);
   const [arrived, setArrived] = useState<Set<string>>(new Set());
   const loaded = pages.data?.pages;
   useEffect(() => {
     if (!loaded) return;
     const before = known.current;
     known.current = new Set(loaded.flatMap((p) => p.messages.map((m) => m.id)));
-    if (!before) return;
-    const fresh = [...known.current].filter((id) => !before.has(id));
-    // An older run reached by scrolling is not news.
-    const newest = new Set(loaded[0]?.messages.map((m) => m.id));
-    const lit = fresh.filter((id) => newest.has(id));
-    if (lit.length > 0) setArrived(new Set(lit));
+    const fresh = before
+      ? [...known.current].filter((id) => !before.has(id))
+      : waited.current
+        ? [...known.current]
+        : [];
+    if (fresh.length > 0) setArrived(new Set(fresh));
   }, [loaded]);
   useEffect(() => {
     if (arrived.size === 0) return;
@@ -285,7 +288,7 @@ function Row({
   message: Message;
   q: string;
   open: boolean;
-  /** Has just come in, and is lit for a moment so it is seen to. */
+  /** Has just come into the list, and is lit for a moment so it is seen to. */
   arrived: boolean;
   /** How many messages of the folder its conversation holds, when it is in one. */
   conversation?: number;

@@ -178,7 +178,8 @@ A quick pass brings INBOX's window up to date; a full pass, every five minutes, 
 mailboxes and brings every one's counts, with `STATUS`, and window up to date. Fetch new mail, saving a config, and a run of
 jobs that moved mail ask for a full pass now. A pass is said on the event stream when it moved
 something, and always when it was asked for: the button turns until `synced_at` moves, so a
-look that found nothing still ends. Mail that came in is lit in the list for a moment.
+look that found nothing still ends. Mail that comes into a list is lit for a moment: new mail,
+an older page reached by scrolling, and the first rows when they replace the stand-ins.
 
 Between passes the worker waits in INBOX with `IDLE`, examined rather than selected, so waiting
 there changes nothing. Whatever the server says unasked — mail arriving or leaving, a flag
