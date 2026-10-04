@@ -24,6 +24,7 @@ import {
   AllMailMark,
   ArchiveMark,
   DraftMark,
+  FilterMark,
   InboxMark,
   PlainFolderMark,
   PlusMark,
@@ -33,7 +34,6 @@ import {
   SpamMark,
   StarMark,
   TrashMark,
-  UnreadMark,
   WriteMark,
 } from "@app/components/icons";
 import { PickerButton } from "@app/components/PickerButton";
@@ -286,7 +286,7 @@ function Folders({
                     )
                   }
                 >
-                  <UnreadMark lit={unreadOnly(q)} />
+                  <FilterMark on={unreadOnly(q)} />
                 </Button>
               ) : null}
               {current?.selectable ? (
