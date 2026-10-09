@@ -106,7 +106,10 @@ export function Reader({
         />
         {known ? (
           <>
-            <h2 className="text-xl font-semibold break-words">
+            <h2
+              className={`font-semibold break-words ${subjectLook(known.subject)}`}
+              title={known.subject}
+            >
               {known.subject || "(no subject)"}
             </h2>
             {mailbox.special_use === "drafts" ? null : (
@@ -299,4 +302,14 @@ function Attachments({
       ))}
     </ul>
   );
+}
+
+/**
+ * A subject's size by its length: a longer one smaller, so it takes fewer lines over the message,
+ * down to the body's own size; past that, cut at three lines, the whole of it in its title.
+ */
+export function subjectLook(subject: string): string {
+  if (subject.length <= 30) return "text-xl";
+  if (subject.length <= 60) return "text-lg";
+  return "text-base line-clamp-3";
 }

@@ -11,7 +11,7 @@ import type {
 } from "@app/api/types";
 import { Compose } from "@app/islands/app/Compose";
 import { Notice } from "@app/islands/app/Notice";
-import { Reader } from "@app/islands/app/Reader";
+import { Reader, subjectLook } from "@app/islands/app/Reader";
 import { mount } from "@app/test/harness";
 
 const getMessage = vi.fn();
@@ -766,5 +766,20 @@ describe("a conversation", () => {
     await screen.findByRole("heading", { name: "Quarterly numbers" });
     await waitFor(() => expect(getConversation).toHaveBeenCalled());
     expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
+  });
+});
+
+// A long subject takes fewer lines over the message: smaller, and cut past that.
+describe("a subject", () => {
+  it("is smaller the longer it is, and cut at three lines past that", () => {
+    expect(subjectLook("Lunch?")).toBe("text-xl");
+    expect(subjectLook("Quarterly numbers, first look at the draft")).toBe(
+      "text-lg",
+    );
+    expect(
+      subjectLook(
+        "Новая тарификация билайн, Мотив, Казахстан и Украина с 1 октября 2026",
+      ),
+    ).toBe("text-base line-clamp-3");
   });
 });
