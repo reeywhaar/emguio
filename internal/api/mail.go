@@ -55,7 +55,7 @@ type Mirror interface {
 
 // targetOf is an email config as the mirror is asked about it.
 func targetOf(u *store.User, c *store.EmailConfig) store.SyncTarget {
-	return store.SyncTarget{ID: c.ID, UserID: u.ID, UpdatedAt: c.UpdatedAt}
+	return store.SyncTarget{ID: c.ID, UserID: u.ID, UpdatedAt: c.UpdatedAt, Host: c.Incoming.Host}
 }
 
 // mailboxOf is the email config and the mailbox a request names, both the user's. It writes the

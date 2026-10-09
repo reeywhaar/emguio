@@ -156,7 +156,7 @@ func (s *Server) closeDraft(w http.ResponseWriter, r *http.Request, id string, m
 	if final {
 		if made {
 			if _, err := s.mirror.ForgetDraft(context.WithoutCancel(r.Context()), userOf(r).ID, id); err != nil {
-				s.log.Warn("could not forget a draft with nowhere to go", "draft", id, "err", err)
+				s.log.Warn("a draft with nowhere to go could not be forgotten here", "user", userOf(r).ID, "draft", id, "error", err.Error())
 			}
 		}
 		refuse(w, http.StatusConflict, CodeConflict, sentence)

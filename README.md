@@ -56,11 +56,10 @@ docker compose up -d
 docker compose logs emguio
 ```
 
-With nobody signed up yet, it prints an invitation for the first user:
+With nobody signed up yet, it logs an invitation for the first user:
 
 ```
-emguio-1  | time=… level=INFO msg="no users yet; open this link to make the first one" expires_at=…
-emguio-1  | https://mail.example.com/invite/r8Kp…
+emguio-1  | {"time":"…","level":"INFO","msg":"no users yet: open this link to make the first one","link":"https://mail.example.com/invite/r8Kp…","expires_at":"…"}
 ```
 
 ### 3. Make your user

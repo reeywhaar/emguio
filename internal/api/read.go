@@ -101,7 +101,7 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Whatever the list showed, read from the first bytes at sync, the whole message says better.
 	if changed, err := s.store.SetPreview(r.Context(), mb.ID, uid, read.Preview); err != nil {
-		s.log.Warn("could not store a preview", "mailbox", mb.ID, "message", id, "err", err)
+		s.log.Warn("a message's better preview could not be kept", "user", userOf(r).ID, "mailbox", mb.ID, "message", id, "error", err.Error())
 	} else if changed {
 		s.store.Notify(userOf(r).ID)
 	}

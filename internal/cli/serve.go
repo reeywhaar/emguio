@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -38,8 +37,8 @@ func firstRun(ctx context.Context, cfg *config.Config, st *store.Store, log *slo
 	if err != nil {
 		return err
 	}
-	log.Info("no users yet; open this link to make the first one", "expires_at", inv.ExpiresAt.Format(time.RFC3339))
-	fmt.Println(cfg.Link("/invite/" + token))
+	log.Info("no users yet: open this link to make the first one",
+		"link", cfg.Link("/invite/"+token), "expires_at", inv.ExpiresAt.Format(time.RFC3339))
 	return nil
 }
 
@@ -56,7 +55,7 @@ func serveCmd() *cobra.Command {
 
 			// Said at startup so "it works locally" does not become how it is deployed.
 			if cfg.PublicURL.Scheme != "https" {
-				log.Warn("public url is http, so the session cookie ships without Secure",
+				log.Warn("the public url is http, so the session cookie goes without Secure",
 					"url", cfg.PublicURL.String())
 			}
 
@@ -70,7 +69,7 @@ func serveCmd() *cobra.Command {
 			if _, err := os.Stat(webDir); err == nil {
 				webFS = os.DirFS(webDir)
 			} else {
-				log.Warn("no web directory, so the placeholder page is what a browser gets",
+				log.Warn("no web directory: browsers get the placeholder page instead of the app",
 					"dir", app.WebDir)
 			}
 			spa, err := api.NewSPA(webFS)
@@ -115,7 +114,7 @@ func serveCmd() *cobra.Command {
 
 			errc := make(chan error, 1)
 			go func() {
-				log.Info("listening", "addr", app.ListenAddr, "version", app.Version,
+				log.Info("emguio started", "addr", app.ListenAddr, "version", app.Version,
 					"url", cfg.PublicURL.String(), "data", cfg.DataDir)
 				errc <- srv.ListenAndServe()
 			}()
@@ -132,7 +131,7 @@ func serveCmd() *cobra.Command {
 				// Bounded, or one slow request costs the full kill timeout every deploy.
 				shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				log.Info("shutting down")
+				log.Info("emguio stopping")
 				// Before Shutdown rather than after: it waits for active requests, and a stream
 				// only stops being active when its context ends.
 				endStreams()

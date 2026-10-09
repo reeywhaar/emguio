@@ -45,7 +45,7 @@ func Run(ctx context.Context, st *store.Store, log *slog.Logger) {
 // Once runs every pass.
 func Once(ctx context.Context, st *store.Store, log *slog.Logger) {
 	run(ctx, log, "expired sessions", st.SweepSessions)
-	run(ctx, log, "invites", st.SweepInvites)
+	run(ctx, log, "expired invitations", st.SweepInvites)
 	run(ctx, log, "failed jobs", st.SweepFailedJobs)
 	run(ctx, log, "abandoned drafts", st.SweepDrafts)
 }
@@ -54,8 +54,8 @@ func run(ctx context.Context, log *slog.Logger, what string, f func(context.Cont
 	n, err := f(ctx)
 	switch {
 	case err != nil:
-		log.Error("sweep failed", "what", what, "err", err)
+		log.Error("sweep failed: "+what+" were left for the next one", "error", err.Error())
 	case n > 0:
-		log.Info("swept", "what", what, "count", n)
+		log.Info("swept "+what, "count", n)
 	}
 }

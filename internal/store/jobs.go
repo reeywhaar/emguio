@@ -229,7 +229,7 @@ func (s *Store) JobTarget(ctx context.Context, configID string) (SyncTarget, err
 		updated int64
 	)
 	err := s.reader.QueryRowContext(ctx,
-		`SELECT user_id, updated_at FROM email_configs WHERE id = ?`, configID).Scan(&t.UserID, &updated)
+		`SELECT user_id, updated_at, incoming_host FROM email_configs WHERE id = ?`, configID).Scan(&t.UserID, &updated, &t.Host)
 	if errors.Is(err, sql.ErrNoRows) {
 		return t, NotFound("There is no such mail account.")
 	}

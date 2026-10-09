@@ -42,7 +42,8 @@ func Execute() int {
 
 // setup is the environment, a logger, and the database.
 //
-// A LevelVar rather than a fixed level, so raising it at runtime stays a one-line change.
+// A LevelVar rather than a fixed level, so raising it at runtime stays a one-line change. JSON, so a
+// line is a record a collector reads field by field.
 func setup() (*config.Config, *store.Store, *slog.Logger, error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -50,7 +51,7 @@ func setup() (*config.Config, *store.Store, *slog.Logger, error) {
 	}
 	level := new(slog.LevelVar)
 	level.Set(cfg.LogLevel)
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level, ReplaceAttr: readable}))
 
 	sealer, err := seal.New(cfg.SecretKey)
 	if err != nil {
@@ -61,6 +62,14 @@ func setup() (*config.Config, *store.Store, *slog.Logger, error) {
 		return nil, nil, nil, err
 	}
 	return cfg, st, log, nil
+}
+
+// readable writes a duration as one reads it, "1.2s", rather than as JSON's count of nanoseconds.
+func readable(_ []string, a slog.Attr) slog.Attr {
+	if a.Value.Kind() == slog.KindDuration {
+		return slog.String(a.Key, a.Value.Duration().String())
+	}
+	return a
 }
 
 func versionCmd() *cobra.Command {

@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"time"
@@ -56,7 +57,7 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 	for {
 		batch, err := m.store.NextJobs(ctx, configID, batchMax)
 		if err != nil && ctx.Err() == nil {
-			m.log.Error("mirror could not read the next job", "email_config", configID, "err", err)
+			m.log.Error("mail actions waiting could not be read", "email_config", configID, "error", err.Error())
 		}
 		var later <-chan time.Time
 		switch {
@@ -94,9 +95,11 @@ const batchMax = 500
 // do tries a batch of jobs as one, and finishes, fails or puts off each by what became of its
 // message.
 func (m *Mirror) do(ctx context.Context, batch []*store.Job) {
+	began := time.Now()
 	t, err := m.store.JobTarget(ctx, batch[0].EmailConfigID)
 	outcome := make([]error, len(batch))
 	if err != nil {
+		t = store.SyncTarget{ID: batch[0].EmailConfigID, UserID: batch[0].UserID}
 		for i := range outcome {
 			outcome[i] = err
 		}
@@ -111,6 +114,28 @@ func (m *Mirror) do(ctx context.Context, batch []*store.Job) {
 	for i, j := range batch {
 		m.settle(ctx, j, outcome[i])
 	}
+
+	// One line for the batch, which is one press: a selection of a hundred is not a hundred.
+	var failed int
+	var first error
+	for i, e := range outcome {
+		if e != nil && !(errors.Is(e, ErrGone) && batch[i].Kind == store.JobDelete) {
+			failed++
+			first = cmp.Or(first, e)
+		}
+	}
+	attrs := append(who(t), "action", batch[0].Kind, "messages", len(batch),
+		"took", time.Since(began).Round(time.Millisecond))
+	if failed == 0 {
+		m.log.Info("mail action done", attrs...)
+		return
+	}
+	sentence, _ := explain(first)
+	if errors.Is(first, ErrGone) {
+		sentence = "The message is no longer on the server."
+	}
+	m.log.Warn("mail action did not go through", append(attrs,
+		"failed", failed, "attempt", batch[0].Attempts+1, "why", sentence, "error", first.Error())...)
 }
 
 // attempt does a batch of jobs on the server — the same done to messages of one mailbox, see
@@ -234,11 +259,11 @@ func (m *Mirror) settle(ctx context.Context, j *store.Job, err error) {
 		sentence, _ := explain(err)
 		outcome = m.store.FailJob(ctx, j.ID, sentence)
 	default:
-		m.log.Warn("mirror will try a job again", "email_config", j.EmailConfigID, "job", j.ID, "attempt", j.Attempts+1)
 		outcome = m.store.RetryJob(ctx, j.ID, time.Now().Add(jobBackoff[j.Attempts]))
 	}
 	if outcome != nil && ctx.Err() == nil {
-		m.log.Error("mirror could not record a job", "job", j.ID, "err", outcome)
+		m.log.Error("a mail action's outcome could not be recorded", "user", j.UserID, "email_config", j.EmailConfigID,
+			"job", j.ID, "error", outcome.Error())
 	}
 }
 

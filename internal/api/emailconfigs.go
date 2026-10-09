@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -135,7 +136,7 @@ func (s *Server) createEmailConfig(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.log.Info("email config created", "user", userOf(r).ID, "email_config", c.ID, "host", c.Incoming.Host)
+	s.log.Info("mail account added", "user", userOf(r).ID, "email_config", c.ID, "host", c.Incoming.Host)
 	s.reconcile()
 	writeJSON(w, http.StatusCreated, toJSON(c))
 }
@@ -150,6 +151,7 @@ func (s *Server) putEmailConfig(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.log.Info("mail account changed", "user", userOf(r).ID, "email_config", c.ID, "host", c.Incoming.Host)
 	s.reconcile()
 	writeJSON(w, http.StatusOK, toJSON(c))
 }
@@ -159,7 +161,7 @@ func (s *Server) deleteEmailConfig(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.log.Info("email config deleted", "user", userOf(r).ID, "email_config", r.PathValue("id"))
+	s.log.Info("mail account removed", "user", userOf(r).ID, "email_config", r.PathValue("id"))
 	s.reconcile()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -226,10 +228,11 @@ func (s *Server) check(ctx context.Context, id, role string, l store.Login,
 	}
 	var f *connect.Failure
 	if !errors.As(err, &f) {
-		s.log.Error("connection test failed unclassified", "email_config", id, "server", role, "host", l.Host, "err", err)
+		s.log.Error("connection test failed with an error nothing here explains", "email_config", id, "server", role,
+			"host", l.Host, "error", err.Error())
 		return checkJSON{Message: "Something went wrong here."}
 	}
-	s.log.Info("connection test failed", "email_config", id, "server", role, "host", l.Host, "class", f.Class)
+	s.log.Info("connection test failed", "email_config", id, "server", role, "host", l.Host, "why", f.Sentence)
 	return checkJSON{Message: f.Sentence}
 }
 
@@ -263,6 +266,8 @@ func (s *Server) putArchive(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.log.Info("archive folder chosen", "user", u.ID, "email_config", c.ID,
+		"mailbox", cmp.Or(c.ArchiveMailbox, "the server's own"))
 	s.store.Notify(u.ID)
 	writeJSON(w, http.StatusOK, toJSON(c))
 }

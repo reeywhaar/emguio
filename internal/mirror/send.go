@@ -103,7 +103,7 @@ func (m *Mirror) Sent(t store.SyncTarget, s Sending) {
 		}
 		if s.Sent != nil {
 			if err := m.file(ctx, t, s.Sent.Name, s.ID, s.Raw); err != nil && ctx.Err() == nil {
-				m.log.Warn("mirror could not file a sent message", "email_config", t.ID, "err", err)
+				m.log.Warn("a sent message could not be filed in Sent", append(who(t), "error", err.Error())...)
 			}
 		}
 		if a := s.Answers; a != nil {
@@ -113,12 +113,12 @@ func (m *Mirror) Sent(t store.SyncTarget, s Sending) {
 				err = m.store.SetMessageFlags(ctx, a.Mailbox.ID, a.UID, before, 0)
 			}
 			if err != nil && ctx.Err() == nil {
-				m.log.Warn("mirror could not mark a message answered", "email_config", t.ID, "err", err)
+				m.log.Warn("the message replied to could not be marked answered", append(who(t), "error", err.Error())...)
 			}
 		}
 		if d := s.Draft; d != nil {
 			if _, err := m.Delete(ctx, t, d.Mailbox.Name, d.UIDValidity, []uint32{d.UID}); err != nil && !errors.Is(err, ErrGone) && ctx.Err() == nil {
-				m.log.Warn("mirror could not delete a sent draft", "email_config", t.ID, "err", err)
+				m.log.Warn("a sent message's draft could not be deleted from Drafts", append(who(t), "error", err.Error())...)
 			}
 		}
 		m.store.Notify(t.UserID)
@@ -188,7 +188,7 @@ func (m *Mirror) SaveDraft(ctx context.Context, t store.SyncTarget, mailbox stri
 	}
 	if replaces != nil {
 		if _, err := m.Delete(ctx, t, replaces.Mailbox.Name, replaces.UIDValidity, []uint32{replaces.UID}); err != nil && !errors.Is(err, ErrGone) {
-			m.log.Warn("mirror could not delete a replaced draft", "email_config", t.ID, "err", err)
+			m.log.Warn("an older copy of a draft could not be deleted from Drafts", append(who(t), "error", err.Error())...)
 		}
 	}
 	return at.UIDValidity, uint32(at.UID), nil

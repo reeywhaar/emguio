@@ -5,12 +5,14 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"emguio/internal/app"
@@ -208,6 +210,10 @@ func redirect(w http.ResponseWriter, r *http.Request, to string) {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// When it began, so a failure can say how long it had been waiting.
 	r = r.WithContext(context.WithValue(r.Context(), ctxStart, time.Now()))
+	sv := &served{ResponseWriter: w}
+	r = r.WithContext(context.WithValue(r.Context(), ctxServed, sv))
+	defer s.logRequest(r, sv)
+	w = sv
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		// Reads take no writer, and the event stream rightly runs for as long as the tab is open.
@@ -219,10 +225,63 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.guard(s.mux).ServeHTTP(w, r)
 }
 
+// served is what a request's line in the log says, filled in as it is answered: the status, and
+// who asked, once a session says.
+type served struct {
+	http.ResponseWriter
+	status int
+	user   string
+}
+
+func (sv *served) WriteHeader(code int) {
+	if sv.status == 0 {
+		sv.status = code
+	}
+	sv.ResponseWriter.WriteHeader(code)
+}
+
+func (sv *served) Write(b []byte) (int, error) {
+	if sv.status == 0 {
+		sv.status = http.StatusOK
+	}
+	return sv.ResponseWriter.Write(b)
+}
+
+// Flush, for the event stream, which writes as things happen.
+func (sv *served) Flush() {
+	if f, ok := sv.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (sv *served) Unwrap() http.ResponseWriter { return sv.ResponseWriter }
+
+// logRequest says what was asked and how it was answered: who, what, the outcome and how long.
+// Not the query, which holds what somebody searched for, nor the bundle's files and the health
+// check, which say nothing anybody looks for.
+func (s *Server) logRequest(r *http.Request, sv *served) {
+	path := r.URL.Path
+	page := s.spa != nil && s.spa.shellFor(path) != nil
+	if path == "/healthz" || (!strings.HasPrefix(path, "/api/") && !page &&
+		path != "/docs" && path != "/docs.md" && path != "/llms.txt") {
+		return
+	}
+	status := cmp.Or(sv.status, http.StatusOK)
+	level := slog.LevelInfo
+	if status >= 500 {
+		level = slog.LevelWarn
+	}
+	attrs := []any{"method", r.Method, "path", path, "status", status, "took", elapsed(r)}
+	if sv.user != "" {
+		attrs = append(attrs, "user", sv.user)
+	}
+	s.log.Log(r.Context(), level, "request answered", attrs...)
+}
+
 // elapsed is how long the request has been running.
 func elapsed(r *http.Request) time.Duration {
 	if at, ok := r.Context().Value(ctxStart).(time.Time); ok {
-		return time.Since(at).Round(time.Millisecond)
+		return time.Since(at).Round(100 * time.Microsecond)
 	}
 	return 0
 }
@@ -296,15 +355,15 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, context.DeadlineExceeded):
 		// The deadline on a write: it was waiting for something that was not coming, and the
 		// time it waited is what a hang looks like in the log.
-		s.log.Warn("request stopped at its deadline", "method", r.Method, "path", r.URL.Path, "after", elapsed(r))
+		s.log.Warn("request stopped at its deadline: something it waited for did not come", "method", r.Method, "path", r.URL.Path, "after", elapsed(r))
 		refuse(w, http.StatusServiceUnavailable, CodeBusy, "That took too long and was stopped. Try again.")
 	case errors.Is(err, context.Canceled):
 		// The caller left, or the process is stopping: nobody reads an answer.
-		s.log.Warn("request cancelled", "method", r.Method, "path", r.URL.Path, "after", elapsed(r))
+		s.log.Warn("request cancelled: the caller left, or the server is stopping", "method", r.Method, "path", r.URL.Path, "after", elapsed(r))
 	default:
 		// An unclassified error is a bug, and the message that reaches the caller deliberately
 		// does not say what it was.
-		s.log.Error("request failed", "method", r.Method, "path", r.URL.Path, "after", elapsed(r), "err", err)
+		s.log.Error("request failed with an error nothing here explains", "method", r.Method, "path", r.URL.Path, "after", elapsed(r), "error", err.Error())
 		refuse(w, http.StatusInternalServerError, CodeInternal, "Something went wrong here.")
 	}
 }

@@ -14,7 +14,7 @@ ghcr.io/reeywhaar/emguio:latest
 | `EMGUIO_DATA_DIR` | `/data` | Where `emguio.db` lives. Fixed in the image; a variable for local runs |
 | `EMGUIO_SECRET_KEY` | *required* | 32 random bytes, base64. Seals the passwords of email configs |
 | `EMGUIO_ALLOW_NETWORKS` | — | Private addresses or ranges emguio may connect to, comma-separated |
-| `EMGUIO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `EMGUIO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; see [Logs](#logs) |
 
 **There is no config file.** What an operator adjusts once the process is running belongs in
 the database, where it is a form field rather than a redeploy. The environment is for what must
@@ -87,6 +87,21 @@ forgotten `-v` is a startup error naming the flag.
 **emguio never creates the directory.** Mounting it is the operator's statement about where the
 data lives, and inventing one would be emguio guessing at that.
 
+## Logs
+
+One JSON object a line, on stderr, so a collector reads each field rather than parsing a
+sentence. A line says what happened in words, and its fields say whose it was — `user`,
+`email_config`, the mail server's `host` — and, when something did not go through, `why` in the
+words a user is shown, the `error` as it came, and what happens next, such as `retry_in`.
+Durations are written as they read, `"1.2s"`.
+
+At `info`: every request with its status and how long it took; mail sync connecting, being up to
+date, failing and stopping; each mail action and each message sent; accounts, folders and settings
+lookups as they change; and the sweeps. At `debug`, also each routine look at the mail server.
+
+Never in a line: a password, an email address, a subject, a folder's name, what somebody searched
+for, or a request's query. A folder is named by its id and its use — `sent`, `drafts` or `own`.
+
 ## Port
 
 `:80` inside the container, not configurable. Remap it with `-p`.
@@ -102,8 +117,8 @@ docker exec emguio emguio invite
 
 The link is good for a week and makes one user. Accepting it signs them in.
 
-On an empty database `serve` prints one at startup, so the first user needs nothing but the
-container's log:
+On an empty database `serve` logs one at startup, as the `link` of its line, so the first user
+needs nothing but the container's log:
 
 ```sh
 docker logs emguio

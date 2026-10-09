@@ -120,12 +120,14 @@ type SyncTarget struct {
 	ID        string
 	UserID    string
 	UpdatedAt time.Time
+	// Host is the incoming server's, for saying in a log which server a line is about.
+	Host string
 }
 
 // SyncTargets lists every email config on the instance. The mirror acts for each one's user
 // without a request from them, which is the one reason to read across users.
 func (s *Store) SyncTargets(ctx context.Context) ([]SyncTarget, error) {
-	rows, err := s.reader.QueryContext(ctx, `SELECT id, user_id, updated_at FROM email_configs`)
+	rows, err := s.reader.QueryContext(ctx, `SELECT id, user_id, updated_at, incoming_host FROM email_configs`)
 	if err != nil {
 		return nil, fmt.Errorf("sync targets: %w", err)
 	}
@@ -136,7 +138,7 @@ func (s *Store) SyncTargets(ctx context.Context) ([]SyncTarget, error) {
 			t       SyncTarget
 			updated int64
 		)
-		if err := rows.Scan(&t.ID, &t.UserID, &updated); err != nil {
+		if err := rows.Scan(&t.ID, &t.UserID, &updated, &t.Host); err != nil {
 			return nil, fmt.Errorf("sync targets: %w", err)
 		}
 		t.UpdatedAt = fromUnix(updated)

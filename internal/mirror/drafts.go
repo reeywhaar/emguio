@@ -40,7 +40,7 @@ func (m *Mirror) runDrafts() {
 		switch {
 		case err != nil:
 			if ctx.Err() == nil {
-				m.log.Error("mirror could not read the next draft", "err", err)
+				m.log.Error("drafts waiting to be written could not be read", "error", err.Error())
 			}
 			later = time.After(30 * time.Second)
 		case d == nil:
@@ -83,16 +83,26 @@ func (m *Mirror) WriteDraft(ctx context.Context, id string) error {
 		return m.store.DraftWritten(ctx, d.ID, d.Version, d.KeptMailbox, d.KeptMessage, time.Time{})
 	}
 	err = m.writeDraft(ctx, d)
+	whose := []any{"user", d.UserID, "email_config", d.EmailConfigID, "draft", d.ID}
+	if err == nil {
+		m.log.Info("draft written to Drafts", whose...)
+	}
 	if err == nil || ctx.Err() != nil {
 		return err
 	}
 	sentence, final := DraftProblem(err)
 	again := time.Time{}
-	if !final {
-		again = time.Now().Add(draftBackoff[min(d.Attempts, len(draftBackoff)-1)])
+	attrs := append(whose, "why", sentence, "error", err.Error())
+	if final {
+		attrs = append(attrs, "retry", "no; it stays here until it is changed or sent")
+	} else {
+		wait := draftBackoff[min(d.Attempts, len(draftBackoff)-1)]
+		again = time.Now().Add(wait)
+		attrs = append(attrs, "retry_in", wait.String())
 	}
+	m.log.Warn("draft not written to Drafts", attrs...)
 	if rerr := m.store.DraftFailed(ctx, d.ID, sentence, again); rerr != nil {
-		m.log.Error("mirror could not record a draft it could not write", "draft", d.ID, "err", rerr)
+		m.log.Error("a draft's failure to be written could not be recorded", append(whose, "error", rerr.Error())...)
 	}
 	m.store.Notify(d.UserID)
 	return err

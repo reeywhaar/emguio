@@ -56,10 +56,10 @@ func (n *news) take() (boxes []string, relist, lost bool) {
 // notify asks a server with NOTIFY to say whenever any mailbox moves, not only the one waited in:
 // every folder's counts as they change, rather than at the next full pass. A change of flags
 // elsewhere first, which some servers will not say without CONDSTORE; refused, without it, and
-// refused again, the session waits as it would without NOTIFY.
-func (s *session) notify() error {
+// refused again, the session waits as it would without NOTIFY. It reports whether it is on.
+func (s *session) notify() (bool, error) {
 	if !s.client.Caps().Has(imap.CapNotify) {
-		return nil
+		return false, nil
 	}
 	moves := []imap.NotifyEvent{imap.NotifyEventMessageNew, imap.NotifyEventMessageExpunge}
 	selected := imap.NotifyItem{
@@ -75,15 +75,16 @@ func (s *session) notify() error {
 			{MailboxSpec: imap.NotifyMailboxSpecPersonal, Events: events},
 		}})
 		if err != nil {
-			return err
+			return false, err
 		}
 		err = cmd.Wait()
 		var refusal *imap.Error
 		if errors.As(err, &refusal) {
 			continue
 		}
-		return err
+		return err == nil, err
 	}
-	s.m.log.Info("mirror was refused NOTIFY", "email_config", s.target.ID)
-	return nil
+	s.m.log.Info("mail sync goes without NOTIFY: the server refused it, so folders other than INBOX are looked at every five minutes",
+		who(s.target)...)
+	return false, nil
 }

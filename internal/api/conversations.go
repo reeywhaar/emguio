@@ -121,7 +121,8 @@ func (s *Server) conversation(w http.ResponseWriter, r *http.Request) {
 	if other, err := s.specialMailbox(r, c, use); err == nil && other != nil && other.ID != mb.ID {
 		found, err := s.mirror.Related(r.Context(), t, other.Name, answered, answers)
 		if err != nil {
-			s.log.Warn("could not look for the rest of a conversation", "email_config", c.ID, "mailbox", other.ID, "err", err)
+			s.log.Warn("the other side of a conversation could not be looked for; it shows without it", "user", userOf(r).ID,
+				"email_config", c.ID, "mailbox", other.ID, "error", err.Error())
 		} else {
 			for _, h := range found.Headers {
 				add(h, other, found.UIDValidity)

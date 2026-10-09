@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -287,5 +288,34 @@ func TestAMissingFileIsNotSentToSignIn(t *testing.T) {
 	resp := do(t, s, "GET", "/favicon.ico", "", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("signed out = %s, want 404 rather than a redirect", resp.Status)
+	}
+}
+
+// Every request is a line: who asked, for what, and how it was answered. Never the query, which
+// holds what somebody searched for; never the health check or the bundle's files.
+func TestARequestIsLoggedWithWhoAskedAndTheAnswer(t *testing.T) {
+	s, st := newServerStore(t, fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}, "app.js": {Data: []byte("x")}})
+	var logged bytes.Buffer
+	s.log = slog.New(slog.NewJSONHandler(&logged, nil))
+	c := signIn(t, s, st)
+	logged.Reset()
+
+	c.do("GET", "/api/email-configs?q=secret", "")
+	c.do("GET", "/healthz", "")
+	c.do("GET", "/app.js", "")
+	var line map[string]any
+	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("logged %d lines: %s", len(lines), logged.String())
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &line); err != nil {
+		t.Fatal(err)
+	}
+	if line["msg"] != "request answered" || line["path"] != "/api/email-configs" || line["status"] != float64(200) ||
+		!strings.HasPrefix(fmt.Sprint(line["user"]), "u_") {
+		t.Errorf("line = %v", line)
+	}
+	if strings.Contains(logged.String(), "secret") {
+		t.Error("the query was logged")
 	}
 }

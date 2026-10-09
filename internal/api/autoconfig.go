@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"emguio/internal/autoconfig"
@@ -54,20 +55,26 @@ func (s *Server) lookUpSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	found, err := s.finder.Find(r.Context(), body.Email)
+	// The domain and never the address: which provider, not whose mailbox.
+	_, domain, _ := strings.Cut(body.Email, "@")
+	whose := []any{"user", userOf(r).ID, "domain", strings.ToLower(strings.TrimSpace(domain))}
 	switch {
 	case errors.Is(err, autoconfig.ErrNotAnAddress):
 		refuse(w, http.StatusBadRequest, CodeInvalid, "That is not an email address.")
 		return
 	case errors.Is(err, autoconfig.ErrOAuthOnly):
+		s.log.Info("mail settings not found: the provider signs in only with OAuth", whose...)
 		writeJSON(w, http.StatusOK, map[string]any{"found": false, "oauth_only": true})
 		return
 	case err != nil:
 		s.fail(w, r, err)
 		return
 	case found == nil:
+		s.log.Info("mail settings not found: nothing published where they are looked for", whose...)
 		writeJSON(w, http.StatusOK, map[string]any{"found": false})
 		return
 	}
+	s.log.Info("mail settings found", append(whose, "source", found.Source, "host", found.Incoming.Host)...)
 	out := map[string]any{
 		"found":    true,
 		"source":   found.Source,

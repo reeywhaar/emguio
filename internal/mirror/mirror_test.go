@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -959,5 +960,14 @@ func TestWithoutMoveOrUIDPlusNothingIsRemoved(t *testing.T) {
 	w.sync()
 	if got := subjects(w.window()); got != "Stay" {
 		t.Errorf("INBOX keeps %q", got)
+	}
+}
+
+// A server hanging up mid-session is a lost connection, said as one, not an error nobody knows.
+func TestAHangUpIsALostConnection(t *testing.T) {
+	for _, err := range []error{io.EOF, io.ErrUnexpectedEOF, fmt.Errorf("fetch: %w", io.ErrUnexpectedEOF)} {
+		if sentence, class := explain(err); class != "network" || !strings.Contains(sentence, "closed the connection") {
+			t.Errorf("%v = %q, %q", err, class, sentence)
+		}
 	}
 }

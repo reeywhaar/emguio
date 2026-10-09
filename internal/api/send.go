@@ -151,26 +151,30 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	err = s.connector.Send(context.WithoutCancel(r.Context()), connect.Server{
 		Host: out.Host, Port: out.Port, TLS: out.TLS, Username: out.Username, Password: out.Password,
 	}, c.Email, built.Recipients, bytes.NewReader(built.Raw))
+	whose := []any{"user", u.ID, "email_config", c.ID, "host", out.Host}
 	var f *connect.Failure
 	switch {
 	case errors.As(err, &f):
+		s.log.Warn("message not sent", append(whose, "why", f.Sentence)...)
 		refuse(w, http.StatusBadGateway, CodeUnreachable, f.Sentence)
 		return
 	case err != nil:
 		s.fail(w, r, err)
 		return
 	}
+	s.log.Info("message sent", append(whose, "recipients", len(built.Recipients),
+		"attachments", len(wr.files), "bytes", len(built.Raw))...)
 
 	gone = true
 	if s.mirror != nil {
 		if held != nil {
 			if _, err := s.mirror.ForgetDraft(context.WithoutCancel(r.Context()), u.ID, held.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
-				s.log.Warn("could not forget a sent draft", "draft", held.ID, "err", err)
+				s.log.Warn("a sent message's draft could not be forgotten here", "user", u.ID, "draft", held.ID, "error", err.Error())
 			}
 		}
 		sent, err := s.specialMailbox(r, c, store.UseSent)
 		if err != nil {
-			s.log.Warn("could not find Sent", "email_config", c.ID, "err", err)
+			s.log.Warn("Sent could not be found, so the message is not filed there", "user", u.ID, "email_config", c.ID, "error", err.Error())
 		}
 		s.mirror.Sent(t, mirror.Sending{Sent: sent, ID: built.ID, Raw: built.Raw, Answers: wr.answers, Draft: wr.replaces})
 	}

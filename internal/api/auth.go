@@ -38,7 +38,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.store.Authenticate(r.Context(), req.Username, req.Password)
 	if errors.Is(err, store.ErrNotFound) {
 		// One refusal for a wrong password and a missing user.
-		s.log.Info("sign-in refused")
+		s.log.Info("sign-in refused: the username and password do not match")
 		refuse(w, http.StatusUnauthorized, CodeUnauthenticated, "That username and password do not match.")
 		return
 	}
@@ -59,6 +59,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.log.Info("signed out", "user", userOf(r).ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -131,6 +132,9 @@ func (s *Server) requireSession(next http.HandlerFunc) http.Handler {
 			s.fail(w, r, err)
 			return
 		}
+		if sv, ok := r.Context().Value(ctxServed).(*served); ok {
+			sv.user = u.ID
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxUser, u)))
 	})
 }
@@ -139,6 +143,7 @@ type ctxKey int
 
 const (
 	ctxUser ctxKey = iota
+	ctxServed
 	ctxStart
 )
 

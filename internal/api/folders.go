@@ -75,6 +75,7 @@ func (s *Server) createMailbox(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Notify(u.ID)
 	s.mirror.Refresh(c.ID)
+	s.log.Info("folder made", "user", u.ID, "email_config", c.ID, "mailbox", after[made].ID)
 	writeJSON(w, http.StatusCreated, mailboxOut(after[made]))
 }
 
@@ -195,6 +196,7 @@ func (s *Server) renameMailbox(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Notify(u.ID)
 	s.mirror.Refresh(c.ID)
+	s.log.Info("folder renamed or moved", "user", u.ID, "email_config", c.ID, "mailbox", now.ID)
 	writeJSON(w, http.StatusOK, mailboxOut(now))
 }
 
@@ -231,6 +233,7 @@ func (s *Server) deleteMailbox(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.log.Info("folder deleted", "user", u.ID, "email_config", c.ID, "mailbox", mb.ID)
 	s.store.Notify(u.ID)
 	s.mirror.Refresh(c.ID)
 	w.WriteHeader(http.StatusNoContent)
@@ -252,6 +255,7 @@ func (s *Server) orderMailboxes(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.log.Info("folders put in order", "user", u.ID, "email_config", r.PathValue("id"), "folders", len(body.IDs))
 	s.store.Notify(u.ID)
 	s.listMailboxes(w, r)
 }

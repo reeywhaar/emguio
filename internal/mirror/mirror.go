@@ -10,8 +10,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -86,7 +89,7 @@ func (m *Mirror) Run(ctx context.Context) {
 		m.runDrafts()
 	}()
 	if configs, err := m.store.JobConfigs(ctx); err != nil {
-		m.log.Error("mirror could not list waiting jobs", "err", err)
+		m.log.Error("mail actions left waiting could not be listed", "error", err.Error())
 	} else {
 		for _, id := range configs {
 			m.Kick(id)
@@ -143,7 +146,7 @@ func (m *Mirror) reconcile(ctx context.Context) {
 	targets, err := m.store.SyncTargets(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
-			m.log.Error("mirror could not list email configs", "err", err)
+			m.log.Error("mail sync could not list the mail accounts", "error", err.Error())
 		}
 		return
 	}
@@ -155,10 +158,17 @@ func (m *Mirror) reconcile(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for id, w := range m.workers {
-		if t, ok := want[id]; !ok || !t.UpdatedAt.Equal(w.target.UpdatedAt) {
-			w.stop()
-			delete(m.workers, id)
+		t, ok := want[id]
+		switch {
+		case !ok:
+			m.log.Info("mail sync stopped: the account was removed", who(w.target)...)
+		case !t.UpdatedAt.Equal(w.target.UpdatedAt):
+			m.log.Info("mail sync restarting: the account's settings changed", who(w.target)...)
+		default:
+			continue
 		}
+		w.stop()
+		delete(m.workers, id)
 	}
 	for id, t := range want {
 		if m.workers[id] == nil {
@@ -208,9 +218,9 @@ func (m *Mirror) work(ctx context.Context, w *worker) {
 		if synced {
 			failures = 0
 		}
-		m.failed(ctx, w.target, err)
 		wait := backoff[min(failures, len(backoff)-1)]
 		failures++
+		m.failed(ctx, w.target, err, wait)
 		select {
 		case <-ctx.Done():
 			return
@@ -229,9 +239,12 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 	}
 	defer s.client.Close()
 
-	if err := s.notify(); err != nil {
+	notifying, err := s.notify()
+	if err != nil {
 		return false, err
 	}
+	m.log.Info("mail sync connected", append(who(w.target),
+		"idle", s.idles(), "notify", notifying)...)
 	// With IDLE the server says when INBOX moves, and the timer is only for every other
 	// mailbox's counts; without it, INBOX is looked at every minute.
 	idles := s.idles()
@@ -248,6 +261,13 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 		changed, err := s.pass(ctx, full, named)
 		if err != nil {
 			return synced, err
+		}
+		took := time.Since(began).Round(time.Millisecond)
+		if !synced {
+			m.log.Info("mail sync brought every folder up to date", append(who(w.target), "took", took)...)
+		} else {
+			m.log.Debug("mail sync looked again", append(who(w.target),
+				"every_folder", full, "folders", len(named), "changed", changed, "took", took)...)
 		}
 		if full {
 			lastFull = began
@@ -274,7 +294,7 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 			var lost bool
 			named, full, lost = s.news.take()
 			if lost {
-				if err := s.notify(); err != nil {
+				if _, err := s.notify(); err != nil {
 					return true, err
 				}
 			}
@@ -360,12 +380,12 @@ func (s *session) wait(ctx context.Context, tick <-chan time.Time, wake <-chan s
 func (m *Mirror) Once(ctx context.Context, t store.SyncTarget) error {
 	s, err := m.open(ctx, t)
 	if err != nil {
-		m.failed(ctx, t, err)
+		m.failed(ctx, t, err, 0)
 		return err
 	}
 	defer s.client.Close()
 	if _, err := s.pass(ctx, true, nil); err != nil {
-		m.failed(ctx, t, err)
+		m.failed(ctx, t, err, 0)
 		return err
 	}
 	s.client.Logout().Wait()
@@ -408,18 +428,40 @@ func (m *Mirror) open(ctx context.Context, t store.SyncTarget) (*session, error)
 	return &session{m: m, target: t, host: in.Host, client: client, moved: moved, news: heard}, nil
 }
 
-// failed records why the latest attempt did not work, in a sentence for the settings page.
-func (m *Mirror) failed(ctx context.Context, t store.SyncTarget, err error) {
+// who is what a log line says about whose mail it is about: the user, their account and its
+// server.
+func who(t store.SyncTarget) []any {
+	return []any{"user", t.UserID, "email_config", t.ID, "host", t.Host}
+}
+
+// useOf is what a folder is for, for a log: the server's own use, or the user's own folder. Not
+// its name, which is the user's to keep.
+func useOf(mb *store.Mailbox) string {
+	if mb.SpecialUse == "" {
+		return "own"
+	}
+	return mb.SpecialUse
+}
+
+// failed records why the latest attempt did not work, in a sentence for the settings page, and
+// logs it with when it is tried again: retry, none for a look that is not.
+func (m *Mirror) failed(ctx context.Context, t store.SyncTarget, err error, retry time.Duration) {
 	if err == nil || ctx.Err() != nil {
 		return
 	}
 	sentence, class := explain(err)
-	m.log.Warn("mirror failed", "email_config", t.ID, "class", class)
-	if class == "unknown" {
-		m.log.Error("mirror failed unclassified", "email_config", t.ID, "err", err)
+	attrs := append(who(t), "why", sentence, "error", err.Error())
+	if retry > 0 {
+		attrs = append(attrs, "retry_in", retry.String())
 	}
+	// One nothing here explains is one somebody should read.
+	level := slog.LevelWarn
+	if class == "unknown" {
+		level = slog.LevelError
+	}
+	m.log.Log(ctx, level, "mail sync failed", attrs...)
 	if err := m.store.SetSyncState(ctx, t.ID, sentence); err != nil {
-		m.log.Error("mirror could not record a failure", "email_config", t.ID, "err", err)
+		m.log.Error("mail sync could not record why it failed", append(who(t), "error", err.Error())...)
 		return
 	}
 	m.store.Notify(t.UserID)
@@ -435,6 +477,9 @@ func explain(err error) (sentence, class string) {
 		return fmt.Sprintf("The server refused: %s", connect.Said(refusal.Text)), "refused"
 	case errors.Is(err, store.ErrInvalid), errors.Is(err, store.ErrNotFound):
 		return err.Error(), "config"
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed),
+		errors.Is(err, syscall.ECONNRESET):
+		return "The server closed the connection. It will be tried again.", "network"
 	default:
 		return "The connection to the server was lost. It will be tried again.", "unknown"
 	}

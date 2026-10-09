@@ -82,7 +82,8 @@ func (s *session) pass(ctx context.Context, full bool, named []string) (bool, er
 		var refusal *imap.Error
 		if errors.As(err, &refusal) {
 			// One mailbox the server will not open is that mailbox's problem, not the session's.
-			s.m.log.Warn("mirror skipped a mailbox", "email_config", s.target.ID, "mailbox", mb.ID, "reason", refusal.Text)
+			s.m.log.Warn("mail sync skipped a folder the server would not open; it is tried again on the next pass",
+				append(who(s.target), "mailbox", mb.ID, "use", useOf(mb), "server_said", refusal.Text)...)
 			continue
 		}
 		if err != nil {
@@ -412,7 +413,7 @@ func (s *session) readPreviews(parts map[uint32]textPart, size uint32) map[uint3
 			BodySection: []*imap.FetchItemBodySection{section},
 		}).Collect()
 		if err != nil {
-			s.m.log.Warn("mirror could not read previews", "email_config", s.target.ID, "err", err)
+			s.m.log.Warn("mail sync could not read previews; those rows show none", append(who(s.target), "error", err.Error())...)
 			continue
 		}
 		for _, msg := range got {
