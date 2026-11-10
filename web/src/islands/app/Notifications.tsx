@@ -325,7 +325,7 @@ function DeliveryDialog({
       >
         <Field
           label="New mail"
-          hint="Every so often gathers what arrived into one notification, leaving out what you read meanwhile."
+          hint="A digest is one notification for all the mail that came in since the last one. Mail you have already read is left out."
         >
           <Select value={choice} onChange={(e) => setChoice(e.target.value)}>
             {choices.map((c) => (
