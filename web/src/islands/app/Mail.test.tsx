@@ -112,6 +112,8 @@ const work: EmailConfig = {
   sync_error: "",
   inbox_unseen: 0,
   archive_mailbox: null,
+  notify: "now",
+  digest_every: 60,
 };
 
 const box = (
@@ -128,6 +130,7 @@ const box = (
   messages: 10,
   unseen,
   uid_next: 1,
+  notify: true,
 });
 
 const boxes = [

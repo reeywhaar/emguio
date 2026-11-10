@@ -38,7 +38,14 @@ export type EmailConfig = {
   inbox_unseen: number;
   /** The folder chosen to archive to; null for the one the server names. */
   archive_mailbox: string | null;
+  /** How its new mail is told to the user's devices. */
+  notify: Notify;
+  /** How many minutes a digest gathers. */
+  digest_every: number;
 };
+
+/** Each message as it arrives, gathered into a digest, or not at all. */
+export type Notify = "now" | "digest" | "off";
 
 /** A whole email config as the form sends it. An empty password is the one already saved. */
 export type EmailConfigDraft = {
@@ -95,6 +102,8 @@ export type Mailbox = {
   unseen: number;
   /** Moves on with each message put in it, so a list can tell it changed when its counts did not. */
   uid_next: number;
+  /** Whether its new mail is told to the user's devices. */
+  notify: boolean;
 };
 
 export type Address = { name: string; email: string };
@@ -229,3 +238,25 @@ export type Held = { id: string; name: string; type: string; size: number };
 
 /** A draft whose window closed: in Drafts now, or kept and put there once the server takes it. */
 export type ClosedDraft = { closed: boolean; problem?: string };
+
+/** A browser that shows the user's notifications. */
+export type Device = {
+  id: string;
+  /** The browser's own name for itself, for it to know its row; empty when it gave none. */
+  client_id: string;
+  label: string;
+  created_at: number;
+  /** When its push service last took a notification, null before the first. */
+  last_ok_at: number | null;
+  failure_count: number;
+  last_error: string;
+};
+
+/** A browser's push subscription, handed over to be told. */
+export type Subscription = {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  label: string;
+  client_id: string;
+};

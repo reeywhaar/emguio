@@ -971,3 +971,32 @@ func TestAHangUpIsALostConnection(t *testing.T) {
 		}
 	}
 }
+
+// Only mail that came in since the last look is news: not what was there at the first, not mail
+// already read, and not mail filed in from elsewhere, which keeps the date it first arrived on.
+func TestNewMailIsKeptToBeToldOfAndNothingElse(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	ctx := context.Background()
+	if _, err := w.store.RegisterDevice(ctx, w.target.UserID, store.DeviceInput{
+		Endpoint: "https://push.example.com/a", P256dh: "key", Auth: "auth"}); err != nil {
+		t.Fatal(err)
+	}
+	now := start.Add(5 * time.Minute)
+	w.store.SetClock(func() time.Time { return now })
+	w.deliver("INBOX", 1, "alice@example.com", "There before")
+	w.sync()
+
+	now = start.Add(4 * time.Hour)
+	w.deliver("INBOX", 230, "bob@example.com", "Read elsewhere", imap.FlagSeen)
+	w.deliver("INBOX", -600, "carol@example.com", "Filed from another folder")
+	w.deliver("INBOX", 235, "dan@example.com", "New")
+	w.sync()
+
+	batches, _, err := w.store.Due(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batches) != 1 || len(batches[0].Arrivals) != 1 || batches[0].Arrivals[0].Subject != "New" {
+		t.Fatalf("due %+v", batches)
+	}
+}

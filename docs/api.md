@@ -123,7 +123,7 @@ same as one that does not exist.
 
 Once one is saved, emguio signs in to its incoming server in the background, lists its folders,
 keeps INBOX up to date as mail arrives, and reads every folder's counts at least every five
-minutes.
+minutes. New mail is told to the user's [devices](#notifications) as the email config is set to.
 
 An email config:
 
@@ -132,7 +132,7 @@ An email config:
  "incoming": {"protocol": "imap", "host": "imap.example.com", "port": 993, "tls": "implicit", "username": "ann@example.com"},
  "outgoing": {"host": "smtp.example.com", "port": 465, "tls": "implicit", "username": ""},
  "created_at": 1790000000, "updated_at": 1790000000, "synced_at": 1790000300, "sync_error": "", "inbox_unseen": 3,
- "archive_mailbox": null}
+ "archive_mailbox": null, "notify": "now", "digest_every": 60}
 ```
 
 | field | |
@@ -147,6 +147,8 @@ An email config:
 | `sync_error` | Why the latest try did not, in a sentence; empty when it did. |
 | `inbox_unseen` | How many messages in INBOX are unread. |
 | `archive_mailbox` | The folder chosen to archive to; `null` for the one the server names. See below. |
+| `notify` | How its new mail is told to the user's devices: `now`, each message as it arrives; `digest`, gathered; or `off`. `now` for a new one. See below. |
+| `digest_every` | How many minutes a digest gathers: 30, 60, 120 or 240. 60 for a new one. |
 
 No answer ever carries a password.
 
@@ -207,6 +209,31 @@ Gmail's All Mail. Only this changes: the config's connections go on as they are.
 server later drops goes back to the server's. Answers `200` with the email config. A folder that
 is not the config's answers `404 not_found`, a malformed id or one that only holds folders
 `400 invalid`.
+
+```
+PUT /api/email-configs/{id}/notifications
+```
+
+Chooses how new mail in the email config is told to the user's devices, and in which folders:
+
+```json
+{"notify": "digest", "digest_every": 120, "mailboxes": {"mb_01k6r2p3q5s7t9v1w3x5y7z9a1": false}}
+```
+
+`notify` is `now`, `digest` or `off`. `digest_every` is 30, 60, 120 or 240 minutes; `0`, or leaving
+it out, keeps the one set. `mailboxes` turns folders' notifications on or off by id; the folders it
+does not name stay as they are, and each folder's `notify` says where it stands. Answers `200` with
+the email config. A value that is not one of these answers `400 invalid`, a folder that is not the
+config's `404 not_found`.
+
+With `now`, each new message is told as emguio sees it arrive, and more than three at once as one
+notification counting them. With `digest`, nothing is told until the first new message has waited
+`digest_every` minutes; then everything that arrived since is told as one. What was read, moved or
+deleted meanwhile is left out of it. `off` tells nothing, and what was waiting is dropped.
+
+New mail is a message that came into a folder since emguio last looked at it, unread, and dated
+by the server since then: mail filed in from another folder keeps its first date, and is not new.
+One message in two folders at once, as Gmail files one under a label and in INBOX, is told once.
 
 ```
 POST /api/email-configs/test
@@ -279,7 +306,7 @@ user's in the order they were put, then the rest by name.
 
 ```json
 {"id": "mb_01k6r2p3q5s7t9v1w3x5y7z9a1", "name": "INBOX", "path": ["INBOX"], "special_use": "inbox",
- "selectable": true, "messages": 1204, "unseen": 3, "uid_next": 4522}
+ "selectable": true, "messages": 1204, "unseen": 3, "uid_next": 4522, "notify": true}
 ```
 
 | field | |
@@ -290,6 +317,7 @@ user's in the order they were put, then the rest by name.
 | `selectable` | `false` for one that only holds other folders and has no messages of its own. |
 | `messages`, `unseen` | How many messages it holds and how many are unread, at the last look. |
 | `uid_next` | Grows with every message put in it, so a change shows even when the counts end up the same. |
+| `notify` | Whether its new mail is told to the user's devices. Until chosen with `PUT …/notifications`, `true` for INBOX and the user's own folders, `false` for the server's others. |
 
 A folder's id lasts while the server keeps its name. One renamed on the server is a new folder
 with a new id.
@@ -714,6 +742,68 @@ AVIF, BMP or icon, and at most 10 MB; otherwise `415 unsupported_media_type` or 
 and `502 unreachable` for one that could not be fetched. Each user may fetch a burst of 200, then
 ten a second; past that, `429 rate_limited`. An image is served `immutable`.
 
+## Notifications
+
+A device is a browser that agreed to show emguio's notifications. emguio hands each one, encrypted,
+to the push service the browser named — Apple's, Google's, Mozilla's — which wakes the device.
+The service sees how long a message is and when it was sent, never what it says. Every device of a
+user is told about every email config's new mail, as each is set to.
+
+```
+GET /api/push/key
+```
+
+`{"key": "BHx…"}`: the instance's public key, base64url, which a browser subscribes with as its
+`applicationServerKey`. It is the same for as long as the instance keeps its database.
+
+```
+POST /api/devices
+```
+
+Registers a browser's push subscription for the user signed in:
+
+```json
+{"endpoint": "https://fcm.googleapis.com/fcm/send/…", "p256dh": "BNc…", "auth": "tBH…",
+ "label": "Chrome on Mac", "client_id": "5f1c…"}
+```
+
+`endpoint`, `p256dh` and `auth` are the subscription's, as `PushSubscription.toJSON()` gives them;
+the endpoint is an https address. `label` names the device for a person, at most 100 characters.
+`client_id` is the browser's own name for itself, at most 64 characters, kept by the page: a
+browser renews its subscription on its own, and the one it had is replaced rather than kept beside
+the new. The same endpoint registered again updates its row, and passes to whoever registered it
+last. Answers `201` with the device. One that is not https, or without its keys, answers
+`400 invalid`.
+
+```
+GET /api/devices
+```
+
+`{"devices": [ … ]}`, oldest first. A device:
+
+```json
+{"id": "dv_01k6r2t5v7x9z1b3d5f7h9k1m3", "client_id": "5f1c…", "label": "Chrome on Mac",
+ "created_at": 1790000000, "last_ok_at": 1790000900, "failure_count": 0, "last_error": ""}
+```
+
+`last_ok_at` is when its push service last took a notification, `null` before the first.
+`failure_count` is how many in a row it did not take since, and `last_error` what it said. A push
+service saying the subscription is over deletes the device. No answer carries a device's endpoint
+or keys: whoever holds them can show text on its screen.
+
+```
+DELETE /api/devices/{id}
+```
+
+Stops telling the device. `204`.
+
+```
+POST /api/devices/test
+```
+
+Sends a notification to every one of the user's devices: `200 {"delivered": 2}`, how many push
+services took it. A burst of three, then one every twenty seconds; past that, `429 rate_limited`.
+
 ## Events
 
 ```
@@ -787,15 +877,15 @@ do not match on it. Two codes can share a status: `gone` and `not_found` are bot
 | --- | --- | --- |
 | `invalid` | 400 | A body that is not the JSON expected, or has a field this page does not list; a malformed id; a parameter out of range; a field that fails validation. |
 | `unauthenticated` | 401 | No live session. At sign-in, a username and password that do not match. |
-| `not_found` | 404 | No such thing, or not this user's: an email config, folder, draft, failed job, invitation, message part, image address or endpoint. |
+| `not_found` | 404 | No such thing, or not this user's: an email config, folder, draft, failed job, device, invitation, message part, image address or endpoint. |
 | `conflict` | 409 | A username taken; a mail account with no outgoing server to send through, or no Drafts folder to keep a draft in; a draft closed with nowhere to write it. |
 | `forbidden` | 403 | A request that changes something, sent with `Sec-Fetch-Site: cross-site`. |
 | `unsupported_media_type` | 415 | A request body that is not `application/json`; a proxied image whose bytes are not an image. |
 | `body_too_large` | 413 | A request body over 1 MB, or over 36 MB for sending and drafts. |
 | `too_large` | 413 | Attachments over 25 MB; a proxied image over 10 MB. |
 | `gone` | 404 | A message, folder or list cursor the mail server no longer has as it was named: expunged, moved, or in a folder whose UIDVALIDITY has changed. List the folder again. |
-| `unreachable` | 502 | The mail server could not be reached, or refused, with its reason in `message`; an image could not be fetched. `503` when the instance is running without its mail reader. |
+| `unreachable` | 502 | The mail server could not be reached, or refused, with its reason in `message`; an image could not be fetched. `503` when the instance is running without its mail reader, or without notifications. |
 | `unreadable` | 422 | A message part, or a part carried into a message, that cannot be decoded. |
-| `rate_limited` | 429 | Too many sign-in attempts, connection tests or images. Wait, then try again. |
+| `rate_limited` | 429 | Too many sign-in attempts, connection tests, images or test notifications. Wait, then try again. |
 | `busy` | 503 | A request that changes something, stopped after two minutes of waiting. Try it again. |
 | `internal` | 500 | A fault in emguio. The message does not say what. |

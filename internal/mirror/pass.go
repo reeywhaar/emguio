@@ -261,12 +261,37 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 		if err := s.m.store.PutMessages(ctx, mb.ID, headers); err != nil {
 			return false, err
 		}
+		if _, err := s.m.store.Arrived(ctx, mb, arrivals(mb, now, headers)); err != nil {
+			s.m.log.Error("new mail could not be kept to notify about", append(who(s.target),
+				"mailbox", mb.ID, "error", err.Error())...)
+		}
 	}
 	changed = changed || len(gone) > 0 || len(moved) > 0 || len(missing) > 0
 	if mb.SpecialUse == store.UseInbox {
 		s.saw = &now
 	}
 	return changed, s.m.store.SetMailboxStatus(ctx, mb.ID, now)
+}
+
+// arrivalSlack is how far behind this one a server's clock may be, for mail it dates from before
+// the last look to still be new.
+const arrivalSlack = time.Hour
+
+// arrivals are what of headers came into mb since the last look: past the UIDs it had reached,
+// unread, and dated by the server since. A message moved in from another folder keeps the date
+// it first arrived on, and is not news.
+func arrivals(mb *store.Mailbox, now store.MailboxStatus, headers []store.Header) []store.Header {
+	if mb.SyncedAt == nil || now.UIDValidity != mb.UIDValidity {
+		return nil
+	}
+	since := mb.SyncedAt.Add(-arrivalSlack)
+	var out []store.Header
+	for _, h := range headers {
+		if h.UID >= mb.UIDNext && !h.Flags.Seen && !h.Flags.Draft && !h.InternalDate.Before(since) {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // fetch is what a list shows of the messages in set, newest to arrive first.

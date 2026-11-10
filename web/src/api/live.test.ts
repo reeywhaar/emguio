@@ -14,6 +14,7 @@ const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({
   messages: 1,
   unseen: 0,
   uid_next: 1,
+  notify: true,
 });
 
 // What the stream announces is what the server keeps; the rest is a trip to the mail server.

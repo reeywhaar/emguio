@@ -48,6 +48,8 @@ const config = (id: string, name: string): EmailConfig => ({
   sync_error: "",
   inbox_unseen: 0,
   archive_mailbox: null,
+  notify: "now",
+  digest_every: 60,
 });
 
 beforeEach(() => {
@@ -66,6 +68,7 @@ beforeEach(() => {
       messages: 0,
       unseen: 0,
       uid_next: 1,
+      notify: true,
     },
   ]);
   getMessages.mockResolvedValue({ messages: [] });

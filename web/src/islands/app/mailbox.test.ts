@@ -12,6 +12,7 @@ const box = (...path: string[]): Mailbox => ({
   messages: 0,
   unseen: 0,
   uid_next: 1,
+  notify: true,
 });
 
 const tree = [

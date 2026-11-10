@@ -9,12 +9,23 @@ const getEmailConfigs = vi.fn();
 const deleteEmailConfigsById = vi.fn();
 const postEmailConfigsByIdTest = vi.fn();
 const putArchive = vi.fn();
+const putNotifications = vi.fn();
+const getDevices = vi.fn();
+const deleteDevicesById = vi.fn();
+const postDevicesTest = vi.fn();
 
 vi.mock("@app/api/actions/auth", () => ({
   getAuthMe: async () => ({ id: "u_1", username: "misha", created_at: 0 }),
   postAuthLogout: async () => undefined,
 }));
 vi.mock("@app/leave", () => ({ leaveFor: vi.fn() }));
+vi.mock("@app/api/actions/push", () => ({
+  getDevices: () => getDevices(),
+  deleteDevicesById: (id: string) => deleteDevicesById(id),
+  postDevicesTest: () => postDevicesTest(),
+  getPushKey: vi.fn(),
+  postDevices: vi.fn(),
+}));
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigs: () => getEmailConfigs(),
   deleteEmailConfigsById: (id: string) => deleteEmailConfigsById(id),
@@ -30,6 +41,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
       messages: 1,
       unseen: 0,
       uid_next: 2,
+      notify: true,
     },
     {
       id: "mb_trash",
@@ -40,6 +52,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
       messages: 1,
       unseen: 0,
       uid_next: 2,
+      notify: false,
     },
     {
       id: "mb_old",
@@ -50,10 +63,13 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
       messages: 1,
       unseen: 0,
       uid_next: 2,
+      notify: true,
     },
   ],
   putEmailConfigsByIdArchive: (id: string, mailbox: string) =>
     putArchive(id, mailbox),
+  putEmailConfigsByIdNotifications: (id: string, body: unknown) =>
+    putNotifications(id, body),
 }));
 
 const work: EmailConfig = {
@@ -75,10 +91,13 @@ const work: EmailConfig = {
   sync_error: "",
   inbox_unseen: 0,
   archive_mailbox: null,
+  notify: "now",
+  digest_every: 60,
 };
 
 beforeEach(() => {
   getEmailConfigs.mockResolvedValue([work]);
+  getDevices.mockResolvedValue([]);
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -164,5 +183,68 @@ describe("settings", () => {
     const [id, body] = postEmailConfigsByIdTest.mock.calls[0]!;
     expect(id).toBe("ec_1");
     expect(body.incoming.password).toBe("");
+  });
+
+  // One choice for how often, and the folders it is for, saved together.
+  it("chooses how a config's new mail is told, and from which folders", async () => {
+    putNotifications.mockResolvedValue({
+      ...work,
+      notify: "digest",
+      digest_every: 120,
+    });
+    mount(<Settings editing={null} />);
+    await screen.findByText("As mail arrives, from Inbox and 1 folder");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change notifications" }),
+    );
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(
+      dialog
+        .getAllByRole<HTMLInputElement>("checkbox")
+        .map((box) => `${box.parentElement!.textContent} ${box.checked}`),
+    ).toEqual(["Inbox true", "Trash false", "Old true"]);
+    fireEvent.change(dialog.getByRole("combobox", { name: "New mail" }), {
+      target: { value: "120" },
+    });
+    fireEvent.click(dialog.getByRole("checkbox", { name: "Old" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(putNotifications).toHaveBeenCalledWith("ec_1", {
+        notify: "digest",
+        digest_every: 120,
+        mailboxes: { mb_old: false },
+      }),
+    );
+    await screen.findByText("Every 2 hours, from Inbox");
+  });
+
+  // A browser without push still lists the devices that have it, to remove or to test.
+  it("lists the devices notified, to remove or send a test to", async () => {
+    getDevices.mockResolvedValue([
+      {
+        id: "dv_1",
+        client_id: "elsewhere",
+        label: "Safari on iPhone",
+        created_at: 0,
+        last_ok_at: null,
+        failure_count: 1,
+        last_error: "push busy (429): slow down",
+      },
+    ]);
+    postDevicesTest.mockResolvedValue({ delivered: 1 });
+    deleteDevicesById.mockResolvedValue(undefined);
+    mount(<Settings editing={null} />);
+    await screen.findByText("This browser cannot show notifications.");
+    const devices = within(
+      await screen.findByRole("list", { name: "Devices" }),
+    );
+    devices.getByText("Safari on iPhone");
+    devices.getByText(/slow down/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send a test" }));
+    await screen.findByText("Sent to one device.");
+    fireEvent.click(devices.getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(deleteDevicesById).toHaveBeenCalledWith("dv_1"));
   });
 });

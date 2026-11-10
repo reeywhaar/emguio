@@ -43,7 +43,7 @@ func newServerStore(t *testing.T, files fstest.MapFS) (*Server, *store.Store) {
 
 	u, _ := url.Parse("https://mail.example.com")
 	cfg := &config.Config{PublicURL: u, Secure: true}
-	return New(cfg, slog.New(slog.DiscardHandler), st, spa, nil, nil), st
+	return New(cfg, slog.New(slog.DiscardHandler), st, spa, nil, nil, nil), st
 }
 
 func do(t *testing.T, s *Server, method, path string, body string, hdr map[string]string) *http.Response {
@@ -317,5 +317,26 @@ func TestARequestIsLoggedWithWhoAskedAndTheAnswer(t *testing.T) {
 	}
 	if strings.Contains(logged.String(), "secret") {
 		t.Error("the query was logged")
+	}
+}
+
+// A worker is checked for a new version at its one address, so it is never held as immutable;
+// a manifest of the wrong type is not read as one.
+func TestTheWorkerAndTheManifestAreServedAsWhatTheyAre(t *testing.T) {
+	s := newServer(t, fstest.MapFS{
+		"sw.js":                &fstest.MapFile{Data: []byte("self")},
+		"manifest.webmanifest": &fstest.MapFile{Data: []byte("{}")},
+	})
+	for path, want := range map[string]string{
+		"/sw.js":                "text/javascript; charset=utf-8",
+		"/manifest.webmanifest": "application/manifest+json; charset=utf-8",
+	} {
+		resp := do(t, s, "GET", path, "", nil)
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != want {
+			t.Errorf("%s = %s %q", path, resp.Status, resp.Header.Get("Content-Type"))
+		}
+		if cc := resp.Header.Get("Cache-Control"); cc != "no-cache" {
+			t.Errorf("%s is cached as %q", path, cc)
+		}
 	}
 }

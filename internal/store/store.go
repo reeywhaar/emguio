@@ -46,6 +46,9 @@ type Store struct {
 
 	watchMu  sync.Mutex
 	watchers map[chan struct{}]string
+
+	// arrived wakes whatever tells devices about new mail.
+	arrived chan struct{}
 }
 
 const readers = 4
@@ -76,7 +79,8 @@ func Open(dir string, sealer *seal.Sealer) (*Store, error) {
 		return nil, err
 	}
 
-	s := &Store{writer: writer, reader: reader, now: time.Now, sealer: sealer, watchers: map[chan struct{}]string{}}
+	s := &Store{writer: writer, reader: reader, now: time.Now, sealer: sealer, watchers: map[chan struct{}]string{},
+		arrived: make(chan struct{}, 1)}
 	if err := migrations.Run(context.Background(), writer); err != nil {
 		s.Close()
 		return nil, err

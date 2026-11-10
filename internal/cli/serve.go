@@ -20,6 +20,7 @@ import (
 	"emguio/internal/config"
 	"emguio/internal/connect"
 	"emguio/internal/mirror"
+	"emguio/internal/push"
 	"emguio/internal/store"
 	"emguio/internal/sweep"
 )
@@ -55,7 +56,7 @@ func serveCmd() *cobra.Command {
 
 			// Said at startup so "it works locally" does not become how it is deployed.
 			if cfg.PublicURL.Scheme != "https" {
-				log.Warn("the public url is http, so the session cookie goes without Secure",
+				log.Warn("the public url is http, so the session cookie goes without Secure, and no browser but one on this machine will take notifications",
 					"url", cfg.PublicURL.String())
 			}
 
@@ -99,10 +100,16 @@ func serveCmd() *cobra.Command {
 			streams, endStreams := context.WithCancel(context.Background())
 			defer endStreams()
 
-			reader := mirror.New(st, connect.New(cfg.AllowNetworks), log)
+			conn := connect.New(cfg.AllowNetworks)
+			reader := mirror.New(st, conn, log)
+			sender, err := push.NewSender(cmd.Context(), st, conn, cfg.PublicURL.String())
+			if err != nil {
+				return err
+			}
+			pusher := push.New(st, sender, log)
 			srv := &http.Server{
 				Addr:              app.ListenAddr,
-				Handler:           api.New(cfg, log, st, spa, docs, reader),
+				Handler:           api.New(cfg, log, st, spa, docs, reader, pusher),
 				ReadHeaderTimeout: 10 * time.Second,
 				BaseContext:       func(net.Listener) context.Context { return streams },
 			}
@@ -111,6 +118,7 @@ func serveCmd() *cobra.Command {
 			var background sync.WaitGroup
 			background.Go(func() { sweep.Run(ctx, st, log) })
 			background.Go(func() { reader.Run(ctx) })
+			background.Go(func() { pusher.Run(ctx) })
 
 			errc := make(chan error, 1)
 			go func() {

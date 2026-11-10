@@ -54,7 +54,21 @@ type EmailConfig struct {
 	// ArchiveMailbox is the folder its user chose to archive to, empty for the one the server
 	// names.
 	ArchiveMailbox string
+	// Notify is how new mail in it is told to its user's devices: NotifyNow, NotifyDigest or
+	// NotifyOff. DigestEvery is how many minutes a digest gathers.
+	Notify      string
+	DigestEvery int
 }
+
+// How an email config tells its user's devices about new mail — see docs/push.md.
+const (
+	NotifyNow    = "now"
+	NotifyDigest = "digest"
+	NotifyOff    = "off"
+)
+
+// DigestEvery is every interval a digest can be sent at, in minutes.
+var DigestEvery = []int{30, 60, 120, 240}
 
 // Login is a server and the password to sign in to it.
 type Login struct {
@@ -97,7 +111,7 @@ const emailConfigColumns = `id, user_id, name, email, sender_name,
 const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error,
   (SELECT COALESCE(SUM(unseen), 0) FROM mailboxes
     WHERE mailboxes.email_config_id = email_configs.id AND special_use = 'inbox'),
-  COALESCE(archive_mailbox, '')`
+  COALESCE(archive_mailbox, ''), notify, digest_every`
 
 func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error) {
 	var (
@@ -110,7 +124,7 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email, &r.SenderName,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
-		&created, &updated, &synced, &r.SyncError, &r.InboxUnseen, &r.ArchiveMailbox)
+		&created, &updated, &synced, &r.SyncError, &r.InboxUnseen, &r.ArchiveMailbox, &r.Notify, &r.DigestEvery)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +203,9 @@ func (s *Store) CreateEmailConfig(ctx context.Context, userID string, in EmailCo
 	if err != nil {
 		return nil, fmt.Errorf("create email config: %w", err)
 	}
-	return shown(id, userID, in, now, now), nil
+	out := shown(id, userID, in, now, now)
+	out.Notify, out.DigestEvery = NotifyNow, 60
+	return out, nil
 }
 
 // UpdateEmailConfig replaces an email config with what a form sent, keeping any password the
@@ -245,6 +261,7 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 		s.Notify(userID)
 	}
 	out := shown(id, userID, in, r.CreatedAt, now)
+	out.Notify, out.DigestEvery = r.Notify, r.DigestEvery
 	if !moved {
 		out.SyncedAt, out.SyncError = r.SyncedAt, r.SyncError
 	}

@@ -32,6 +32,7 @@ const (
 	Job         = "j_"
 	Draft       = "d_"
 	DraftPart   = "dp_"
+	Device      = "dv_"
 )
 
 const (

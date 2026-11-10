@@ -87,6 +87,8 @@ type mailboxJSON struct {
 	// UIDNext moves on with each message put in it, so a list can tell it changed when its
 	// counts did not.
 	UIDNext uint32 `json:"uid_next"`
+	// Notify is whether its new mail is told to the user's devices.
+	Notify bool `json:"notify"`
 }
 
 func (s *Server) listMailboxes(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +114,7 @@ func mailboxOut(mb *store.Mailbox) mailboxJSON {
 		Messages:   mb.Messages,
 		Unseen:     mb.Unseen,
 		UIDNext:    mb.UIDNext,
+		Notify:     mb.Notifies(),
 	}
 }
 

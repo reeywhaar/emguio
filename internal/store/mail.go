@@ -43,6 +43,21 @@ type Mailbox struct {
 	SyncedAt    *time.Time
 	// Position is where the user put it among the mailboxes beside it; nil for never.
 	Position *int
+	// Notify is whether its new mail is told, as its user chose; nil for never chosen.
+	Notify *bool
+}
+
+// Notifies is whether its new mail is told: as chosen, or else for INBOX and the user's own
+// folders, not the ones the server keeps for something else.
+func (m *Mailbox) Notifies() bool {
+	return notifies(m.Notify, m.SpecialUse)
+}
+
+func notifies(chosen *bool, use string) bool {
+	if chosen != nil {
+		return *chosen
+	}
+	return use == UseInbox || use == ""
 }
 
 // Path is the name split at the server's delimiter: where the mailbox sits in the tree.
@@ -179,16 +194,17 @@ func (s *Store) SetSyncState(ctx context.Context, id, syncErr string) error {
 }
 
 const mailboxColumns = `id, email_config_id, name, delimiter, special_use, selectable,
-  uidvalidity, uidnext, messages, unseen, synced_at, position`
+  uidvalidity, uidnext, messages, unseen, synced_at, position, notify`
 
 func scanMailbox(sc interface{ Scan(...any) error }) (*Mailbox, error) {
 	var (
 		m        Mailbox
 		synced   sql.NullInt64
 		position sql.NullInt64
+		notify   sql.NullBool
 	)
 	if err := sc.Scan(&m.ID, &m.EmailConfigID, &m.Name, &m.Delimiter, &m.SpecialUse, &m.Selectable,
-		&m.UIDValidity, &m.UIDNext, &m.Messages, &m.Unseen, &synced, &position); err != nil {
+		&m.UIDValidity, &m.UIDNext, &m.Messages, &m.Unseen, &synced, &position, &notify); err != nil {
 		return nil, err
 	}
 	if synced.Valid {
@@ -198,6 +214,9 @@ func scanMailbox(sc interface{ Scan(...any) error }) (*Mailbox, error) {
 	if position.Valid {
 		at := int(position.Int64)
 		m.Position = &at
+	}
+	if notify.Valid {
+		m.Notify = &notify.Bool
 	}
 	return &m, nil
 }

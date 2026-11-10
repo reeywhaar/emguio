@@ -19,9 +19,11 @@ import { ConfigForm } from "@app/islands/app/ConfigForm";
 import { describe, draftOf, labelOf } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
+import { Delivery, Notifications } from "@app/islands/app/Notifications";
 import { Results } from "@app/islands/app/Results";
 import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
+import { forget } from "@app/push";
 
 export function Settings({
   editing,
@@ -58,6 +60,7 @@ export function Settings({
           configs.data.map((c) => <Card key={c.id} config={c} />)
         )}
       </section>
+      <Notifications />
       <Account />
       <p className="text-sm text-muted">
         A program can do what this page does, through the API:{" "}
@@ -81,7 +84,11 @@ export function Settings({
 function Account() {
   const me = useQuery({ queryKey: qk.me, queryFn: getAuthMe });
   const signOut = useMutation({
-    mutationFn: postAuthLogout,
+    // A device signed out of shows nobody's mail.
+    mutationFn: async () => {
+      await forget();
+      await postAuthLogout();
+    },
     onSuccess: () => leaveFor("/login"),
   });
   return (
@@ -140,6 +147,10 @@ function Card({ config }: { config: EmailConfig }) {
         <dt className="self-center text-muted">Archive to</dt>
         <dd>
           <ArchiveTo config={config} />
+        </dd>
+        <dt className="self-center text-muted">Notify</dt>
+        <dd>
+          <Delivery config={config} />
         </dd>
       </dl>
       {test.data ? <Results result={test.data} /> : null}

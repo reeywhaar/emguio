@@ -7,6 +7,7 @@ import type {
   KeptDraft,
   Mailbox,
   MessagePage,
+  Notify,
   Outgoing,
   ReadMessage,
   Settings,
@@ -82,6 +83,20 @@ export const putEmailConfigsByIdArchive = (id: string, mailbox: string) =>
     method: "PUT",
     body: { mailbox },
   });
+
+/** Chooses how a config's new mail is told, and turns folders' notifications on or off. */
+export const putEmailConfigsByIdNotifications = (
+  id: string,
+  body: {
+    notify: Notify;
+    digest_every: number;
+    mailboxes: Record<string, boolean>;
+  },
+) =>
+  request<EmailConfig>(
+    `/api/email-configs/${encodeURIComponent(id)}/notifications`,
+    { method: "PUT", body },
+  );
 
 /** Looks up the servers of an address's domain, for a new config to start from. */
 export const postEmailConfigsAutoconfig = (email: string) =>

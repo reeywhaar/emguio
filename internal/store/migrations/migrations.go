@@ -29,6 +29,7 @@ var all = []Migration{
 	drafts,
 	archiveMailbox,
 	mailboxPosition,
+	push,
 }
 
 // exec runs a statement block as one migration.

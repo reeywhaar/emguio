@@ -124,7 +124,7 @@ func TestTheReferenceIsServedToAnybody(t *testing.T) {
 		"docs.html": {Data: []byte("<p>curl https://emguio.example.com/api/auth/me</p>")},
 		"docs.md":   {Data: []byte("curl https://emguio.example.com/api/auth/me")},
 	}, nil, u.String())
-	s := New(&config.Config{PublicURL: u, Secure: true}, slog.New(slog.DiscardHandler), st, nil, docs, nil)
+	s := New(&config.Config{PublicURL: u, Secure: true}, slog.New(slog.DiscardHandler), st, nil, docs, nil, nil)
 	for path, want := range map[string]string{
 		"/docs":     "<p>curl https://mail.example.com/api/auth/me</p>",
 		"/docs.md":  "curl https://mail.example.com/api/auth/me",
@@ -139,7 +139,7 @@ func TestTheReferenceIsServedToAnybody(t *testing.T) {
 	}
 	// Without a bundle, the markdown is what there is.
 	bare := New(&config.Config{PublicURL: u}, slog.New(slog.DiscardHandler), st, nil,
-		NewDocs(nil, fstest.MapFS{"api.md": {Data: []byte("# emguio API")}}, ""), nil)
+		NewDocs(nil, fstest.MapFS{"api.md": {Data: []byte("# emguio API")}}, ""), nil, nil)
 	rec := httptest.NewRecorder()
 	bare.ServeHTTP(rec, httptest.NewRequest("GET", "/docs", nil))
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/markdown; charset=utf-8" {

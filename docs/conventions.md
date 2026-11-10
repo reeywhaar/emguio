@@ -181,7 +181,7 @@ Three kinds, and the rule that decides between them:
 
 | kind | shape | used by |
 | --- | --- | --- |
-| ULID | prefix plus 26 Crockford characters over 16 bytes | `u_` user, `i_` invite, `ec_` email config, `mb_` mailbox, `j_` job, `d_` draft, `dp_` draft part |
+| ULID | prefix plus 26 Crockford characters over 16 bytes | `u_` user, `i_` invite, `ec_` email config, `mb_` mailbox, `j_` job, `d_` draft, `dp_` draft part, `dv_` device |
 | derived | hash of the thing it names | tokens |
 | the server's | `{uidvalidity}-{uid}`, under its mailbox's id | messages |
 

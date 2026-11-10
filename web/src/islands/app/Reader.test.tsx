@@ -55,6 +55,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
       sync_error: "",
       inbox_unseen: 0,
       archive_mailbox: null,
+      notify: "now",
+      digest_every: 60,
     },
   ],
   postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),
@@ -91,6 +93,7 @@ const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({
   messages: 1,
   unseen: 0,
   uid_next: 1,
+  notify: true,
 });
 const archive = box("mb_archive", "archive");
 const trash = box("mb_trash", "trash");
@@ -107,6 +110,7 @@ const inbox: Mailbox = {
   messages: 1,
   unseen: 0,
   uid_next: 1,
+  notify: true,
 };
 
 /** The message as a list has it. */

@@ -7,8 +7,11 @@ import "@app/main.css";
 import { Boundary } from "@app/components/Boundary";
 import { ConfirmProvider } from "@app/components/Confirm";
 import { App } from "@app/islands/app/App";
+import { answerWorker, refresh } from "@app/push";
 
 const client = sessionClient();
+answerWorker();
+void refresh();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -35,6 +35,7 @@ const box = (id: string, messages: number, unseen: number): Mailbox => ({
   messages,
   unseen,
   uid_next: 1,
+  notify: true,
 });
 
 const job = (

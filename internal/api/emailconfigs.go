@@ -40,6 +40,10 @@ type emailConfigJSON struct {
 	// ArchiveMailbox is the folder its user chose to archive to, null for the one the server
 	// names.
 	ArchiveMailbox *string `json:"archive_mailbox"`
+	// Notify is how its new mail is told to the user's devices: now, digest or off; a digest
+	// gathers DigestEvery minutes.
+	Notify      string `json:"notify"`
+	DigestEvery int    `json:"digest_every"`
 }
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
@@ -54,6 +58,8 @@ func toJSON(c *store.EmailConfig) emailConfigJSON {
 		SyncedAt:    unixOrNil(c.SyncedAt),
 		SyncError:   c.SyncError,
 		InboxUnseen: c.InboxUnseen,
+		Notify:      c.Notify,
+		DigestEvery: c.DigestEvery,
 	}
 	if c.ArchiveMailbox != "" {
 		out.ArchiveMailbox = &c.ArchiveMailbox

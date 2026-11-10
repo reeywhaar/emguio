@@ -45,6 +45,8 @@ type Server struct {
 	connector *connect.Connector
 	// mirror is nil in tests that do not need mail to arrive.
 	mirror Mirror
+	// push is nil in tests that send no notifications.
+	push Pusher
 	// finder looks up a mail domain's settings; a field so a test can stand in for the web.
 	finder *autoconfig.Finder
 	// imageClient fetches what the image proxy relays, and proxyKey signs what it may fetch.
@@ -56,6 +58,7 @@ type Server struct {
 	tests     *limiter
 	lookups   *limiter
 	images    *limiter
+	pushTests *limiter
 
 	// writeDeadline is how long a request that changes something may run. A field so a test
 	// can make it short.
@@ -80,7 +83,7 @@ func (s *Server) Routes() []string { return append([]string(nil), s.routes...) }
 
 // New wires the routes. Authorization is decided at registration, so a handler cannot forget
 // to check: one registered without its guard is visibly registered without it.
-func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *Docs, mirror Mirror) *Server {
+func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *Docs, mirror Mirror, push Pusher) *Server {
 	if docs == nil {
 		docs = NewDocs(nil, nil, "")
 	}
@@ -94,6 +97,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 
 		connector: connect.New(cfg.AllowNetworks),
 		mirror:    mirror,
+		push:      push,
 		proxyKey:  proxyKey(cfg.SecretKey),
 
 		loginAll:  newLimiter(30, 2*time.Second),
@@ -101,6 +105,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		tests:     newLimiter(10, 6*time.Second),
 		lookups:   newLimiter(10, 6*time.Second),
 		images:    newLimiter(200, 100*time.Millisecond),
+		pushTests: newLimiter(3, 20*time.Second),
 
 		writeDeadline: WriteDeadline,
 	}
@@ -131,6 +136,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
 	s.handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
 	s.handle("PUT /api/email-configs/{id}/archive", s.requireSession(s.putArchive))
+	s.handle("PUT /api/email-configs/{id}/notifications", s.requireSession(s.putNotifications))
 	s.handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
 	s.handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
 	s.handle("POST /api/email-configs/{id}/send", s.requireSession(s.sendMessage))
@@ -152,6 +158,12 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("GET /api/jobs", s.requireSession(s.listJobs))
 	s.handle("POST /api/jobs", s.requireSession(s.postJobs))
 	s.handle("DELETE /api/jobs/{job}", s.requireSession(s.dismissJob))
+
+	s.handle("GET /api/push/key", s.requireSession(s.pushKey))
+	s.handle("GET /api/devices", s.requireSession(s.listDevices))
+	s.handle("POST /api/devices", s.requireSession(s.createDevice))
+	s.handle("POST /api/devices/test", s.requireSession(s.testDevices))
+	s.handle("DELETE /api/devices/{id}", s.requireSession(s.deleteDevice))
 
 	s.handle("GET /api/events", s.requireSession(s.events))
 

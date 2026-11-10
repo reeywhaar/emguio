@@ -36,8 +36,10 @@ Required, validated at startup, and never inferred from a request. `Host` and
 `X-Forwarded-Host` are both client-supplied, so an invitation link built from one is an
 invitation link a stranger controls.
 
-It decides two things: whether the session cookie carries `Secure`, and what invitation links
-say.
+It decides three things: whether the session cookie carries `Secure`, what invitation links
+say, and who notifications say they are from. Notifications need it to be https: a browser
+registers a service worker only on https or on `localhost`. Every device that turned them on is
+bound to this address, and has to turn them on again after a move — see [push.md](push.md).
 
 A trailing slash is trimmed. A path is refused — emguio serves from the root, and a prefix would
 produce links that half work.

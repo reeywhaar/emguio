@@ -8,6 +8,8 @@ export const qk = {
   /** The user's jobs, across every config: what is drawn as still to be done. */
   jobs: ["jobs"] as const,
   emailConfigs: ["email-configs"] as const,
+  /** The browsers that show the user's notifications. */
+  devices: ["devices"] as const,
   /** Everything read from every config's mail, for the event stream to invalidate at once. */
   mail: ["mail"] as const,
   mailboxes: (config: string) => ["mail", config, "mailboxes"] as const,
