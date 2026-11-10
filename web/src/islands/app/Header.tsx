@@ -61,7 +61,10 @@ export function Header({ route }: { route: Route }) {
   );
 }
 
-/** The mail account open, which opens the list of them to choose another. */
+/**
+ * The mail account open, which opens the list of them to choose another, and is marked while
+ * another has unread mail in its Inbox.
+ */
 function ConfigPicker({
   configs,
   current,
@@ -71,6 +74,9 @@ function ConfigPicker({
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const elsewhere = configs.some(
+    (c) => c.id !== current?.id && c.inbox_unseen > 0,
+  );
   return (
     <>
       <PickerButton
@@ -82,6 +88,15 @@ function ConfigPicker({
         <span className="min-w-0 flex-1 truncate">
           {current ? labelOf(current) : "Choose one"}
         </span>
+        {elsewhere ? (
+          <>
+            <span className="sr-only">, unread in another</span>
+            <span
+              aria-hidden="true"
+              className="size-2 shrink-0 rounded-full bg-brand"
+            />
+          </>
+        ) : null}
       </PickerButton>
       <Dialog
         open={open}

@@ -126,6 +126,28 @@ describe("the application", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  // The open one's unread are counted beside its folders already.
+  it("marks the header while another mail account has unread mail", async () => {
+    getEmailConfigs.mockResolvedValue([
+      { ...config("ec_1", "Work"), inbox_unseen: 3 },
+      config("ec_2", "Home"),
+    ]);
+    mount(<App />);
+    await screen.findByRole("heading", { name: "Inbox of ec_1" });
+    screen.getByRole("button", { name: /^Mail account:\s*Work$/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Mail account/ }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("link", {
+        name: /^Home/,
+      }),
+    );
+    await screen.findByRole("heading", { name: "Inbox of ec_2" });
+    screen.getByRole("button", {
+      name: /^Mail account:\s*Home, unread in another$/,
+    });
+  });
+
   it("opens on the config last looked at", async () => {
     getEmailConfigs.mockResolvedValue([
       config("ec_1", "Work"),
