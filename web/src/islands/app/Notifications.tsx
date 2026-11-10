@@ -101,6 +101,7 @@ function Devices() {
       action = here ? (
         <Button
           size="bar"
+          className="shrink-0"
           disabled={off.isPending}
           onClick={() => off.mutate()}
         >
@@ -109,6 +110,7 @@ function Devices() {
       ) : (
         <Button
           size="bar"
+          className="shrink-0"
           variant="solid"
           disabled={on.isPending || !devices.data}
           onClick={() => on.mutate()}
@@ -120,8 +122,8 @@ function Devices() {
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-bg p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm">{sentence}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 text-sm">{sentence}</p>
         {action}
       </div>
       {on.error ? (
@@ -152,6 +154,7 @@ function Devices() {
                 </span>
                 <Button
                   size="bar"
+                  className="shrink-0"
                   disabled={remove.isPending || off.isPending}
                   onClick={() =>
                     // This browser's own is let go of too, or it hands itself over again.
@@ -166,6 +169,7 @@ function Devices() {
           <div className="flex flex-wrap items-center gap-3">
             <Button
               size="bar"
+              className="shrink-0"
               disabled={test.isPending}
               onClick={() => test.mutate()}
             >
@@ -214,8 +218,8 @@ export function Delivery({ config }: { config: EmailConfig }) {
   });
   const choice = choices.find((c) => c.value === choiceOf(config));
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span>
+    <div className="flex items-center justify-between gap-3 sm:justify-start">
+      <span className="min-w-0">
         {config.notify === "off" ? (
           "Never"
         ) : (
@@ -226,6 +230,7 @@ export function Delivery({ config }: { config: EmailConfig }) {
       </span>
       <Button
         size="bar"
+        className="shrink-0"
         aria-label="Change notifications"
         disabled={!boxes.data}
         onClick={() => {

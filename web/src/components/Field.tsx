@@ -1,5 +1,6 @@
 import type { ReactNode, SelectHTMLAttributes } from "react";
 
+import { ChevronMark } from "@app/components/icons";
 import { fieldLook, fieldSizes } from "@app/components/TextField";
 
 /** A control and the label that names it, which is also what a click on the words focuses. */
@@ -32,7 +33,10 @@ const selectHeights = {
   bar: "h-8 pointer-coarse:h-10",
 } as const;
 
-/** The platform's own select, dressed as a field. */
+/**
+ * The platform's own select, dressed as a field, with the chevron every picker here has rather
+ * than each platform's own. Width belongs to the caller.
+ */
 export function Select({
   size = "field",
   className = "",
@@ -41,9 +45,14 @@ export function Select({
   size?: keyof typeof fieldSizes;
 }) {
   return (
-    <select
-      className={`${fieldLook} ${fieldSizes[size]} ${selectHeights[size]} ${className}`}
-      {...props}
-    />
+    <span className={`relative flex ${className}`}>
+      <select
+        className={`${fieldLook} ${fieldSizes[size]} ${selectHeights[size]} peer w-full min-w-0 appearance-none pr-8`}
+        {...props}
+      />
+      <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center peer-disabled:opacity-50">
+        <ChevronMark />
+      </span>
+    </span>
   );
 }

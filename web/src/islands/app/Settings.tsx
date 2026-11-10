@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAuthMe, postAuthLogout } from "@app/api/actions/auth";
@@ -135,23 +135,19 @@ function Card({ config }: { config: EmailConfig }) {
           <p className="text-sm text-muted">{config.email}</p>
         ) : null}
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt className="text-muted">Incoming</dt>
-        <dd className="break-all">
+      <dl className="flex flex-col gap-3 text-sm sm:grid sm:grid-cols-[auto_1fr] sm:gap-x-3 sm:gap-y-2">
+        <Row label="Incoming">
           {describe(config.incoming, config.incoming.protocol.toUpperCase())}
-        </dd>
-        <dt className="text-muted">Outgoing</dt>
-        <dd className="break-all">
+        </Row>
+        <Row label="Outgoing">
           {config.outgoing ? describe(config.outgoing, "SMTP") : "None"}
-        </dd>
-        <dt className="self-center text-muted">Archive to</dt>
-        <dd>
+        </Row>
+        <Row label="Archive to">
           <ArchiveTo config={config} />
-        </dd>
-        <dt className="self-center text-muted">Notify</dt>
-        <dd>
+        </Row>
+        <Row label="Notify">
           <Delivery config={config} />
-        </dd>
+        </Row>
       </dl>
       {test.data ? <Results result={test.data} /> : null}
       {test.error ? (
@@ -200,6 +196,16 @@ function Card({ config }: { config: EmailConfig }) {
         </div>
       )}
     </article>
+  );
+}
+
+/** A label over its value on a phone, and beside it where there is room. */
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1 sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center">
+      <dt className="text-muted">{label}</dt>
+      <dd className="min-w-0 wrap-anywhere">{children}</dd>
+    </div>
   );
 }
 
