@@ -1,15 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { getAuthMe } from "@app/api/actions/auth";
 import { getEmailConfigs } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import type { EmailConfig } from "@app/api/types";
-import { buttonLook } from "@app/components/Button";
-import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
 import { ProfileMark } from "@app/components/icons";
-import { PickerButton } from "@app/components/PickerButton";
+import { Menu } from "@app/components/Menu";
 import { Wordmark } from "@app/components/Wordmark";
 import { labelOf, pick } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
@@ -37,9 +35,10 @@ export function Header({ route }: { route: Route }) {
         <Wordmark />
       </Link>
       {configs.data && configs.data.length > 0 ? (
-        <ConfigPicker configs={configs.data} current={current} />
-      ) : null}
-      <span className="flex-1" />
+        <Accounts configs={configs.data} current={current} />
+      ) : (
+        <span className="flex-1" />
+      )}
       <Link
         href={paths.settings}
         title="Settings"
@@ -62,8 +61,70 @@ export function Header({ route }: { route: Route }) {
 }
 
 /**
- * The mail account open, which opens the list of them to choose another, and is marked while
- * another has unread mail in its Inbox.
+ * Every mail account side by side where they fit, and otherwise the one open, which opens the list
+ * of them. Whether they fit is measured, since that depends on what they are called; the row is
+ * drawn unseen to measure it.
+ */
+function Accounts({
+  configs,
+  current,
+}: {
+  configs: EmailConfig[];
+  current: EmailConfig | undefined;
+}) {
+  const room = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLElement>(null);
+  const [fits, setFits] = useState(false);
+  useEffect(() => {
+    const area = room.current;
+    const all = row.current;
+    if (!area || !all || typeof ResizeObserver === "undefined") return;
+    const measure = () => setFits(all.scrollWidth <= area.clientWidth);
+    const watch = new ResizeObserver(measure);
+    watch.observe(area);
+    watch.observe(all);
+    return () => watch.disconnect();
+  }, []);
+  const side = fits && configs.length > 1;
+  return (
+    <div ref={room} className="relative flex min-w-0 flex-1 items-center">
+      <nav
+        ref={row}
+        aria-label="Mail accounts"
+        aria-hidden={side ? undefined : true}
+        className={`flex w-max shrink-0 items-center gap-1 ${side ? "" : "invisible absolute"}`}
+      >
+        {configs.map((c) => (
+          <Link
+            key={c.id}
+            href={paths.mail(c.id)}
+            aria-current={c.id === current?.id ? "page" : undefined}
+            className={`inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap pointer-coarse:min-h-10 ${c.id === current?.id ? "bg-shade font-medium" : "text-muted hover:bg-fill hover:text-fg"}`}
+          >
+            {labelOf(c)}
+            <Unread config={c} />
+          </Link>
+        ))}
+      </nav>
+      {side ? null : <ConfigPicker configs={configs} current={current} />}
+    </div>
+  );
+}
+
+/** How many are unread in a config's Inbox, when any are. */
+function Unread({ config }: { config: EmailConfig }) {
+  if (!config.inbox_unseen) return null;
+  return (
+    <span className="shrink-0 text-xs font-medium text-brand tabular-nums">
+      <span className="sr-only">, unread in Inbox: </span>
+      {config.inbox_unseen.toLocaleString()}
+    </span>
+  );
+}
+
+/**
+ * The mail account open, which opens the list of them beside it to choose another, and is marked
+ * while another has unread mail in its Inbox.
  */
 function ConfigPicker({
   configs,
@@ -72,70 +133,62 @@ function ConfigPicker({
   configs: EmailConfig[];
   current: EmailConfig | undefined;
 }) {
-  const [open, setOpen] = useState(false);
-  const close = () => setOpen(false);
   const elsewhere = configs.some(
     (c) => c.id !== current?.id && c.inbox_unseen > 0,
   );
+  const item =
+    "flex min-h-8 items-center gap-2 rounded-md px-3 text-sm pointer-coarse:min-h-10";
   return (
-    <>
-      <PickerButton
-        name="Mail account"
-        plain
-        className="max-w-64 font-medium"
-        onClick={() => setOpen(true)}
-      >
-        <span className="min-w-0 flex-1 truncate">
-          {current ? labelOf(current) : "Choose one"}
-        </span>
-        {elsewhere ? (
-          <>
-            <span className="sr-only">, unread in another</span>
-            <span
-              aria-hidden="true"
-              className="size-2 shrink-0 rounded-full bg-brand"
-            />
-          </>
-        ) : null}
-      </PickerButton>
-      <Dialog
-        open={open}
-        onClose={close}
-        title="Mail accounts"
-        footer={
+    <Menu
+      name="Mail account"
+      plain
+      className="max-w-64 font-medium"
+      label={
+        <>
+          <span className="min-w-0 flex-1 truncate">
+            {current ? labelOf(current) : "Choose one"}
+          </span>
+          {elsewhere ? (
+            <>
+              <span className="sr-only">, unread in another</span>
+              <span
+                aria-hidden="true"
+                className="size-2 shrink-0 rounded-full bg-brand"
+              />
+            </>
+          ) : null}
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          {configs.map((c) => (
+            <Link
+              key={c.id}
+              role="menuitem"
+              href={paths.mail(c.id)}
+              aria-current={c.id === current?.id ? "page" : undefined}
+              className={`${item} ${c.id === current?.id ? "bg-shade font-medium" : "hover:bg-shade"}`}
+              onClick={close}
+            >
+              <span className="min-w-0 flex-1 truncate">{labelOf(c)}</span>
+              {c.name ? (
+                <span className="truncate text-xs text-faint">{c.email}</span>
+              ) : null}
+              <Unread config={c} />
+            </Link>
+          ))}
+          <div role="separator" className="my-1 border-t border-line" />
           <Link
+            role="menuitem"
             href={paths.newConfig}
-            className={buttonLook("quiet")}
+            className={`${item} text-muted hover:bg-shade hover:text-fg`}
             onClick={close}
           >
             Add mail account
           </Link>
-        }
-      >
-        <ul className="flex flex-col">
-          {configs.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={paths.mail(c.id)}
-                aria-current={c.id === current?.id ? "page" : undefined}
-                className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${c.id === current?.id ? "bg-shade font-medium" : "hover:bg-shade"}`}
-                onClick={close}
-              >
-                <span className="min-w-0 flex-1 truncate">{labelOf(c)}</span>
-                {c.name ? (
-                  <span className="truncate text-xs text-faint">{c.email}</span>
-                ) : null}
-                {c.inbox_unseen ? (
-                  <span className="shrink-0 text-xs font-medium text-brand tabular-nums">
-                    <span className="sr-only">, unread in Inbox: </span>
-                    {c.inbox_unseen.toLocaleString()}
-                  </span>
-                ) : null}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </Dialog>
-    </>
+        </>
+      )}
+    </Menu>
   );
 }

@@ -116,17 +116,53 @@ describe("the application", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /^Mail account:\s*Work/ }),
     );
-    const dialog = within(await screen.findByRole("dialog"));
-    dialog.getByRole("heading", { name: "Mail accounts" });
-    expect(dialog.getAllByRole("link").map((l) => l.textContent)).toEqual([
+    const menu = within(await screen.findByRole("menu"));
+    expect(menu.getAllByRole("menuitem").map((l) => l.textContent)).toEqual([
       "Workwork@example.com",
       "Homehome@example.com, unread in Inbox: 2",
       "Add mail account",
     ]);
-    fireEvent.click(dialog.getByRole("link", { name: /^Home/ }));
+    fireEvent.click(menu.getByRole("menuitem", { name: /^Home/ }));
     expect(window.location.pathname).toBe("/c/ec_2");
     await screen.findByRole("heading", { name: "Inbox of ec_2" });
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  // Side by side where they fit, which jsdom, measuring nothing, says they always do.
+  it("puts the mail accounts side by side where they fit", async () => {
+    getEmailConfigs.mockResolvedValue([
+      config("ec_1", "Work"),
+      { ...config("ec_2", "Home"), inbox_unseen: 2 },
+    ]);
+    const real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(private measure: () => void) {}
+      observe() {
+        this.measure();
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      mount(<App />);
+      await screen.findByRole("heading", { name: "Inbox of ec_1" });
+      const row = within(
+        await screen.findByRole("navigation", { name: "Mail accounts" }),
+      );
+      expect(
+        row.getAllByRole("link").map((l) => [l.textContent, l.ariaCurrent]),
+      ).toEqual([
+        ["Work", "page"],
+        ["Home, unread in Inbox: 2", null],
+      ]);
+      expect(
+        screen.queryByRole("button", { name: /^Mail account/ }),
+      ).toBeNull();
+      fireEvent.click(row.getByRole("link", { name: /^Home/ }));
+      await screen.findByRole("heading", { name: "Inbox of ec_2" });
+    } finally {
+      globalThis.ResizeObserver = real;
+    }
   });
 
   // The open one's unread are counted beside its folders already.
@@ -141,7 +177,7 @@ describe("the application", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Mail account/ }));
     fireEvent.click(
-      within(await screen.findByRole("dialog")).getByRole("link", {
+      within(await screen.findByRole("menu")).getByRole("menuitem", {
         name: /^Home/,
       }),
     );
