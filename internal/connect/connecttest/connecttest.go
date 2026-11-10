@@ -103,16 +103,14 @@ func IMAPWith(t testing.TB, cert *Cert, mode, username, password string, caps im
 // that cares how many commands something took.
 func IMAPSaying(t testing.TB, cert *Cert, mode, username, password string, caps imap.CapSet, said io.Writer) int {
 	t.Helper()
-	mem := imapmemserver.New()
 	user := imapmemserver.NewUser(username, password)
 	if err := user.Create("INBOX", nil); err != nil {
 		t.Fatal(err)
 	}
-	mem.AddUser(user)
 
 	opts := &imapserver.Options{
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
+			return &snapshot{UserSession: imapmemserver.NewUserSession(user)}, nil, nil
 		},
 		Caps:         caps,
 		Logger:       log.New(io.Discard, "", 0),
@@ -127,6 +125,49 @@ func IMAPSaying(t testing.TB, cert *Cert, mode, username, password string, caps 
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Close() })
 	return port(ln)
+}
+
+// snapshot is a session that answers a FETCH by UID from the mailbox as it was opened, as Dovecot
+// and Zoho do: mail that arrived since is not there until the mailbox is opened again.
+type snapshot struct {
+	*imapmemserver.UserSession
+	uidNext imap.UID
+}
+
+func (s *snapshot) Select(mailbox string, options *imap.SelectOptions) (*imap.SelectData, error) {
+	data, err := s.UserSession.Select(mailbox, options)
+	if err == nil {
+		s.uidNext = data.UIDNext
+	}
+	return data, err
+}
+
+func (s *snapshot) Fetch(w *imapserver.FetchWriter, numSet imap.NumSet, options *imap.FetchOptions) error {
+	uids, ok := numSet.(imap.UIDSet)
+	if !ok || s.uidNext <= 1 {
+		return s.UserSession.Fetch(w, numSet, options)
+	}
+	last := s.uidNext - 1
+	var seen imap.UIDSet
+	for _, r := range uids {
+		lo, hi := r.Start, r.Stop
+		if lo == 0 {
+			lo = last
+		}
+		if hi == 0 {
+			hi = last
+		}
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		if lo <= last {
+			seen.AddRange(lo, min(hi, last))
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	return s.UserSession.Fetch(w, seen, options)
 }
 
 // SMTP accepts username and password over PLAIN and nothing else, secured as mode says.

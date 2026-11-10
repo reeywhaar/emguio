@@ -136,7 +136,7 @@ func (m *Mirror) keepThreads(k *keptThreads) {
 func (m *Mirror) Headers(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32) ([]store.Header, error) {
 	var out []store.Header
 	err := m.use(ctx, t, func(f *fetcher) error {
-		if err := f.openAt(mailbox, uidValidity, false); err != nil {
+		if err := f.openAt(mailbox, uidValidity, false, uids...); err != nil {
 			return err
 		}
 		if len(uids) == 0 {

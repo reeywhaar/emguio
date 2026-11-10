@@ -1000,3 +1000,35 @@ func TestNewMailIsKeptToBeToldOfAndNothingElse(t *testing.T) {
 		t.Fatalf("due %+v", batches)
 	}
 }
+
+// A session keeps a folder open between requests; mail that arrived since is past what it saw,
+// and is looked for again rather than taken for gone.
+func TestMailThatArrivedSinceTheFolderWasOpenedIsThere(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	ctx := context.Background()
+	w.deliver("INBOX", 1, "alice@example.com", "First")
+	w.sync()
+	validity := w.mailbox("INBOX").UIDValidity
+	if _, err := w.mirror.Read(ctx, w.target, "INBOX", validity, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.mirror.SetFlag(ctx, w.target, "INBOX", validity, []uint32{1}, Flagged, true); err != nil {
+		t.Fatal(err)
+	}
+
+	w.deliver("INBOX", 2, "bob@example.com", "Second")
+	got, err := w.mirror.Read(ctx, w.target, "INBOX", validity, 2)
+	if err != nil {
+		t.Fatalf("reading what just arrived: %v", err)
+	}
+	if got.Header.Subject != "Second" {
+		t.Errorf("read %q", got.Header.Subject)
+	}
+	had, err := w.mirror.SetFlag(ctx, w.target, "INBOX", validity, []uint32{2}, Flagged, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := had[2]; !ok {
+		t.Errorf("starring what just arrived found %v", had)
+	}
+}

@@ -116,10 +116,12 @@ func (f *fetcher) open(mailbox string, writable, fresh bool) (uint32, uint32, er
 	return data.UIDValidity, data.NumMessages, nil
 }
 
-// openAt is open for a message named by uidValidity: ErrGone when the mailbox has been
-// renumbered since.
-func (f *fetcher) openAt(mailbox string, uidValidity uint32, writable bool) error {
-	have, _, err := f.open(mailbox, writable, false)
+// openAt is open for messages named by uidValidity: ErrGone when the mailbox has been
+// renumbered since. A server answers from the mailbox as it was opened, so one of uids past what
+// that saw has it opened again.
+func (f *fetcher) openAt(mailbox string, uidValidity uint32, writable bool, uids ...uint32) error {
+	fresh := f.mailbox == mailbox && slices.ContainsFunc(uids, func(uid uint32) bool { return uid >= f.uidNext })
+	have, _, err := f.open(mailbox, writable, fresh)
 	if err != nil {
 		return err
 	}
@@ -219,7 +221,7 @@ type Opened struct {
 func (m *Mirror) Read(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*Opened, error) {
 	var out *Opened
 	err := m.use(ctx, t, func(f *fetcher) error {
-		if err := f.openAt(mailbox, uidValidity, false); err != nil {
+		if err := f.openAt(mailbox, uidValidity, false, uid); err != nil {
 			return err
 		}
 		set := imap.UIDSetNum(imap.UID(uid))
@@ -326,7 +328,7 @@ func sectionString(path []int) string {
 func (m *Mirror) Part(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32, section []int) ([]byte, []byte, error) {
 	var head, body []byte
 	err := m.use(ctx, t, func(f *fetcher) error {
-		if err := f.openAt(mailbox, uidValidity, false); err != nil {
+		if err := f.openAt(mailbox, uidValidity, false, uid); err != nil {
 			return err
 		}
 		mime := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierMIME, Part: section, Peek: true}
@@ -404,7 +406,7 @@ func has(flags store.Flags, flag imap.Flag) bool {
 func (m *Mirror) SetFlag(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, flag imap.Flag, on bool) (Had, error) {
 	var had Had
 	err := m.change(ctx, t, func(f *fetcher) error {
-		if err := f.openAt(mailbox, uidValidity, true); err != nil {
+		if err := f.openAt(mailbox, uidValidity, true, uids...); err != nil {
 			return err
 		}
 		var err error
@@ -437,7 +439,7 @@ func (m *Mirror) SetFlag(ctx context.Context, t store.SyncTarget, mailbox string
 func (m *Mirror) Move(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, to string) (Had, error) {
 	var had Had
 	err := m.change(ctx, t, func(f *fetcher) error {
-		if err := f.openAt(mailbox, uidValidity, true); err != nil {
+		if err := f.openAt(mailbox, uidValidity, true, uids...); err != nil {
 			return err
 		}
 		var err error
@@ -458,7 +460,7 @@ func (m *Mirror) Move(ctx context.Context, t store.SyncTarget, mailbox string, u
 func (m *Mirror) Delete(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32) (Had, error) {
 	var had Had
 	err := m.change(ctx, t, func(f *fetcher) error {
-		if err := f.openAt(mailbox, uidValidity, true); err != nil {
+		if err := f.openAt(mailbox, uidValidity, true, uids...); err != nil {
 			return err
 		}
 		var err error

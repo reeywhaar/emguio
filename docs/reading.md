@@ -336,6 +336,11 @@ On a session of its own, so opening a message never waits behind a pass, nor beh
 jobs, which have another session for changes: jobs, drafts and filing in Sent. Each is opened on
 demand, closed after five idle minutes, and serves one request at a time.
 
+A session keeps the folder it last used open for the next request, and a server answers from the
+folder as it was opened: Dovecot and Zoho do not have a message that arrived since until the
+folder is opened again. So a request about a message past the UIDNEXT the folder was opened with
+opens it again first, or mail opened the moment it arrives would be `404 gone`.
+
 Opening is two requests: the headers and `BODYSTRUCTURE`, the server's description of every part
 — its type, name, size and section — and then the text alone, its plain and HTML parts by
 section. The list of attachments comes from the description; an attachment's bytes come only

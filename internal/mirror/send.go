@@ -28,7 +28,7 @@ var msgID = regexp.MustCompile(`<[^<>\s]+>`)
 func (m *Mirror) Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*Origin, error) {
 	var out *Origin
 	err := m.use(ctx, t, func(f *fetcher) error {
-		if err := f.openAt(mailbox, uidValidity, false); err != nil {
+		if err := f.openAt(mailbox, uidValidity, false, uid); err != nil {
 			return err
 		}
 		refs := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"References"}, Peek: true}
