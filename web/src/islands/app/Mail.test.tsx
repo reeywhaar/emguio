@@ -19,7 +19,7 @@ import type {
 import { Jobs } from "@app/islands/app/Jobs";
 import { Mail } from "@app/islands/app/Mail";
 import { Notice } from "@app/islands/app/Notice";
-import { useRoute } from "@app/islands/app/route";
+import { go, paths, useRoute } from "@app/islands/app/route";
 import { mount } from "@app/test/harness";
 import { reach } from "@app/test/view";
 
@@ -1090,6 +1090,39 @@ describe("the mail view", () => {
       fireEvent.click(tick.parentElement!);
       expect(tick.checked).toBe(true);
       expect(selectedCount()).toBe("1 selected");
+    });
+
+    // A selection is of one folder's list: another folder, or another account, starts without.
+    it("ends on going to another folder", async () => {
+      three();
+      window.history.pushState({}, "", "/c/ec_1/mb_inbox");
+      mount(<Routed />);
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Select messages" }),
+      );
+      await screen.findByRole("checkbox", { name: "Select all" });
+      const nav = within(screen.getByRole("navigation", { name: "Folders" }));
+      fireEvent.click(nav.getByRole("link", { name: /^Work/ }));
+      expect(window.location.pathname).toBe("/c/ec_1/mb_work");
+      await screen.findByRole("button", { name: "Select messages" });
+      expect(screen.queryByRole("checkbox", { name: "Select all" })).toBeNull();
+    });
+
+    it("ends on going to another account", async () => {
+      three();
+      getEmailConfigs.mockResolvedValue([
+        work,
+        { ...work, id: "ec_2", name: "Home" },
+      ]);
+      window.history.pushState({}, "", "/c/ec_1/mb_inbox");
+      mount(<Routed />);
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Select messages" }),
+      );
+      await screen.findByRole("checkbox", { name: "Select all" });
+      act(() => go(paths.mail("ec_2", "mb_inbox")));
+      await screen.findByRole("button", { name: "Select messages" });
+      expect(screen.queryByRole("checkbox", { name: "Select all" })).toBeNull();
     });
 
     it("leaves on Escape, and the rows open messages again", async () => {

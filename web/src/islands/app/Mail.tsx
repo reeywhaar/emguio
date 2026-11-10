@@ -178,7 +178,11 @@ function Folders({
   const selecting = selected !== null;
   const wasSelecting = useRef(selecting);
   useEffect(() => {
-    if (wasSelecting.current && !selecting) selectButton.current?.focus();
+    const lost =
+      !document.activeElement || document.activeElement === document.body;
+    if (wasSelecting.current && !selecting && lost) {
+      selectButton.current?.focus();
+    }
     wasSelecting.current = selecting;
   }, [selecting]);
   const current = boxes.data
@@ -186,6 +190,11 @@ function Folders({
       ? boxes.data.find((mb) => mb.id === mailbox)
       : usual(boxes.data)
     : undefined;
+  const [selectedIn, setSelectedIn] = useState(current?.id);
+  if (current?.id !== selectedIn) {
+    setSelectedIn(current?.id);
+    setSelected(null);
+  }
 
   // The tab says where it is: the folder, then the account. Back to the page's own on leaving.
   const title = [current && labelOfMailbox(current), labelOf(config)]
