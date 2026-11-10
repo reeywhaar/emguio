@@ -479,6 +479,34 @@ func (m *Mirror) Delete(ctx context.Context, t store.SyncTarget, mailbox string,
 	return had, err
 }
 
+// Empty deletes for good what a mailbox held when it was opened: a STORE of \Deleted and an
+// EXPUNGE of the UIDs below the UIDNEXT it opened with, so mail arriving meanwhile stays. It says
+// that UIDNEXT and how many there were. Without UIDPLUS the EXPUNGE is a plain one, which also
+// takes what another client marked deleted there; all of it was going.
+func (m *Mirror) Empty(ctx context.Context, t store.SyncTarget, mailbox string) (uint32, uint32, error) {
+	var below, held uint32
+	err := m.change(ctx, t, func(f *fetcher) error {
+		_, n, err := f.open(mailbox, true, true)
+		if err != nil {
+			return err
+		}
+		below, held = f.uidNext, n
+		if n == 0 || below <= 1 {
+			return nil
+		}
+		set := imap.UIDSet{{Start: 1, Stop: imap.UID(below - 1)}}
+		c := f.session.client
+		if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+			return refused(err)
+		}
+		if c.Caps().Has(imap.CapUIDPlus) {
+			return refused(c.UIDExpunge(set).Close())
+		}
+		return refused(c.Expunge().Close())
+	})
+	return below, held, err
+}
+
 // refused is a server's NO to an action, as the sentence a person is shown; a request the server
 // refused is not a session gone wrong.
 func refused(err error) error {

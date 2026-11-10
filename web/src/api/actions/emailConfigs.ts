@@ -70,6 +70,16 @@ export const deleteEmailConfigsByIdMailboxesByMailbox = (
     { method: "DELETE" },
   );
 
+/** Deletes for good everything Trash or Junk holds. */
+export const postEmailConfigsByIdMailboxesByMailboxEmpty = (
+  id: string,
+  mailbox: string,
+) =>
+  request<void>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/empty`,
+    { method: "POST" },
+  );
+
 /** Puts folders side by side in an order; answered with every folder, in the new order. */
 export const putEmailConfigsByIdMailboxesOrder = (id: string, ids: string[]) =>
   request<{ mailboxes: Mailbox[] }>(

@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"emguio/internal/mirror"
+	"emguio/internal/store"
 )
 
 // A folder is made on the server, at the top or inside another, kept like the rest, and answered
@@ -177,5 +180,48 @@ func TestFoldersArePutInOrder(t *testing.T) {
 		if resp := c.do("PUT", path+"/order", body); resp.StatusCode != want {
 			t.Errorf("%s = %s, want %d", body, resp.Status, want)
 		}
+	}
+}
+
+// Trash and Junk are emptied in one request; what was kept of them goes with it.
+func TestTrashIsEmptiedAndNothingElseIs(t *testing.T) {
+	c, cfg, boxes, _, fake := withOutbox(t)
+	ctx := context.Background()
+	fake.store.PutMailboxes(ctx, cfg, []store.Listed{
+		{Name: "INBOX", SpecialUse: store.UseInbox, Selectable: true},
+		{Name: "Trash", SpecialUse: store.UseTrash, Selectable: true},
+	})
+	all, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	for _, mb := range all {
+		boxes[mb.Name] = mb.ID
+	}
+	trash := boxes["Trash"]
+	fake.store.PutMessages(ctx, trash, []store.Header{
+		{UID: 1, InternalDate: time.Now(), Subject: "old"},
+		{UID: 2, InternalDate: time.Now(), Subject: "older"},
+		{UID: 5, InternalDate: time.Now(), Subject: "arrived meanwhile"},
+	})
+	fake.emptyBelow = 5
+
+	if resp := c.do("POST", "/api/email-configs/"+cfg+"/mailboxes/"+trash+"/empty", ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("empty = %s %v", resp.Status, c.json(resp))
+	}
+	if len(fake.emptied) != 1 || fake.emptied[0] != "Trash" {
+		t.Errorf("emptied %v", fake.emptied)
+	}
+	var mb *store.Mailbox
+	after, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	for _, m := range after {
+		if m.ID == trash {
+			mb = m
+		}
+	}
+	kept, _ := fake.store.Window(ctx, mb)
+	if len(kept) != 1 || kept[0].Subject != "arrived meanwhile" || mb.Messages != 1 {
+		t.Errorf("kept %d of %d, %+v", len(kept), mb.Messages, kept)
+	}
+
+	if resp := c.do("POST", "/api/email-configs/"+cfg+"/mailboxes/"+boxes["INBOX"]+"/empty", ""); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("empty INBOX = %s", resp.Status)
 	}
 }

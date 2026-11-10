@@ -79,6 +79,35 @@ func (s *Server) createMailbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, mailboxOut(after[made]))
 }
 
+// emptyMailbox deletes for good what Trash or Junk holds. See docs/reading.md.
+func (s *Server) emptyMailbox(w http.ResponseWriter, r *http.Request) {
+	c, mb, ok := s.mailboxOf(w, r)
+	if !ok {
+		return
+	}
+	if mb.SpecialUse != store.UseTrash && mb.SpecialUse != store.UseJunk {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "Only Trash and Junk are emptied.")
+		return
+	}
+	if s.mirror == nil {
+		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+		return
+	}
+	u := userOf(r)
+	below, held, err := s.mirror.Empty(r.Context(), targetOf(u, c), mb.Name)
+	if !s.serverError(w, r, c.ID, err, "This folder is no longer on the server.") {
+		return
+	}
+	if err := s.store.Emptied(r.Context(), mb.ID, below); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.store.Notify(u.ID)
+	s.mirror.Refresh(c.ID)
+	s.log.Info("folder emptied", "user", u.ID, "email_config", c.ID, "mailbox", mb.ID, "use", mb.SpecialUse, "messages", held)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // placeOf reads where a folder goes and what it is called, for one made or, self, renamed: the
 // folder it goes inside, nil for the top, and its name, or a refusal already written.
 func (s *Server) placeOf(w http.ResponseWriter, r *http.Request, c *store.EmailConfig, boxes []*store.Mailbox, self *store.Mailbox, body folderBody) (*store.Mailbox, string, bool) {

@@ -1032,3 +1032,31 @@ func TestMailThatArrivedSinceTheFolderWasOpenedIsThere(t *testing.T) {
 		t.Errorf("starring what just arrived found %v", had)
 	}
 }
+
+// Emptying takes what the folder held when it was opened, up to the UIDNEXT it says.
+func TestTrashIsEmptiedOfWhatItHeld(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	ctx := context.Background()
+	w.create("Trash")
+	w.deliver("Trash", 1, "alice@example.com", "Old")
+	w.deliver("Trash", 2, "bob@example.com", "Older", imap.FlagSeen)
+
+	below, held, err := w.mirror.Empty(ctx, w.target, "Trash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if below != 3 || held != 2 {
+		t.Errorf("below %d, held %d", below, held)
+	}
+	w.deliver("Trash", 3, "carol@example.com", "After")
+	if _, _, err := w.mirror.Empty(ctx, w.target, "Trash"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := w.server.Status("Trash", &imap.StatusOptions{NumMessages: true}).Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := deref(st.NumMessages); n != 0 {
+		t.Errorf("Trash holds %d", n)
+	}
+}

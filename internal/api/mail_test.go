@@ -34,6 +34,9 @@ type fakeMirror struct {
 	parts map[string][2]string
 	// kicked is each config told it has a job waiting.
 	kicked []string
+	// emptied is each mailbox emptied, which held messages below emptyBelow.
+	emptied    []string
+	emptyBelow uint32
 	// origin is what a reply reads of its original, and sendings what was sent.
 	origin   *mirror.Origin
 	sendings []mirror.Sending
@@ -126,6 +129,16 @@ func (f *fakeMirror) RenameMailbox(ctx context.Context, t store.SyncTarget, from
 		return n, true
 	})
 	return full, listed, err
+}
+
+func (f *fakeMirror) Empty(_ context.Context, _ store.SyncTarget, mailbox string) (uint32, uint32, error) {
+	if f.err != nil {
+		return 0, 0, f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.emptied = append(f.emptied, mailbox)
+	return f.emptyBelow, f.emptyBelow - 1, nil
 }
 
 func (f *fakeMirror) DeleteMailbox(ctx context.Context, t store.SyncTarget, name string) ([]store.Listed, error) {

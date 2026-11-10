@@ -42,6 +42,7 @@ import { useCarry } from "@app/islands/app/carry";
 import { blank, write } from "@app/islands/app/drafts";
 import { labelOf, pick, rememberConfig } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
+import { EmptyFolder, emptied } from "@app/islands/app/EmptyFolder";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { FolderMenu } from "@app/islands/app/FolderMenu";
 import {
@@ -324,6 +325,9 @@ function Folders({
             q={q}
             key={`${current.id} ${q}`}
           />
+        ) : null}
+        {current && !q && emptied(current) && current.messages > 0 ? (
+          <EmptyFolder config={config.id} mailbox={current} />
         ) : null}
         {config.sync_error ? (
           <p

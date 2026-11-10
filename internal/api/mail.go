@@ -35,6 +35,8 @@ type Mirror interface {
 	DeleteMailbox(ctx context.Context, t store.SyncTarget, name string) ([]store.Listed, error)
 	// CreateMailbox makes a folder on the server, and says its name and the folders listed then.
 	CreateMailbox(ctx context.Context, t store.SyncTarget, parent *store.Mailbox, name string) (string, []store.Listed, error)
+	// Empty deletes for good what a mailbox held, and says the UIDNEXT it held up to and how many.
+	Empty(ctx context.Context, t store.SyncTarget, mailbox string) (uint32, uint32, error)
 	// Origin is what a reply needs of the message it answers, or mirror.ErrGone.
 	Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Origin, error)
 	// Sent files a sent message in Sent and marks what it answers, in the background.

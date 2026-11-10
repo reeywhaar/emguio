@@ -651,6 +651,28 @@ func (s *Store) MessageMoved(ctx context.Context, from, to string, uid uint32, s
 	return tx.Commit()
 }
 
+// Emptied records that a mailbox's messages below a UID were deleted on the server: their rows
+// go, and its counts are what is kept of it, so the sidebar agrees before the next look confirms
+// it.
+func (s *Store) Emptied(ctx context.Context, mailboxID string, below uint32) error {
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("emptied: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM messages WHERE mailbox_id = ? AND uid < ?`, mailboxID, below); err != nil {
+		return fmt.Errorf("emptied: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE mailboxes SET
+		   messages = (SELECT COUNT(*) FROM messages WHERE mailbox_id = mailboxes.id),
+		   unseen = (SELECT COUNT(*) FROM messages WHERE mailbox_id = mailboxes.id AND seen = 0)
+		 WHERE id = ?`, mailboxID); err != nil {
+		return fmt.Errorf("emptied: %w", err)
+	}
+	return tx.Commit()
+}
+
 // RenameMailboxes renames a mailbox here as the server renamed it, and every mailbox inside it
 // with it, keeping their ids: what names one — a link, a job, the folder chosen to archive to —
 // goes on naming it.

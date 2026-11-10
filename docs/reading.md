@@ -75,6 +75,13 @@ new neighbours. A rename on another client is a new folder here, with no place.
 Deleting moves to Trash. In Trash, or on a server with none, it is a delete job, for good, and
 asked about first.
 
+Trash and Junk are emptied from a line under their search field, asked about first, in one
+request rather than as jobs: it is done to the folder, as deleting one is, and nothing is drawn
+before it is done. What goes is what the folder held when it was opened — `UID STORE` of
+`\Deleted` and `UID EXPUNGE` of the UIDs below the UIDNEXT it opened with — so mail arriving
+meanwhile stays. Without `UIDPLUS` the `EXPUNGE` is a plain one, which also takes what another
+client marked deleted there; all of it was going.
+
 A move is `MOVE` where the server has it. Without it, it is `COPY`, `\Deleted` and an `EXPUNGE`
 of those UIDs alone, which needs `UIDPLUS`: a plain `EXPUNGE` would also remove whatever another
 client had marked deleted, so on a server with neither, moving and deleting fail. A star

@@ -33,6 +33,7 @@ const postMailbox = vi.fn();
 const putMailbox = vi.fn();
 const deleteMailbox = vi.fn();
 const putOrder = vi.fn();
+const emptyFolder = vi.fn();
 const postJob = vi.fn();
 const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
@@ -60,6 +61,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     deleteMailbox(id, mailbox),
   putEmailConfigsByIdMailboxesOrder: (id: string, ids: string[]) =>
     putOrder(id, ids),
+  postEmailConfigsByIdMailboxesByMailboxEmpty: (id: string, mailbox: string) =>
+    emptyFolder(id, mailbox),
   getEmailConfigsByIdMailboxesByMailboxThreads: (
     id: string,
     mailbox: string,
@@ -978,6 +981,34 @@ describe("the mail view", () => {
     await waitFor(() =>
       expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_3"),
     );
+  });
+
+  // Trash is emptied from under its search, once asked; INBOX, and a search, offer nothing of it.
+  it("empties Trash once asked, and nowhere else", async () => {
+    getEmailConfigsByIdMailboxes.mockResolvedValue([
+      ...boxes,
+      box("mb_trash", ["Trash"], "trash"),
+    ]);
+    emptyFolder.mockResolvedValue(undefined);
+    const { unmount } = mount(
+      <Mail named="ec_1" mailbox="mb_trash" message={null} />,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Empty Trash…" }),
+    );
+    const ask = within(await screen.findByRole("dialog"));
+    ask.getByText(
+      "All 10 messages in Trash are deleted from the server. This cannot be undone.",
+    );
+    fireEvent.click(ask.getByRole("button", { name: "Empty Trash" }));
+    await waitFor(() =>
+      expect(emptyFolder).toHaveBeenCalledWith("ec_1", "mb_trash"),
+    );
+    unmount();
+
+    mount(<Mail named="ec_1" mailbox="mb_trash" message={null} q="lunch" />);
+    await screen.findByRole("list", { name: "Messages" });
+    expect(screen.queryByRole("button", { name: /^Empty/ })).toBeNull();
   });
 
   describe("selecting", () => {

@@ -355,6 +355,14 @@ Deletes an empty folder from the mail server. One that holds messages, or other 
 `409 conflict` rather than taking them with it, as does one of the server's own. `204`.
 
 ```
+POST /api/email-configs/{id}/mailboxes/{mailbox}/empty
+```
+
+Deletes for good every message in Trash or Junk, as the folder holds them when it is opened:
+mail that arrives meanwhile stays. Done on the mail server before it answers `204`, not as a job.
+Any other folder answers `400 invalid`.
+
+```
 PUT /api/email-configs/{id}/mailboxes/order
 ```
 
