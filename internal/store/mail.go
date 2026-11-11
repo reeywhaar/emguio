@@ -23,6 +23,8 @@ const (
 	UseTrash   = "trash"
 	UseAll     = "all"
 	UseFlagged = "flagged"
+	// UseScheduled holds mail the server is to send later, deleted there to cancel it (RFC 9979).
+	UseScheduled = "scheduled"
 )
 
 // Mailbox is a folder on an email config's incoming server.
@@ -501,7 +503,7 @@ func (s *Store) Mailbox(ctx context.Context, userID, configID, mailboxID string)
 
 // useOrder is where each special use sits in a sidebar; anything else comes after, by name.
 var useOrder = map[string]int{
-	UseInbox: 0, UseDrafts: 1, UseSent: 2, UseArchive: 3, UseAll: 4, UseFlagged: 5, UseJunk: 6, UseTrash: 7,
+	UseInbox: 0, UseDrafts: 1, UseSent: 2, UseScheduled: 3, UseArchive: 4, UseAll: 5, UseFlagged: 6, UseJunk: 7, UseTrash: 8,
 }
 
 // SortMailboxes puts mailboxes in the order a sidebar shows them: as a tree, each followed by

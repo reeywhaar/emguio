@@ -317,3 +317,22 @@ func listedOf(boxes []*Mailbox) []Listed {
 	}
 	return out
 }
+
+// Scheduled is the server's own, and comes after Sent.
+func TestScheduledComesAfterSent(t *testing.T) {
+	list := []*Mailbox{
+		{Name: "Trash", SpecialUse: UseTrash},
+		{Name: "Scheduled", SpecialUse: UseScheduled},
+		{Name: "Projects"},
+		{Name: "Sent", SpecialUse: UseSent},
+		{Name: "INBOX", SpecialUse: UseInbox},
+	}
+	SortMailboxes(list)
+	var got []string
+	for _, m := range list {
+		got = append(got, m.Name)
+	}
+	if want := "INBOX Sent Scheduled Trash Projects"; strings.Join(got, " ") != want {
+		t.Errorf("sorted %v, want %s", got, want)
+	}
+}

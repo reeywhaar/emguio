@@ -68,17 +68,27 @@ function zone(unix: number): string {
 export function SendLater({
   open,
   latest,
+  initial = null,
+  changeable,
   onClose,
   onPick,
 }: {
   open: boolean;
   latest: number;
+  /** The time it was scheduled for, when it is opened again from Scheduled. */
+  initial?: number | null;
+  /** Whether the server shows what it holds in Scheduled, where it can be changed until it goes. */
+  changeable: boolean;
   onClose: () => void;
   onPick: (at: number) => void;
 }) {
   const [now] = useState(() => new Date());
   const times = usual(now, latest);
-  const first = times[0]?.at ?? Math.floor(now.getTime() / 1000) + 3600;
+  const soonest = Math.floor(now.getTime() / 1000) + 120;
+  const first =
+    initial !== null && initial >= soonest && initial <= latest
+      ? initial
+      : (times[0]?.at ?? Math.floor(now.getTime() / 1000) + 3600);
   const [date, setDate] = useState(() => day(first));
   const [hour, setHour] = useState(() => new Date(first * 1000).getHours());
   const [minute, setMinute] = useState(() =>
@@ -88,7 +98,6 @@ export function SendLater({
   const at = Math.floor(
     new Date(y ?? NaN, (m ?? NaN) - 1, d, hour, minute).getTime() / 1000,
   );
-  const soonest = Math.floor(now.getTime() / 1000) + 120;
   const fits = Number.isFinite(at) && at >= soonest && at <= latest;
   const choose = (t: number) => {
     const picked = new Date(t * 1000);
@@ -172,8 +181,10 @@ export function SendLater({
         <p className="text-sm text-muted">
           Times are in this device's time zone,{" "}
           {zone(Number.isFinite(at) ? at : first)}. The mail server sends it at
-          this time, even if this device is off. emguio cannot cancel it once it
-          is scheduled.
+          this time, even if this device is off.{" "}
+          {changeable
+            ? "Until then it waits in Scheduled, where you can change or cancel it."
+            : "emguio cannot cancel it once it is scheduled."}
         </p>
       </div>
     </Dialog>

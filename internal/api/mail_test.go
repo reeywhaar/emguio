@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -37,6 +38,9 @@ type fakeMirror struct {
 	// emptied is each mailbox emptied, which held messages below emptyBelow.
 	emptied    []string
 	emptyBelow uint32
+	// deleted is each message deleted, as mailbox and UID; gone are the UIDs the server no longer has.
+	deleted []string
+	gone    map[uint32]bool
 	// origin is what a reply reads of its original, and sendings what was sent.
 	origin   *mirror.Origin
 	sendings []mirror.Sending
@@ -129,6 +133,23 @@ func (f *fakeMirror) RenameMailbox(ctx context.Context, t store.SyncTarget, from
 		return n, true
 	})
 	return full, listed, err
+}
+
+func (f *fakeMirror) Delete(_ context.Context, _ store.SyncTarget, mailbox string, _ uint32, uids []uint32) (mirror.Had, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	had := mirror.Had{}
+	for _, uid := range uids {
+		if f.gone[uid] {
+			continue
+		}
+		had[uid] = store.Flags{Seen: true}
+		f.deleted = append(f.deleted, fmt.Sprintf("%s %d", mailbox, uid))
+	}
+	return had, nil
 }
 
 func (f *fakeMirror) Empty(_ context.Context, _ store.SyncTarget, mailbox string) (uint32, uint32, error) {

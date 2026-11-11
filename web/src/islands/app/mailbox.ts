@@ -59,7 +59,7 @@ export function usual(boxes: Mailbox[]): Mailbox | undefined {
  * from — the name when there is one, the address when there is not.
  */
 export function counterpart(mb: Mailbox, m: Message): string {
-  if (mb.special_use === "sent" || mb.special_use === "drafts") {
+  if (["sent", "drafts", "scheduled"].includes(mb.special_use)) {
     const to = m.to[0];
     if (!to) return "(no recipient)";
     return `To: ${to.name || to.email}${m.to.length > 1 ? ` +${m.to.length - 1}` : ""}`;

@@ -12,6 +12,7 @@ import {
   deleteEmailConfigsByIdDraftsByDraft,
   getEmailConfigs,
   getEmailConfigsByIdHold,
+  getEmailConfigsByIdMailboxes,
   postEmailConfigsByIdDrafts,
   postEmailConfigsByIdSend,
   putEmailConfigsByIdDraftsByDraft,
@@ -90,6 +91,15 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     retry: false,
   });
   const holdUntil = hold.data?.latest ?? null;
+  // A server that shows held mail in Scheduled lets it be changed there until it goes.
+  const boxes = useQuery({
+    queryKey: qk.mailboxes(draft.config),
+    queryFn: () => getEmailConfigsByIdMailboxes(draft.config),
+    enabled: holdUntil !== null,
+  });
+  const changeable = Boolean(
+    boxes.data?.some((mb) => mb.special_use === "scheduled"),
+  );
   const [later, setLater] = useState(false);
   const [laterOpened, setLaterOpened] = useState(0);
 
@@ -297,13 +307,15 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
   };
 
   const edit = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
-  const title = start.draft
-    ? "Draft"
-    : start.reply
-      ? "Reply"
-      : start.carry
-        ? "Forward"
-        : "New message";
+  const title = start.cancels
+    ? "Scheduled message"
+    : start.draft
+      ? "Draft"
+      : start.reply
+        ? "Reply"
+        : start.carry
+          ? "Forward"
+          : "New message";
 
   if (config && !config.outgoing) {
     return (
@@ -392,6 +404,8 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
               key={laterOpened}
               open={later}
               latest={holdUntil}
+              initial={draft.sendAt}
+              changeable={changeable}
               onClose={() => setLater(false)}
               onPick={(at) => {
                 setLater(false);
@@ -411,6 +425,12 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
         }}
       >
         {config ? <From config={config} /> : null}
+        {draft.sendAt ? (
+          <p className="-mt-1 text-sm text-brand">
+            Scheduled for {full(draft.sendAt)}. Sending this, or scheduling it
+            again, takes its place.
+          </p>
+        ) : null}
         <div className="flex items-end gap-2">
           <Field label="To" className="min-w-0 flex-1">
             <TextField
@@ -591,6 +611,7 @@ async function outgoing(d: Draft, close: boolean): Promise<Outgoing> {
       parts: d.carry.parts.map((p) => p.section),
     },
     draft: d.draft,
+    cancels: d.cancels,
     draft_id: d.id,
     parts: d.held.map((h) => h.id),
     close,

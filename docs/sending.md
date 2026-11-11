@@ -61,8 +61,15 @@ to the latest time it names: the longest hold, or the latest date, whichever is 
 signs in to ask, when a message is written, and keeps the answer ten minutes.
 
 The message is dated the time it goes, since that is when its recipients get it, and its copy in
-Sent is filed at once, dated that time too, so it sorts where it will belong. The standard has no
-way to take a held message back, so emguio offers none.
+Sent is filed at once, dated that time too, so it sorts where it will belong. In Sent and
+Scheduled, a row dated more than a minute ahead says it is scheduled, and when.
+
+The standard has no way to take a held message back. A server that shows what it holds in a
+Scheduled folder (RFC 9979), as mailio does, cancels a message deleted from there, and files it in
+Sent itself when it goes, so emguio files no copy of its own. There a scheduled message is
+changed and cancelled: Cancel sending deletes it, and Edit opens it to be written on and sent
+again, which cancels the old one first, so the two never both go. Elsewhere it cannot be taken
+back, and the Send later window says so.
 
 ## A copy is filed in Sent unless the server filed one
 

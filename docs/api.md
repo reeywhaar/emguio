@@ -313,7 +313,7 @@ user's in the order they were put, then the rest by name.
 | --- | --- |
 | `name` | The server's name for it. |
 | `path` | `name` split at the server's delimiter: where it sits in the tree. |
-| `special_use` | What it is for: `inbox`, `drafts`, `sent`, `archive`, `all`, `flagged`, `junk`, `trash`, or empty. From the server's SPECIAL-USE flags, or else from a usual name like "Sent Items". |
+| `special_use` | What it is for: `inbox`, `drafts`, `sent`, `scheduled`, `archive`, `all`, `flagged`, `junk`, `trash`, or empty. From the server's SPECIAL-USE flags, or else from a usual name like "Sent Items". `scheduled` is mail the server holds to send later (RFC 9979), and has no usual name. |
 | `selectable` | `false` for one that only holds other folders and has no messages of its own. |
 | `messages`, `unseen` | How many messages it holds and how many are unread, at the last look. |
 | `uid_next` | Grows with every message put in it, so a change shows even when the counts end up the same. |
@@ -641,6 +641,7 @@ leaves first, for at most two minutes.
 | `parts` | The ids of the attachments that draft holds that go with this one, in order. |
 | `close` | Not used here. |
 | `send_at` | When the outgoing server is to send it, in Unix seconds; `0`, or leaving it out, is now. See below. |
+| `cancels` | `{"mailbox": "mb_…", "message": "…"}`: a message in Scheduled this one goes in place of. See below. |
 
 Mail goes from the email config's `email`, with its `sender_name`. emguio adds no `Re:`, quote or
 forwarded header: what `subject` and `text` say is what is sent. Attachments go in this order: the
@@ -679,6 +680,12 @@ With `send_at` on a send, the message is handed to the outgoing server at once, 
 its copy in Sent is filed now, dated `send_at` too. Nothing in emguio can call it back once it has
 been handed over. A time less than a minute away answers `400 invalid`; a server that holds no
 mail, or not that long, `502 unreachable` with its reason, and nothing has been handed over.
+
+A server that shows the mail it holds in a `scheduled` folder, as mailio does, files it in Sent
+itself when it goes, so emguio files no copy then. Deleting a message there cancels it, and
+`cancels` on a send does that first: the message named is deleted from Scheduled, and only then
+does this one go, so the two never both do. One no longer there — sent, or cancelled elsewhere —
+answers `404 gone`, and nothing is sent. A message in any other folder answers `400 invalid`.
 
 ## Drafts
 

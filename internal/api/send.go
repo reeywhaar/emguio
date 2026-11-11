@@ -51,6 +51,8 @@ type sendBody struct {
 	Close bool `json:"close"`
 	// SendAt is when the outgoing server is to send it, Unix seconds; 0 is now.
 	SendAt int64 `json:"send_at"`
+	// Cancels is a message in Scheduled this one goes in place of, cancelled before it goes.
+	Cancels *messageRef `json:"cancels"`
 }
 
 type attachmentBody struct {
@@ -161,6 +163,9 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if body.Cancels != nil && !s.cancel(w, r, c, t, body.Cancels) {
+		return
+	}
 	out := logins.Outgoing
 	// Not the request's context: a tab closed while the server is still taking the message
 	// leaves the sending to finish, rather than cutting it off halfway.
@@ -197,9 +202,48 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.log.Warn("Sent could not be found, so the message is not filed there", "user", u.ID, "email_config", c.ID, "error", err.Error())
 		}
+		// A server that shows held mail in Scheduled files it in Sent itself, when it goes.
+		if !until.IsZero() {
+			if scheduled, _ := s.specialMailbox(r, c, store.UseScheduled); scheduled != nil {
+				sent = nil
+			}
+		}
 		s.mirror.Sent(t, mirror.Sending{Sent: sent, ID: built.ID, Raw: built.Raw, Date: date, Answers: wr.answers, Draft: wr.replaces})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"message_id": built.ID})
+}
+
+// cancel deletes a message in Scheduled, so the server never sends it, for another to go in its
+// place: done before that one goes, so the two never both do. One gone already, sent or cancelled
+// elsewhere, refuses the sending, with a refusal written.
+func (s *Server) cancel(w http.ResponseWriter, r *http.Request, c *store.EmailConfig, t store.SyncTarget, ref *messageRef) bool {
+	if s.mirror == nil {
+		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+		return false
+	}
+	mb, uidValidity, uid, ok := s.messageOf(w, r, c, ref)
+	if !ok {
+		return false
+	}
+	if mb.SpecialUse != store.UseScheduled {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "Only a message in Scheduled is cancelled for another to go in its place.")
+		return false
+	}
+	const gone = "It has already been sent, or was cancelled elsewhere. Nothing was sent now."
+	had, err := s.mirror.Delete(r.Context(), t, mb.Name, uidValidity, []uint32{uid})
+	if !s.serverError(w, r, c.ID, err, gone) {
+		return false
+	}
+	if _, ok := had[uid]; !ok {
+		s.mirror.Refresh(c.ID)
+		refuse(w, http.StatusNotFound, CodeGone, gone)
+		return false
+	}
+	if err := s.store.MessageMoved(r.Context(), mb.ID, "", uid, true); err != nil {
+		s.log.Warn("a cancelled message could not be dropped here", "user", userOf(r).ID, "mailbox", mb.ID, "error", err.Error())
+	}
+	s.log.Info("scheduled message cancelled to be sent again", "user", userOf(r).ID, "email_config", c.ID, "mailbox", mb.ID)
+	return true
 }
 
 // written is what a message needs beyond its fields: what threads it, the message it answers,

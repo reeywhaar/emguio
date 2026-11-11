@@ -32,6 +32,9 @@ export type Draft = {
   carry: (Ref & { parts: Part[] }) | null;
   /** The draft on the mail server it was opened from. */
   draft: Ref | null;
+  /** A message in Scheduled it was opened from, cancelled when this goes; and when that was to go. */
+  cancels: Ref | null;
+  sendAt: number | null;
   /** The draft kept in emguio, once saved, and the attachments it holds. */
   id: string | null;
   held: Held[];
@@ -76,6 +79,8 @@ export const blank = (config: string): Draft => ({
   reply: null,
   carry: null,
   draft: null,
+  cancels: null,
+  sendAt: null,
   id: null,
   held: [],
 });
@@ -188,6 +193,20 @@ export function resumed(m: ReadMessage, config: string): Draft {
     text: m.text || m.html_text,
     carry: { ...at, parts: m.parts.filter((p) => p.listed) },
     draft: at,
+  };
+}
+
+/**
+ * A message in Scheduled opened to be written on. It stays scheduled until this goes, which
+ * cancels it first; saved meanwhile, this is a draft of its own.
+ */
+export function rescheduled(m: ReadMessage, config: string): Draft {
+  const at = { mailbox: m.mailbox, message: m.id };
+  return {
+    ...resumed(m, config),
+    draft: null,
+    cancels: at,
+    sendAt: m.date,
   };
 }
 

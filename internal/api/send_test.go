@@ -177,3 +177,71 @@ func TestAMessageIsHandedOverToSendLater(t *testing.T) {
 		t.Error("a time that has come was handed over")
 	}
 }
+
+// withScheduled is withOutbox's account on a server that shows held mail in a Scheduled folder,
+// with one message held there, UID 4.
+func withScheduled(t *testing.T) (*client, string, map[string]string, *connecttest.Outbox, *fakeMirror) {
+	t.Helper()
+	c, cfg, boxes, box, fake := withOutbox(t)
+	ctx := context.Background()
+	fake.store.PutMailboxes(ctx, cfg, []store.Listed{
+		{Name: "INBOX", SpecialUse: store.UseInbox, Selectable: true},
+		{Name: "Drafts", SpecialUse: store.UseDrafts, Selectable: true},
+		{Name: "Sent", SpecialUse: store.UseSent, Selectable: true},
+		{Name: "Scheduled", SpecialUse: store.UseScheduled, Selectable: true},
+	})
+	all, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	for _, mb := range all {
+		boxes[mb.Name] = mb.ID
+	}
+	fake.store.SetMailboxStatus(ctx, boxes["Scheduled"], store.MailboxStatus{UIDValidity: 7, UIDNext: 5, Messages: 1})
+	fake.store.PutMessages(ctx, boxes["Scheduled"], []store.Header{
+		{UID: 4, InternalDate: time.Now().Add(time.Hour), Subject: "Held", Flags: store.Flags{Seen: true}},
+	})
+	return c, cfg, boxes, box, fake
+}
+
+// A server that shows held mail in Scheduled files it in Sent itself when it goes, so emguio
+// files no copy of its own.
+func TestHeldMailIsNotFiledWhereTheServerFilesIt(t *testing.T) {
+	c, cfg, _, box, fake := withScheduled(t)
+	at := time.Now().Add(2 * time.Hour).Unix()
+	resp := c.do("POST", "/api/email-configs/"+cfg+"/send",
+		fmt.Sprintf(`{"to":"robin@example.com","subject":"Later","text":"Hi.","send_at":%d}`, at))
+	if resp.StatusCode != http.StatusOK || len(box.Sent()) != 1 {
+		t.Fatalf("send later = %s, %d handed over", resp.Status, len(box.Sent()))
+	}
+	if len(fake.sendings) != 1 || fake.sendings[0].Sent != nil {
+		t.Errorf("filed in %+v", fake.sendings)
+	}
+}
+
+// An edit of a held message cancels it first, then goes; one already gone stops the edit before
+// anything is sent.
+func TestAHeldMessageIsCancelledForItsEditToGo(t *testing.T) {
+	c, cfg, boxes, box, fake := withScheduled(t)
+	at := time.Now().Add(3 * time.Hour).Unix()
+	body := fmt.Sprintf(`{"to":"robin@example.com","subject":"Held, edited","text":"Hi.","send_at":%d,
+		"cancels":{"mailbox":%q,"message":"7-4"}}`, at, boxes["Scheduled"])
+	if resp := c.do("POST", "/api/email-configs/"+cfg+"/send", body); resp.StatusCode != http.StatusOK {
+		t.Fatalf("edit = %s %v", resp.Status, c.json(resp))
+	}
+	if len(fake.deleted) != 1 || fake.deleted[0] != "Scheduled 4" || len(box.Sent()) != 1 {
+		t.Fatalf("deleted %v, handed over %d", fake.deleted, len(box.Sent()))
+	}
+
+	fake.gone = map[uint32]bool{4: true}
+	resp := c.do("POST", "/api/email-configs/"+cfg+"/send", body)
+	if got := c.json(resp); resp.StatusCode != http.StatusNotFound || got["code"] != "gone" {
+		t.Errorf("edit of one gone = %s %v", resp.Status, got)
+	}
+	if len(box.Sent()) != 1 {
+		t.Error("an edit of a message already gone was sent")
+	}
+
+	resp = c.do("POST", "/api/email-configs/"+cfg+"/send", fmt.Sprintf(`{"to":"robin@example.com","subject":"x","text":"x",
+		"cancels":{"mailbox":%q,"message":"7-4"}}`, boxes["INBOX"]))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("cancelling a message in INBOX = %s", resp.Status)
+	}
+}

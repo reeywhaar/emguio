@@ -103,6 +103,7 @@ var uses = map[imap.MailboxAttr]string{
 	imap.MailboxAttrTrash:   store.UseTrash,
 	imap.MailboxAttrAll:     store.UseAll,
 	imap.MailboxAttrFlagged: store.UseFlagged,
+	`\Scheduled`:            store.UseScheduled,
 }
 
 // guesses are the names a mailbox goes by on servers that do not flag what it is for.

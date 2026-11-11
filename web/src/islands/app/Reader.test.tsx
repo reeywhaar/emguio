@@ -103,6 +103,7 @@ const trash = box("mb_trash", "trash");
 const junk = box("mb_junk", "junk");
 const work = box("mb_work", "");
 const drafts = box("mb_drafts", "drafts");
+const scheduledBox = box("mb_scheduled", "scheduled");
 
 const inbox: Mailbox = {
   id: "mb_inbox",
@@ -522,6 +523,58 @@ describe("the reading pane", () => {
       within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  // In Scheduled a message is mail still to go: cancelling, asked first, is the one action, as
+  // moving it anywhere would cancel it too.
+  it("cancels a scheduled message, once asked", async () => {
+    getMailboxes.mockResolvedValue([inbox, scheduledBox, trash, work]);
+    getMessage.mockResolvedValue(read({ mailbox: "mb_scheduled", seen: true }));
+    open(scheduledBox);
+    const cancel = await ready("Cancel sending…");
+    for (const name of ["Archive", "Delete", "Star", "Reply"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    expect(screen.queryByLabelText("Move to folder")).toBeNull();
+    fireEvent.click(cancel);
+    const ask = within(await screen.findByRole("dialog"));
+    ask.getByText("It is deleted from Scheduled and never sent.");
+    fireEvent.click(ask.getByRole("button", { name: "Cancel sending" }));
+    await waitFor(() =>
+      expect(asked()).toEqual([
+        expect.objectContaining({
+          kind: "delete",
+          mailbox: "mb_scheduled",
+          message: "m_1",
+        }),
+      ]),
+    );
+  });
+
+  // Edited, it is sent in place of itself: the old one is cancelled as the new one goes.
+  it("edits a scheduled message, which goes in place of the old one", async () => {
+    getMailboxes.mockResolvedValue([inbox, scheduledBox, trash, work]);
+    const at = Math.floor(Date.now() / 1000) + 86400;
+    getMessage.mockResolvedValue(
+      read({ mailbox: "mb_scheduled", seen: true, date: at }),
+    );
+    postSend.mockResolvedValue({ message_id: "<e@example.com>" });
+    open(scheduledBox);
+    fireEvent.click(await ready("Edit"));
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByText(
+      `Scheduled for ${full(at)}. Sending this, or scheduling it again, takes its place.`,
+    );
+    dialog.getByRole("heading", { name: "Scheduled message" });
+    fireEvent.click(dialog.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(postSend).toHaveBeenCalledTimes(1));
+    const [, body] = postSend.mock.calls[0] as [string, Outgoing];
+    expect(body).toMatchObject({
+      cancels: { mailbox: "mb_scheduled", message: "m_1" },
+      draft: null,
+      send_at: 0,
+    });
   });
 
   // A forward carries the message's attachments; a refusal is said in the window, and what was

@@ -30,6 +30,7 @@ import {
   PlusMark,
   Refresh,
   SelectMark,
+  ScheduledMark,
   SentMark,
   SpamMark,
   StarMark,
@@ -708,6 +709,8 @@ function FolderIcon({ mb }: { mb: Mailbox }) {
       return <DraftMark />;
     case "sent":
       return <SentMark />;
+    case "scheduled":
+      return <ScheduledMark />;
     case "archive":
       return <ArchiveMark />;
     case "all":

@@ -169,7 +169,20 @@ export function Actions({
   // no flags to act on.
   const busy = !m;
 
+  // In Scheduled a message is mail the server is to send: deleting it there cancels that, and
+  // moving it anywhere would too, so cancelling is all that is offered.
+  const scheduled = mailbox.special_use === "scheduled";
+  const cancel = async () => {
+    const yes = await confirm({
+      title: "Cancel sending?",
+      message: "It is deleted from Scheduled and never sent.",
+      confirm: "Cancel sending",
+      danger: true,
+    });
+    if (yes) moveTo(null);
+  };
   const remove = async () => {
+    if (scheduled) return cancel();
     if (to.trash) return moveTo(to.trash);
     const yes = await confirm({
       title: "Delete this message for good?",
@@ -184,14 +197,18 @@ export function Actions({
   };
   const forever = !to.trash;
 
-  const act = {
-    archive: to.archive ? () => moveTo(to.archive!) : undefined,
-    remove,
-    spam: to.spam ? () => moveTo(to.spam!) : undefined,
-    notSpam: to.notSpam ? () => moveTo(to.notSpam!) : undefined,
-    star: () => ask({ kind: "flagged", value: !starred }),
-    seen: () => ask({ kind: "seen", value: !seen }),
-  };
+  const star = () => ask({ kind: "flagged", value: !starred });
+  const markSeen = () => ask({ kind: "seen", value: !seen });
+  const act = scheduled
+    ? { remove }
+    : {
+        archive: to.archive ? () => moveTo(to.archive!) : undefined,
+        remove,
+        spam: to.spam ? () => moveTo(to.spam!) : undefined,
+        notSpam: to.notSpam ? () => moveTo(to.notSpam!) : undefined,
+        star,
+        seen: markSeen,
+      };
 
   // Gmail's keys, which hands that know Gmail already reach for. Not while a field has the keys,
   // nor while a dialog is open; the message itself, in its frame, keeps them to itself.
@@ -220,6 +237,23 @@ export function Actions({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  if (scheduled) {
+    return (
+      <div className="flex flex-wrap items-center gap-1">
+        {back}
+        <span className="flex-1" />
+        <Action
+          label="Cancel sending…"
+          keyName="#"
+          disabled={busy}
+          onClick={cancel}
+        >
+          <TrashMark />
+        </Action>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -263,7 +297,7 @@ export function Actions({
           label="Star"
           keyName="s"
           disabled={busy}
-          onClick={act.star}
+          onClick={star}
           pressed={starred}
         >
           <StarMark filled={starred} />
@@ -272,7 +306,7 @@ export function Actions({
           label={seen ? "Mark as unread" : "Mark as read"}
           keyName="u"
           disabled={busy}
-          onClick={act.seen}
+          onClick={markSeen}
         >
           <MailMark open={seen} />
         </Action>
@@ -340,7 +374,11 @@ export function MovePicker({
   const [making, setMaking] = useState(false);
   // Each opening starts the form afresh.
   const [opened, setOpened] = useState(0);
-  const others = boxes.filter((mb) => mb.selectable && mb.id !== current.id);
+  // The server refuses mail put in Scheduled.
+  const others = boxes.filter(
+    (mb) =>
+      mb.selectable && mb.id !== current.id && mb.special_use !== "scheduled",
+  );
   return (
     <>
       <label

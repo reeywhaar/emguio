@@ -88,6 +88,7 @@ export type SpecialUse =
   | "trash"
   | "all"
   | "flagged"
+  | "scheduled"
   | "";
 
 export type Mailbox = {
@@ -223,6 +224,8 @@ export type Outgoing = {
   parts: string[];
   /** When the outgoing server is to send it, Unix seconds; 0 or none is now. */
   send_at?: number;
+  /** A message in Scheduled this goes in place of, cancelled first. */
+  cancels?: { mailbox: string; message: string } | null;
   /** The window closing: the draft is written to the mail server now. */
   close?: boolean;
 };

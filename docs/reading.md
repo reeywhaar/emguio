@@ -301,6 +301,11 @@ conversation open are read again.
 it does not, a mailbox called Sent, Sent Items, Отправленные and the like is taken to be one —
 once each, and never over a mailbox the server did flag.
 
+`\Scheduled` (RFC 9979) names the mail the server holds to send later, which mailio shows. It has
+no usual name, so a server that does not flag it has none. It comes after Sent, and is not offered
+to archive or move to: the server refuses mail put there. A message opened there offers Edit and
+Cancel sending, not the actions of other folders, since moving one out of it cancels it too.
+
 ## Text is read in the charset it declares
 
 Nearly all mail is UTF-8. What declares another charset — GBK and ISO-2022-JP are still sent —

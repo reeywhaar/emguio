@@ -32,6 +32,7 @@ import {
   forwardOf,
   others,
   replyTo,
+  rescheduled,
   resumed,
   write,
 } from "@app/islands/app/drafts";
@@ -112,7 +113,8 @@ export function Reader({
             >
               {known.subject || "(no subject)"}
             </h2>
-            {mailbox.special_use === "drafts" ? null : (
+            {mailbox.special_use === "drafts" ||
+            mailbox.special_use === "scheduled" ? null : (
               <Conversation
                 config={config}
                 mailbox={mailbox}
@@ -136,6 +138,7 @@ export function Reader({
             </div>
             <People label="To" people={known.to} />
             <People label="Cc" people={m?.cc ?? []} />
+            <People label="Bcc" people={m?.bcc ?? []} />
           </>
         ) : read.error ? null : (
           <div className="flex flex-col gap-2">
@@ -189,6 +192,13 @@ export function Reader({
               <Button size="bar" onClick={() => write(resumed(m, config))}>
                 <WriteMark />
                 Edit draft
+              </Button>
+            </div>
+          ) : mailbox.special_use === "scheduled" ? (
+            <div className="sticky bottom-0 mt-auto flex shrink-0 gap-2 border-t border-line bg-bg px-4 py-2">
+              <Button size="bar" onClick={() => write(rescheduled(m, config))}>
+                <WriteMark />
+                Edit
               </Button>
             </div>
           ) : (

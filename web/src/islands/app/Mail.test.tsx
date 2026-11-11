@@ -20,6 +20,7 @@ import { Jobs } from "@app/islands/app/Jobs";
 import { Mail } from "@app/islands/app/Mail";
 import { Notice } from "@app/islands/app/Notice";
 import { go, paths, useRoute } from "@app/islands/app/route";
+import { full } from "@app/format";
 import { mount } from "@app/test/harness";
 import { reach } from "@app/test/view";
 
@@ -1009,6 +1010,26 @@ describe("the mail view", () => {
     mount(<Mail named="ec_1" mailbox="mb_trash" message={null} q="lunch" />);
     await screen.findByRole("list", { name: "Messages" });
     expect(screen.queryByRole("button", { name: /^Empty/ })).toBeNull();
+  });
+
+  // In Sent a message dated ahead of now is one the server holds to send then; in INBOX it is a
+  // server's clock ahead of this one, or a sender's lie.
+  it("says a message in Sent dated ahead is scheduled, and when", async () => {
+    const at = Math.floor(Date.now() / 1000) + 86400;
+    getMessages.mockResolvedValue({
+      messages: [message("m_1", "Later", { date: at }), message("m_2", "Now")],
+    });
+    const { unmount } = mount(
+      <Mail named="ec_1" mailbox="mb_sent" message={null} />,
+    );
+    const list = within(await screen.findByRole("list", { name: "Messages" }));
+    list.getByText(`Scheduled · ${full(at)}`);
+    expect(list.getAllByText(/^Scheduled · /)).toHaveLength(1);
+    unmount();
+
+    mount(<Mail named="ec_1" mailbox="mb_inbox" message={null} />);
+    await screen.findByRole("list", { name: "Messages" });
+    expect(screen.queryByText(/^Scheduled · /)).toBeNull();
   });
 
   describe("selecting", () => {

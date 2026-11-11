@@ -272,6 +272,17 @@ export function MessageDummies({ count }: { count: number }) {
   );
 }
 
+/**
+ * Whether a message is one the server is still to send: dated ahead, in Sent, where its copy is
+ * filed when it is handed over, or in Scheduled. A minute's grace, for a server's clock ahead of
+ * this one's.
+ */
+function scheduled(mailbox: Mailbox, m: Message): boolean {
+  const where =
+    mailbox.special_use === "sent" || mailbox.special_use === "scheduled";
+  return where && m.date * 1000 > Date.now() + 60_000;
+}
+
 function Row({
   config,
   mailbox,
@@ -335,6 +346,11 @@ function Row({
       <p className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}>
         {m.subject || "(no subject)"}
       </p>
+      {scheduled(mailbox, m) ? (
+        <p className="truncate text-xs font-medium text-brand">
+          Scheduled · {full(m.date)}
+        </p>
+      ) : null}
       {m.preview ? (
         <p className="truncate text-sm text-faint">{m.preview}</p>
       ) : null}

@@ -143,6 +143,12 @@ export const DraftMark = () => (
   </Mark>
 );
 
+export const ScheduledMark = () => (
+  <Mark>
+    <path d="M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13ZM8 4.5V8l2.5 1.5" />
+  </Mark>
+);
+
 export const AllMailMark = () => (
   <Mark>
     <path d="M1.5 5.5h11v8h-11zM1.5 5.5 7 9.5l5.5-4M3.5 3.5V2.5h11v8h-2" />
