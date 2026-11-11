@@ -203,6 +203,16 @@ export const ForwardMark = () => (
   </Mark>
 );
 
+/** A pencil over a line: drawn upright, its cap apart from it, then leant over. */
+export const PencilMark = () => (
+  <Mark filled>
+    <g transform="translate(-1.6 -0.6) rotate(45 8 8)">
+      <path d="M7 1.5h2v1H7zM7 4.75h2v5.75L8 12l-1-1.5z" />
+    </g>
+    <path d="M2.5 13.75h11" />
+  </Mark>
+);
+
 export const UpMark = () => (
   <Mark>
     <path d="M8 13V3M4 7l4-4 4 4" />

@@ -17,6 +17,7 @@ import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
 import { Field, Select } from "@app/components/Field";
+import { PencilMark } from "@app/components/icons";
 import { labelOf } from "@app/islands/app/emailConfig";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import {
@@ -218,7 +219,7 @@ export function Delivery({ config }: { config: EmailConfig }) {
   });
   const choice = choices.find((c) => c.value === choiceOf(config));
   return (
-    <div className="flex items-center justify-between gap-3 sm:justify-start">
+    <div className="flex items-center gap-1">
       <span className="min-w-0">
         {config.notify === "off" ? (
           "Never"
@@ -229,16 +230,17 @@ export function Delivery({ config }: { config: EmailConfig }) {
         )}
       </span>
       <Button
-        size="bar"
-        className="shrink-0"
+        variant="link"
+        className="-my-1.5 shrink-0 rounded-md p-1.5 pointer-coarse:-my-2.5 pointer-coarse:p-2.5"
         aria-label="Change notifications"
+        title="Change"
         disabled={!boxes.data}
         onClick={() => {
           setOpened((n) => n + 1);
           setOpen(true);
         }}
       >
-        Change…
+        <PencilMark />
       </Button>
       {boxes.data && opened > 0 ? (
         <DeliveryDialog

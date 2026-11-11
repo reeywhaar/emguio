@@ -180,7 +180,7 @@ function Card({
   const label = labelOf(config);
 
   return (
-    <article className="flex flex-col gap-3 rounded-lg border border-line bg-bg p-4">
+    <article className="flex flex-col gap-4 rounded-lg border border-line bg-bg p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="font-medium wrap-anywhere">{label}</h3>
@@ -189,9 +189,10 @@ function Card({
           ) : null}
         </div>
         {onMove ? (
-          <div className="flex shrink-0 gap-1">
+          <div className="-mt-1 -mr-1.5 flex shrink-0">
             <Button
-              size="bar"
+              variant="link"
+              className="rounded-md p-1.5 pointer-coarse:p-2.5"
               aria-label={`Move ${label} up`}
               title="Move up"
               disabled={!onMove.up}
@@ -200,7 +201,8 @@ function Card({
               <UpMark />
             </Button>
             <Button
-              size="bar"
+              variant="link"
+              className="rounded-md p-1.5 pointer-coarse:p-2.5"
               aria-label={`Move ${label} down`}
               title="Move down"
               disabled={!onMove.down}
@@ -211,7 +213,7 @@ function Card({
           </div>
         ) : null}
       </div>
-      <dl className="flex flex-col gap-3 text-sm sm:grid sm:grid-cols-[auto_1fr] sm:gap-x-3 sm:gap-y-2">
+      <dl className="flex flex-col gap-4 text-sm">
         <Row label="Incoming">
           {describe(config.incoming, config.incoming.protocol.toUpperCase())}
         </Row>
@@ -275,11 +277,11 @@ function Card({
   );
 }
 
-/** A label over its value on a phone, and beside it where there is room. */
+/** A label over its text or control: beside it, a control never lines up with plain text. */
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center">
-      <dt className="text-muted">{label}</dt>
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-xs text-muted">{label}</dt>
       <dd className="min-w-0 wrap-anywhere">{children}</dd>
     </div>
   );
