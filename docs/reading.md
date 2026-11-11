@@ -301,6 +301,13 @@ conversation open are read again.
 it does not, a mailbox called Sent, Sent Items, Отправленные and the like is taken to be one —
 once each, and never over a mailbox the server did flag.
 
+A folder flagged with anything but a use emguio knows and the flags that say where it sits in the
+tree (`\HasChildren`, `\Marked`, `\Subscribed` and the like) is the server's own too, kept for a
+use emguio has none for, like a `\Templates`: a folder of the user's carries no such flag. So is
+one called Outbox, Templates or Template, or Исходящие or Шаблоны, which Yandex keeps without
+flagging. Such a folder sorts among the server's own and is not offered to rename, move, delete or
+archive to; the server would refuse.
+
 `\Scheduled` (RFC 9979) names the mail the server holds to send later, which mailio shows. It has
 no usual name, so a server that does not flag it has none. It comes after Sent, and is not offered
 to archive or move to: the server refuses mail put there. A message opened there offers Edit and

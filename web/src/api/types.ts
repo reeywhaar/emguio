@@ -89,6 +89,7 @@ export type SpecialUse =
   | "all"
   | "flagged"
   | "scheduled"
+  | "other"
   | "";
 
 export type Mailbox = {

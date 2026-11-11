@@ -313,7 +313,7 @@ user's in the order they were put, then the rest by name.
 | --- | --- |
 | `name` | The server's name for it. |
 | `path` | `name` split at the server's delimiter: where it sits in the tree. |
-| `special_use` | What it is for: `inbox`, `drafts`, `sent`, `scheduled`, `archive`, `all`, `flagged`, `junk`, `trash`, or empty. From the server's SPECIAL-USE flags, or else from a usual name like "Sent Items". `scheduled` is mail the server holds to send later (RFC 9979), and has no usual name. |
+| `special_use` | What it is for: `inbox`, `drafts`, `sent`, `scheduled`, `archive`, `all`, `flagged`, `junk`, `trash`, or empty. From the server's SPECIAL-USE flags, or else from a usual name like "Sent Items". `scheduled` is mail the server holds to send later (RFC 9979), and has no usual name. `other` is one the server keeps for itself for a use emguio has none for, like Yandex's Outbox: flagged with a flag emguio does not know, or called Outbox or Templates. It is not renamed, moved or deleted. |
 | `selectable` | `false` for one that only holds other folders and has no messages of its own. |
 | `messages`, `unseen` | How many messages it holds and how many are unread, at the last look. |
 | `uid_next` | Grows with every message put in it, so a change shows even when the counts end up the same. |

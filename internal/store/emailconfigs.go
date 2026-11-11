@@ -554,7 +554,7 @@ func (s *Store) SetArchiveMailbox(ctx context.Context, userID, configID, mailbox
 		}
 		// Archiving keeps mail; a folder the server has for something else is not where it goes.
 		switch mb.SpecialUse {
-		case UseInbox, UseDrafts, UseSent, UseJunk, UseTrash, UseFlagged, UseScheduled:
+		case UseInbox, UseDrafts, UseSent, UseJunk, UseTrash, UseFlagged, UseScheduled, UseOther:
 			return Invalid("%s is the server's folder for something else. Archive to one of your own.", mb.Name)
 		}
 		chosen = mb.ID

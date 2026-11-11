@@ -118,6 +118,41 @@ var guesses = map[string]string{
 	"удаленные": store.UseTrash, "удалённые": store.UseTrash,
 }
 
+// structural are the flags that say how a mailbox sits in the tree, not what it is for.
+var structural = []imap.MailboxAttr{
+	imap.MailboxAttrNoSelect, imap.MailboxAttrNonExistent, imap.MailboxAttrNoInferiors,
+	imap.MailboxAttrHasChildren, imap.MailboxAttrHasNoChildren, imap.MailboxAttrMarked,
+	imap.MailboxAttrUnmarked, imap.MailboxAttrSubscribed, imap.MailboxAttrRemote,
+}
+
+// useOfAttrs is what a mailbox's flags say it is for: one emguio knows, or else, for any other
+// flag, the server's own for something emguio has no use for. Flags are told apart without regard
+// to case.
+func useOfAttrs(attrs []imap.MailboxAttr) string {
+	same := func(a imap.MailboxAttr) func(imap.MailboxAttr) bool {
+		return func(b imap.MailboxAttr) bool { return strings.EqualFold(string(a), string(b)) }
+	}
+	other := false
+	for _, a := range attrs {
+		for known, use := range uses {
+			if same(a)(known) {
+				return use
+			}
+		}
+		other = other || !slices.ContainsFunc(structural, same(a))
+	}
+	if other {
+		return store.UseOther
+	}
+	return ""
+}
+
+// serversByName are folders servers keep for themselves without flagging them, by name: Yandex's
+// Outbox, and the templates it keeps inside Drafts.
+var serversByName = map[string]bool{
+	"outbox": true, "исходящие": true, "templates": true, "template": true, "шаблоны": true,
+}
+
 func (s *session) list() ([]store.Listed, error) {
 	var opts *imap.ListOptions
 	if s.client.Caps().Has(imap.CapSpecialUse) {
@@ -139,10 +174,8 @@ func (s *session) list() ([]store.Listed, error) {
 			case imap.MailboxAttrNoSelect, imap.MailboxAttrNonExistent:
 				l.Selectable = false
 			}
-			if use, ok := uses[a]; ok && l.SpecialUse == "" {
-				l.SpecialUse = use
-			}
 		}
+		l.SpecialUse = useOfAttrs(d.Attrs)
 		if strings.EqualFold(d.Mailbox, "INBOX") {
 			l.SpecialUse = store.UseInbox
 		}
@@ -160,10 +193,13 @@ func (s *session) list() ([]store.Listed, error) {
 		if l.Delimiter != "" {
 			parts = strings.Split(l.Name, l.Delimiter)
 		}
-		use := guesses[strings.ToLower(parts[len(parts)-1])]
+		last := strings.ToLower(parts[len(parts)-1])
+		use := guesses[last]
 		if use != "" && !flagged[use] {
 			l.SpecialUse = use
 			flagged[use] = true
+		} else if serversByName[last] {
+			l.SpecialUse = store.UseOther
 		}
 	}
 	return out, nil

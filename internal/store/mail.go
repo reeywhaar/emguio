@@ -25,6 +25,10 @@ const (
 	UseFlagged = "flagged"
 	// UseScheduled holds mail the server is to send later, deleted there to cancel it (RFC 9979).
 	UseScheduled = "scheduled"
+	// UseOther is one the server keeps for a use emguio has none for — Yandex's Outbox and
+	// templates — told by a flag emguio does not know, or by its name. It is not the user's to
+	// rename or delete.
+	UseOther = "other"
 )
 
 // Mailbox is a folder on an email config's incoming server.
