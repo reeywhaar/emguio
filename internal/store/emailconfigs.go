@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -140,10 +141,12 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	return &r, nil
 }
 
-// EmailConfigs lists one user's email configs, oldest first.
+// EmailConfigs lists one user's email configs: those put in order first, in it, then the rest
+// oldest first.
 func (s *Store) EmailConfigs(ctx context.Context, userID string) ([]*EmailConfig, error) {
 	rows, err := s.reader.QueryContext(ctx,
-		`SELECT `+emailConfigSelect+` FROM email_configs WHERE user_id = ? ORDER BY created_at, id`, userID)
+		`SELECT `+emailConfigSelect+` FROM email_configs WHERE user_id = ?
+		  ORDER BY position IS NULL, position, created_at, id`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list email configs: %w", err)
 	}
@@ -564,4 +567,50 @@ func (s *Store) SetArchiveMailbox(ctx context.Context, userID, configID, mailbox
 		return fmt.Errorf("set archive mailbox: %w", err)
 	}
 	return nil
+}
+
+// SetEmailConfigOrder puts the user's email configs in the order given: the listed ones first,
+// then the others as they were.
+func (s *Store) SetEmailConfigOrder(ctx context.Context, userID string, order []string) error {
+	configs, err := s.EmailConfigs(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if len(order) == 0 {
+		return Invalid("List the mail accounts in their new order.")
+	}
+	theirs := map[string]bool{}
+	for _, c := range configs {
+		theirs[c.ID] = true
+	}
+	listed := map[string]bool{}
+	for _, id := range order {
+		switch {
+		case !ids.Valid(ids.EmailConfig, id):
+			return Invalid("%q is not an email config id.", id)
+		case !theirs[id]:
+			return NotFound("There is no such email config.")
+		case listed[id]:
+			return Invalid("Each mail account is listed once.")
+		}
+		listed[id] = true
+	}
+	next := slices.Clone(order)
+	for _, c := range configs {
+		if !listed[c.ID] {
+			next = append(next, c.ID)
+		}
+	}
+
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("email config order: %w", err)
+	}
+	defer tx.Rollback()
+	for i, id := range next {
+		if _, err := tx.ExecContext(ctx, `UPDATE email_configs SET position = ? WHERE id = ? AND user_id = ?`, i, id, userID); err != nil {
+			return fmt.Errorf("email config order: %w", err)
+		}
+	}
+	return tx.Commit()
 }

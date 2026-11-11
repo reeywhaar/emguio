@@ -156,7 +156,17 @@ No answer ever carries a password.
 GET /api/email-configs
 ```
 
-`{"email_configs": [ … ]}`, oldest first.
+`{"email_configs": [ … ]}`, in the user's order: those put in order first, in it, then the rest
+oldest first, so a new one is last.
+
+```
+PUT /api/email-configs/order
+```
+
+Puts the user's email configs in an order: `{"ids": ["ec_…", "ec_…"]}`. They go first, in that
+order, and the others follow as they were. Every list of them follows it — Settings, the account
+picker. The answer is `200` with every one, as listed above. One twice or none at all answers
+`400 invalid`; one that is not the user's, `404 not_found`.
 
 ```
 POST /api/email-configs

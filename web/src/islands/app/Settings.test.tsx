@@ -10,6 +10,7 @@ const deleteEmailConfigsById = vi.fn();
 const postEmailConfigsByIdTest = vi.fn();
 const putArchive = vi.fn();
 const putNotifications = vi.fn();
+const putOrder = vi.fn();
 const getDevices = vi.fn();
 const deleteDevicesById = vi.fn();
 const postDevicesTest = vi.fn();
@@ -70,6 +71,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     putArchive(id, mailbox),
   putEmailConfigsByIdNotifications: (id: string, body: unknown) =>
     putNotifications(id, body),
+  putEmailConfigsOrder: (ids: string[]) => putOrder(ids),
 }));
 
 const work: EmailConfig = {
@@ -94,6 +96,24 @@ const work: EmailConfig = {
   notify: "now",
   digest_every: 60,
 };
+
+/** The accounts' names, top to bottom. */
+const names = () =>
+  screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+
+/** An answer given when the test says. */
+function later<T>() {
+  const out = {} as {
+    promise: Promise<T>;
+    give: (value: T) => void;
+    refuse: (err: Error) => void;
+  };
+  out.promise = new Promise<T>((give, refuse) => {
+    out.give = give;
+    out.refuse = refuse;
+  });
+  return out;
+}
 
 beforeEach(() => {
   getEmailConfigs.mockResolvedValue([work]);
@@ -127,6 +147,45 @@ describe("settings", () => {
     screen.getByText("misha@example.com");
     screen.getByText("IMAP · imap.example.com:993 · TLS");
     screen.getByText("None");
+  });
+
+  it("moves a mail account up or down, in its new place at once", async () => {
+    const home = { ...work, id: "ec_2", name: "Home" };
+    const shop = { ...work, id: "ec_3", name: "Shop" };
+    getEmailConfigs.mockResolvedValue([work, home, shop]);
+    const moved = later<EmailConfig[]>();
+    putOrder.mockReturnValue(moved.promise);
+    mount(<Settings editing={null} />);
+    await screen.findByText("Shop");
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Move Work up" })
+        .disabled,
+    ).toBe(true);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Move Shop down" })
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Shop up" }));
+    await waitFor(() =>
+      expect(putOrder).toHaveBeenCalledWith(["ec_1", "ec_3", "ec_2"]),
+    );
+    await waitFor(() => expect(names()).toEqual(["Work", "Shop", "Home"]));
+    moved.give([work, shop, home]);
+
+    // Refused, it goes back to where it was.
+    const refused = later<EmailConfig[]>();
+    putOrder.mockReturnValue(refused.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Move Work down" }));
+    await waitFor(() => expect(names()).toEqual(["Shop", "Work", "Home"]));
+    refused.refuse(new Error("no"));
+    await waitFor(() => expect(names()).toEqual(["Work", "Shop", "Home"]));
+  });
+
+  it("offers no moving for a single mail account", async () => {
+    mount(<Settings editing={null} />);
+    await screen.findByText("Work");
+    expect(screen.queryByRole("button", { name: /^Move / })).toBeNull();
   });
 
   it("says who is signed in and offers a way out", async () => {

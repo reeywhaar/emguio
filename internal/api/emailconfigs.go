@@ -132,6 +132,23 @@ func (s *Server) listEmailConfigs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"email_configs": out})
 }
 
+// orderEmailConfigs puts the user's email configs in the order given, which every list of them
+// follows.
+func (s *Server) orderEmailConfigs(w http.ResponseWriter, r *http.Request) {
+	var body orderBody
+	if !decode(w, r, &body) {
+		return
+	}
+	u := userOf(r)
+	if err := s.store.SetEmailConfigOrder(r.Context(), u.ID, body.IDs); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("mail accounts put in order", "user", u.ID, "email_configs", len(body.IDs))
+	s.store.Notify(u.ID)
+	s.listEmailConfigs(w, r)
+}
+
 func (s *Server) createEmailConfig(w http.ResponseWriter, r *http.Request) {
 	var body emailConfigBody
 	if !decode(w, r, &body) {

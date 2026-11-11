@@ -26,6 +26,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     cursor: string,
   ) => getMessages(id, mailbox, cursor),
   postEmailConfigsByIdSync: vi.fn(),
+  putEmailConfigsOrder: vi.fn(),
 }));
 vi.mock("@app/leave", () => ({ leaveFor: (path: string) => leaveFor(path) }));
 

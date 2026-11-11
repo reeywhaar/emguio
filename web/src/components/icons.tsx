@@ -203,6 +203,18 @@ export const ForwardMark = () => (
   </Mark>
 );
 
+export const UpMark = () => (
+  <Mark>
+    <path d="M8 13V3M4 7l4-4 4 4" />
+  </Mark>
+);
+
+export const DownMark = () => (
+  <Mark>
+    <path d="M8 3v10M4 9l4 4 4-4" />
+  </Mark>
+);
+
 export const ChevronMark = () => (
   <Mark>
     <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />

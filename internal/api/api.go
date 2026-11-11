@@ -136,6 +136,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("POST /api/email-configs", s.requireSession(s.createEmailConfig))
 	s.handle("POST /api/email-configs/test", s.requireSession(s.testEmailConfig))
 	s.handle("POST /api/email-configs/autoconfig", s.requireSession(s.lookUpSettings))
+	s.handle("PUT /api/email-configs/order", s.requireSession(s.orderEmailConfigs))
 	s.handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
 	s.handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
 	s.handle("PUT /api/email-configs/{id}/archive", s.requireSession(s.putArchive))

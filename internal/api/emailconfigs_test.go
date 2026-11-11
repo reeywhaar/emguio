@@ -194,3 +194,48 @@ func readAll(t *testing.T, resp *http.Response) string {
 	}
 	return string(b)
 }
+
+// Mail accounts are listed in the order the user put them, a new one last.
+func TestEmailConfigsArePutInOrder(t *testing.T) {
+	s, st := newServerStore(t, nil)
+	c := signIn(t, s, st)
+	id := map[string]string{}
+	add := func(name string) {
+		body := strings.Replace(configBody(993, 0, "hunter2"), `"Work"`, fmt.Sprintf("%q", name), 1)
+		id[name] = c.json(c.do("POST", "/api/email-configs", body))["id"].(string)
+	}
+	names := func(got map[string]any) string {
+		var out []string
+		for _, ec := range got["email_configs"].([]any) {
+			out = append(out, ec.(map[string]any)["name"].(string))
+		}
+		return strings.Join(out, ",")
+	}
+	add("Work")
+	add("Home")
+	add("Shop")
+
+	resp := c.do("PUT", "/api/email-configs/order", fmt.Sprintf(`{"ids":[%q,%q]}`, id["Shop"], id["Work"]))
+	if got := c.json(resp); resp.StatusCode != http.StatusOK || names(got) != "Shop,Work,Home" {
+		t.Fatalf("order = %s %v", resp.Status, got)
+	}
+	add("Club")
+	if got := names(c.json(c.do("GET", "/api/email-configs", ""))); got != "Shop,Work,Home,Club" {
+		t.Errorf("listed %s, want a new one last", got)
+	}
+
+	user(t, st, "robin", "a good password")
+	robin := newClient(t, s)
+	robin.do("POST", "/api/auth/login", `{"username":"robin","password":"a good password"}`)
+	theirs := robin.json(robin.do("POST", "/api/email-configs", configBody(993, 0, "hunter2")))["id"].(string)
+	for body, want := range map[string]int{
+		fmt.Sprintf(`{"ids":[%q,%q]}`, id["Work"], id["Work"]): http.StatusBadRequest,
+		`{"ids":[]}`:                        http.StatusBadRequest,
+		`{"ids":["mb_nope"]}`:               http.StatusBadRequest,
+		fmt.Sprintf(`{"ids":[%q]}`, theirs): http.StatusNotFound,
+	} {
+		if resp := c.do("PUT", "/api/email-configs/order", body); resp.StatusCode != want {
+			t.Errorf("%s = %s, want %d", body, resp.Status, want)
+		}
+	}
+}

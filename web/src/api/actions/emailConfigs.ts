@@ -35,6 +35,13 @@ export const deleteEmailConfigsById = (id: string) =>
     method: "DELETE",
   });
 
+/** Puts the mail accounts in an order; answered with every one, in the new order. */
+export const putEmailConfigsOrder = (ids: string[]) =>
+  request<{ email_configs: EmailConfig[] }>("/api/email-configs/order", {
+    method: "PUT",
+    body: { ids },
+  }).then((it) => it.email_configs);
+
 /** Signs in to a draft that is not saved yet. */
 export const postEmailConfigsTest = (body: EmailConfigDraft) =>
   request<TestResult>("/api/email-configs/test", { method: "POST", body });
