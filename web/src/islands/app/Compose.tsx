@@ -11,6 +11,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   deleteEmailConfigsByIdDraftsByDraft,
   getEmailConfigs,
+  getEmailConfigsByIdHold,
   postEmailConfigsByIdDrafts,
   postEmailConfigsByIdSend,
   putEmailConfigsByIdDraftsByDraft,
@@ -29,7 +30,7 @@ import { Dialog } from "@app/components/Dialog";
 import { Field } from "@app/components/Field";
 import { fieldLook, TextField } from "@app/components/TextField";
 import { Cross } from "@app/components/icons";
-import { size } from "@app/format";
+import { full, size } from "@app/format";
 import { useAsk } from "@app/islands/app/ask";
 import {
   differs,
@@ -42,6 +43,7 @@ import {
 import { Link } from "@app/islands/app/Link";
 import { say } from "@app/islands/app/notices";
 import { paths } from "@app/islands/app/route";
+import { SendLater } from "@app/islands/app/SendLater";
 
 /** What most mail servers take, attachments and all; the server says the same. */
 const LIMIT = 25 * 1024 * 1024;
@@ -78,6 +80,18 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     queryFn: getEmailConfigs,
   });
   const config = configs.data?.find((c) => c.id === draft.config);
+  // Until when its outgoing server holds mail to send later; asked, and not shown when it cannot
+  // be.
+  const hold = useQuery({
+    queryKey: qk.hold(draft.config),
+    queryFn: () => getEmailConfigsByIdHold(draft.config),
+    enabled: Boolean(config?.outgoing),
+    staleTime: 10 * 60 * 1000,
+    retry: false,
+  });
+  const holdUntil = hold.data?.latest ?? null;
+  const [later, setLater] = useState(false);
+  const [laterOpened, setLaterOpened] = useState(0);
 
   // What is written, for saves that finish after the render they started in.
   const latest = useRef(draft);
@@ -151,15 +165,18 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
   }, [open, changed, draft, keep]);
 
   const send = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (at?: number) => {
       stopped.current = true;
       await saves.current;
       const d = latest.current;
-      return postEmailConfigsByIdSend(d.config, await outgoing(d, false));
+      return postEmailConfigsByIdSend(d.config, {
+        ...(await outgoing(d, false)),
+        send_at: at ?? 0,
+      });
     },
-    onSuccess: () => {
+    onSuccess: (_, at) => {
       stopWriting();
-      say("Sent.");
+      say(at ? `Scheduled for ${full(at)}.` : "Sent.");
     },
     onError: () => {
       stopped.current = false;
@@ -263,7 +280,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     stopWriting();
   };
 
-  const submit = (e?: FormEvent) => {
+  const submit = (e?: FormEvent, at?: number) => {
     e?.preventDefault();
     const total =
       draft.files.reduce((n, f) => n + f.size, 0) +
@@ -276,7 +293,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
       return;
     }
     setProblem("");
-    send.mutate();
+    send.mutate(at);
   };
 
   const edit = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
@@ -344,14 +361,44 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
           <Button onClick={discard} disabled={send.isPending}>
             Discard
           </Button>
+          {holdUntil !== null ? (
+            <Button
+              aria-label="Send later"
+              disabled={send.isPending || !config}
+              onClick={() => {
+                setLaterOpened((n) => n + 1);
+                setLater(true);
+              }}
+            >
+              {/* Shorter on a phone, so Send stays on the row beside it. */}
+              <span className="sm:hidden">Later…</span>
+              <span className="hidden sm:inline">Send later…</span>
+            </Button>
+          ) : null}
           <Button
             type="submit"
             form={form}
             variant="solid"
             disabled={send.isPending || !config}
           >
-            {send.isPending ? "Sending" : "Send"}
+            {send.isPending
+              ? send.variables
+                ? "Scheduling"
+                : "Sending"
+              : "Send"}
           </Button>
+          {holdUntil !== null && laterOpened > 0 ? (
+            <SendLater
+              key={laterOpened}
+              open={later}
+              latest={holdUntil}
+              onClose={() => setLater(false)}
+              onPick={(at) => {
+                setLater(false);
+                submit(undefined, at);
+              }}
+            />
+          ) : null}
         </>
       }
     >

@@ -640,6 +640,7 @@ leaves first, for at most two minutes.
 | `draft_id` | The draft kept in emguio that this is; see [Drafts](#drafts). Once this has gone the draft is removed, and its copy in Drafts deleted. |
 | `parts` | The ids of the attachments that draft holds that go with this one, in order. |
 | `close` | Not used here. |
+| `send_at` | When the outgoing server is to send it, in Unix seconds; `0`, or leaving it out, is now. See below. |
 
 Mail goes from the email config's `email`, with its `sender_name`. emguio adds no `Re:`, quote or
 forwarded header: what `subject` and `text` say is what is sent. Attachments go in this order: the
@@ -662,6 +663,22 @@ curl -b jar -c jar -H 'Content-Type: application/json' \
   -d '{"to":"bob@example.org","subject":"Lunch","text":"Thursday at one?"}' \
   "https://emguio.example.com/api/email-configs/$EC/send"
 ```
+
+```
+GET /api/email-configs/{id}/hold
+```
+
+Until when the email config's outgoing server will hold a message to send it later:
+`{"latest": 1821000000}`, in Unix seconds, or `{"latest": null}` for a server that holds none, or
+no outgoing server. It is the server's FUTURERELEASE (RFC 4865), the longest it holds and the
+latest date it names, whichever is earlier. emguio signs in to ask, and keeps the answer ten
+minutes. A server that cannot be reached answers `502 unreachable`.
+
+With `send_at` on a send, the message is handed to the outgoing server at once, with
+`HOLDUNTIL`, and the server sends it at that time, with no device on. It is dated `send_at`, and
+its copy in Sent is filed now, dated `send_at` too. Nothing in emguio can call it back once it has
+been handed over. A time less than a minute away answers `400 invalid`; a server that holds no
+mail, or not that long, `502 unreachable` with its reason, and nothing has been handed over.
 
 ## Drafts
 

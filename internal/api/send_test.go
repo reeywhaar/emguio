@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"emguio/internal/connect"
 	"emguio/internal/connect/connecttest"
@@ -22,7 +23,7 @@ func withOutbox(t *testing.T) (*client, string, map[string]string, *connecttest.
 	s, st := newServerStore(t, nil)
 	cert := connecttest.NewCert(t)
 	s.connector = connect.New(connecttest.Loopback).WithRoots(cert.Pool)
-	box := &connecttest.Outbox{}
+	box := &connecttest.Outbox{Holds: 24 * time.Hour}
 	port := connecttest.SMTPInto(t, cert, connect.Implicit, "misha", "hunter2", box)
 	fake := &fakeMirror{store: st}
 	s.mirror = fake
@@ -138,4 +139,41 @@ func TestWhatCannotBeSentSaysWhy(t *testing.T) {
 func nowhereConfig(t *testing.T, c *client) string {
 	t.Helper()
 	return c.json(c.do("GET", "/api/email-configs", ""))["email_configs"].([]any)[0].(map[string]any)["id"].(string)
+}
+
+// A message is handed over to be sent later, to a server that holds mail: dated then, filed in
+// Sent dated then, and asked to go then. Not sooner than a minute from now.
+func TestAMessageIsHandedOverToSendLater(t *testing.T) {
+	c, cfg, _, box, fake := withOutbox(t)
+	got := c.json(c.do("GET", "/api/email-configs/"+cfg+"/hold", ""))
+	latest, _ := got["latest"].(float64)
+	if d := time.Until(time.Unix(int64(latest), 0)); d < 23*time.Hour || d > 24*time.Hour {
+		t.Fatalf("hold = %v", got)
+	}
+
+	at := time.Now().Add(2 * time.Hour).Truncate(time.Second).UTC()
+	resp := c.do("POST", "/api/email-configs/"+cfg+"/send",
+		fmt.Sprintf(`{"to":"robin@example.com","subject":"Later","text":"Hi.","send_at":%d}`, at.Unix()))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("send later = %s %v", resp.Status, c.json(resp))
+	}
+	sent := box.Sent()
+	if len(sent) != 1 || !sent[0].HoldUntil.Equal(at) {
+		t.Fatalf("sent = %+v", sent)
+	}
+	if date := "Date: " + at.Format(time.RFC1123Z); !strings.Contains(string(sent[0].Data), date) {
+		t.Errorf("the message is not dated %s:\n%s", at, sent[0].Data)
+	}
+	if len(fake.sendings) != 1 || !fake.sendings[0].Date.Equal(at) {
+		t.Errorf("filed %+v", fake.sendings)
+	}
+
+	resp = c.do("POST", "/api/email-configs/"+cfg+"/send",
+		fmt.Sprintf(`{"to":"robin@example.com","subject":"Now","text":"Hi.","send_at":%d}`, time.Now().Unix()))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("send at now = %s", resp.Status)
+	}
+	if len(box.Sent()) != 1 {
+		t.Error("a time that has come was handed over")
+	}
 }

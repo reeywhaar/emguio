@@ -47,6 +47,8 @@ type Server struct {
 	mirror Mirror
 	// push is nil in tests that send no notifications.
 	push Pusher
+	// holds is what outgoing servers said about holding mail to send later.
+	holds holds
 	// finder looks up a mail domain's settings; a field so a test can stand in for the web.
 	finder *autoconfig.Finder
 	// imageClient fetches what the image proxy relays, and proxyKey signs what it may fetch.
@@ -98,6 +100,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		connector: connect.New(cfg.AllowNetworks),
 		mirror:    mirror,
 		push:      push,
+		holds:     holds{said: map[string]heldUntil{}},
 		proxyKey:  proxyKey(cfg.SecretKey),
 
 		loginAll:  newLimiter(30, 2*time.Second),
@@ -140,6 +143,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
 	s.handle("POST /api/email-configs/{id}/sync", s.requireSession(s.syncEmailConfig))
 	s.handle("POST /api/email-configs/{id}/send", s.requireSession(s.sendMessage))
+	s.handle("GET /api/email-configs/{id}/hold", s.requireSession(s.holdLimit))
 	s.handle("POST /api/email-configs/{id}/drafts", s.requireSession(s.createDraft))
 	s.handle("PUT /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.saveDraft))
 	s.handle("DELETE /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.deleteDraft))

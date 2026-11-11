@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,10 +31,10 @@ func (c *Connector) CheckSMTP(ctx context.Context, s Server) error {
 	return nil
 }
 
-// Send signs in and hands msg to the server for every address in to, from the address from.
-// The server's refusal — of the sender, of a recipient, of the message — comes back in a
-// sentence.
-func (c *Connector) Send(ctx context.Context, s Server, from string, to []string, msg io.Reader) error {
+// Send signs in and hands msg to the server for every address in to, from the address from:
+// with until, for the server to hold and send then. The server's refusal — of the sender, of a
+// recipient, of the message, of the time — comes back in a sentence.
+func (c *Connector) Send(ctx context.Context, s Server, from string, to []string, msg io.Reader, until time.Time) error {
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()
 	client, release, err := c.openSMTP(ctx, s)
@@ -41,11 +43,81 @@ func (c *Connector) Send(ctx context.Context, s Server, from string, to []string
 	}
 	defer release()
 	defer client.Close()
-	if err := client.SendMail(from, to, msg); err != nil {
+	if ok, _ := client.Extension("FUTURERELEASE"); !until.IsZero() && !ok {
+		return fail("refused", "%s does not hold mail to send later.", s.addr())
+	}
+	if err := send(client, from, to, msg, until); err != nil {
 		return failed(ctx, s, smtpFailure(s, "send", err))
 	}
 	client.Quit()
 	return nil
+}
+
+// send is the client's SendMail, with a time to hold the message until.
+func send(client *smtp.Client, from string, to []string, msg io.Reader, until time.Time) error {
+	opts := &smtp.MailOptions{HoldUntil: until}
+	opts.UTF8 = !ascii(from) || slices.ContainsFunc(to, func(a string) bool { return !ascii(a) })
+	if err := client.Mail(from, opts); err != nil {
+		return err
+	}
+	for _, addr := range to {
+		if err := client.Rcpt(addr, nil); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(w, msg); err != nil {
+		return err
+	}
+	return w.Close()
+}
+
+func ascii(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// Holds is the latest the server will hold a message until, to send it then, zero for a server
+// that holds none: FUTURERELEASE (RFC 4865) in its greeting, with the longest hold in seconds and
+// the latest date, of which the earlier.
+func (c *Connector) Holds(ctx context.Context, s Server) (time.Time, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	client, release, err := c.openSMTP(ctx, s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer release()
+	defer client.Close()
+	ok, limits := client.Extension("FUTURERELEASE")
+	client.Quit()
+	if !ok {
+		return time.Time{}, nil
+	}
+	return latest(limits, time.Now()), nil
+}
+
+func latest(limits string, now time.Time) time.Time {
+	var out time.Time
+	fields := strings.Fields(limits)
+	if len(fields) > 0 {
+		if secs, err := strconv.ParseInt(fields[0], 10, 64); err == nil && secs > 0 {
+			out = now.Add(time.Duration(secs) * time.Second)
+		}
+	}
+	if len(fields) > 1 {
+		if at, err := time.Parse(time.RFC3339, fields[1]); err == nil && (out.IsZero() || at.Before(out)) {
+			out = at
+		}
+	}
+	return out.UTC()
 }
 
 // openSMTP dials, says hello, secures the connection and signs in. The connection lives until

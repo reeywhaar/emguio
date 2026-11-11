@@ -178,15 +178,21 @@ func SMTP(t testing.TB, cert *Cert, mode, username, password string) int {
 
 // Outbox is what an SMTP server here was given to send.
 type Outbox struct {
+	// Holds is the longest the server holds a message to send later; zero offers no
+	// FUTURERELEASE.
+	Holds time.Duration
+
 	mu   sync.Mutex
 	sent []Delivery
 }
 
-// Delivery is one message handed to the server: who from, who to, and its bytes.
+// Delivery is one message handed to the server: who from, who to, its bytes, and when it was
+// asked to go, zero for at once.
 type Delivery struct {
-	From string
-	To   []string
-	Data []byte
+	From      string
+	To        []string
+	Data      []byte
+	HoldUntil time.Time
 }
 
 // Sent is every message given so far, in order.
@@ -209,6 +215,10 @@ func SMTPInto(t testing.TB, cert *Cert, mode, username, password string, box *Ou
 	srv.Domain = "localhost"
 	srv.AllowInsecureAuth = mode == ""
 	srv.ErrorLog = log.New(io.Discard, "", 0)
+	if box != nil && box.Holds > 0 {
+		srv.EnableFUTURERELEASE = true
+		srv.MaxFutureRelease = box.Holds
+	}
 	if mode == "starttls" {
 		srv.TLSConfig = cert.Config
 	}
@@ -310,6 +320,7 @@ type smtpSession struct {
 	box                *Outbox
 	from               string
 	to                 []string
+	hold               time.Time
 }
 
 func (s *smtpSession) AuthMechanisms() []string { return []string{sasl.Plain} }
@@ -323,8 +334,11 @@ func (s *smtpSession) Auth(string) (sasl.Server, error) {
 	}), nil
 }
 
-func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
+func (s *smtpSession) Mail(from string, opts *smtp.MailOptions) error {
 	s.from = from
+	if opts != nil {
+		s.hold = opts.HoldUntil
+	}
 	return nil
 }
 
@@ -343,11 +357,11 @@ func (s *smtpSession) Data(r io.Reader) error {
 	}
 	s.box.mu.Lock()
 	defer s.box.mu.Unlock()
-	s.box.sent = append(s.box.sent, Delivery{From: s.from, To: s.to, Data: data})
+	s.box.sent = append(s.box.sent, Delivery{From: s.from, To: s.to, Data: data, HoldUntil: s.hold})
 	return nil
 }
 
 func (s *smtpSession) Reset() {
-	s.from, s.to = "", nil
+	s.from, s.to, s.hold = "", nil, time.Time{}
 }
 func (s *smtpSession) Logout() error { return nil }

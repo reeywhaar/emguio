@@ -19,6 +19,7 @@ const getMailboxes = vi.fn();
 const postJob = vi.fn();
 
 const postSend = vi.fn();
+const getHold = vi.fn();
 const postDraft = vi.fn();
 const getConversation = vi.fn();
 const putDraft = vi.fn();
@@ -60,6 +61,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     },
   ],
   postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),
+  getEmailConfigsByIdHold: (id: string) => getHold(id),
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessageConversation: (
     id: string,
     mailbox: string,
@@ -164,6 +166,7 @@ beforeEach(() => {
   window.history.pushState({}, "", "/c/ec_1/mb_inbox/m_1");
   getMailboxes.mockResolvedValue([inbox, archive, trash, junk, work]);
   getMessage.mockResolvedValue(read());
+  getHold.mockResolvedValue({ latest: null });
   getConversation.mockResolvedValue({ messages: [], earlier: 0 });
   // The server takes every job at once, and does it later.
   postJob.mockImplementation(async (body: JobDraft) => ({
@@ -469,6 +472,52 @@ describe("the reading pane", () => {
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     screen.getByText("Sent.");
+  });
+
+  // Offered where the outgoing server holds mail: a time picked, up to the latest it holds, goes
+  // with the message, and the window says when it goes.
+  it("schedules a reply to be sent later", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    postSend.mockResolvedValue({ message_id: "<r@example.com>" });
+    const week = Math.floor(Date.now() / 1000) + 7 * 86400;
+    getHold.mockResolvedValue({ latest: week });
+    open();
+    fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send later" }));
+    const later = within(
+      (await screen.findByRole("heading", { name: "Send later" })).closest(
+        "dialog",
+      )!,
+    );
+    const at = new Date(Date.now() + 3 * 3600 * 1000);
+    at.setSeconds(0, 0);
+    // The field holds local time, to the minute.
+    const local = new Date(at.getTime() - at.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    fireEvent.change(later.getByLabelText("Date and time"), {
+      target: { value: local },
+    });
+    fireEvent.click(later.getByRole("button", { name: "Schedule" }));
+
+    await waitFor(() => expect(postSend).toHaveBeenCalledTimes(1));
+    const [, body] = postSend.mock.calls[0] as [string, Outgoing];
+    expect(body.send_at).toBe(at.getTime() / 1000);
+    await screen.findByText(/^Scheduled for /);
+  });
+
+  it("offers no later sending where the server holds no mail", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    getHold.mockResolvedValue({ latest: null });
+    open();
+    fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    await screen.findByRole("button", { name: "Send" });
+    await waitFor(() => expect(getHold).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Send later" })).toBeNull();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   // A forward carries the message's attachments; a refusal is said in the window, and what was

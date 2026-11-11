@@ -70,6 +70,8 @@ type Sending struct {
 	// ID is the message's Message-ID, and Raw the message.
 	ID  string
 	Raw []byte
+	// Date is when it goes: now, or the time the server holds it until.
+	Date time.Time
 	// Answers is the message it replies to, marked answered; nil for none.
 	Answers *Located
 	// Draft is the draft it was written in, deleted; nil for none.
@@ -102,7 +104,7 @@ func (m *Mirror) Sent(t store.SyncTarget, s Sending) {
 		case <-time.After(fileAfter):
 		}
 		if s.Sent != nil {
-			if err := m.file(ctx, t, s.Sent.Name, s.ID, s.Raw); err != nil && ctx.Err() == nil {
+			if err := m.file(ctx, t, s.Sent.Name, s.ID, s.Raw, s.Date); err != nil && ctx.Err() == nil {
 				m.log.Warn("a sent message could not be filed in Sent", append(who(t), "error", err.Error())...)
 			}
 		}
@@ -126,8 +128,9 @@ func (m *Mirror) Sent(t store.SyncTarget, s Sending) {
 	}()
 }
 
-// file appends raw to mailbox, read, unless a message there has its Message-ID already.
-func (m *Mirror) file(ctx context.Context, t store.SyncTarget, mailbox, id string, raw []byte) error {
+// file appends raw to mailbox, read and dated at, unless a message there has its Message-ID
+// already.
+func (m *Mirror) file(ctx context.Context, t store.SyncTarget, mailbox, id string, raw []byte, at time.Time) error {
 	return m.change(ctx, t, func(f *fetcher) error {
 		if _, _, err := f.open(mailbox, false, true); err != nil {
 			return err
@@ -141,9 +144,12 @@ func (m *Mirror) file(ctx context.Context, t store.SyncTarget, mailbox, id strin
 		if len(found.AllUIDs()) > 0 {
 			return nil
 		}
+		if at.IsZero() {
+			at = time.Now()
+		}
 		cmd := f.session.client.Append(mailbox, int64(len(raw)), &imap.AppendOptions{
 			Flags: []imap.Flag{imap.FlagSeen},
-			Time:  time.Now(),
+			Time:  at,
 		})
 		if _, err := cmd.Write(raw); err != nil {
 			cmd.Close()

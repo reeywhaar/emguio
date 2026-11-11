@@ -143,6 +143,17 @@ Multi-stage, and the stages do not depend on each other.
 - **`HEALTHCHECK` runs `emguio healthcheck`**, a second process asking the first, so the image
   needs no HTTP client and a wedged server fails it.
 
+## A dependency's missing fix is a patch, applied at build
+
+go-smtp's release cannot ask a server to hold a message (FUTURERELEASE, RFC 4865), so emguio
+builds against it with
+[patches/github.com/emersion/go-smtp+v0.25.1.patch](../patches/github.com/emersion/go-smtp+v0.25.1.patch)
+applied. `sh patch-packages.sh` does that for every patch in `patches/`, as npm's patch-package
+does: it fetches the release, applies the patch to a copy in `.patched/`, which git ignores, and
+points `go.mod` at the copy. The Dockerfile and CI run it; run it once after cloning, and again
+when a patch changes. A patch is a diff rather than a copy of the module, so what was changed
+stays readable, and it goes once a release has it.
+
 ## Tags
 
 A push to `main` that passes the tests moves two tags onto one image:
@@ -194,6 +205,7 @@ secrets, and stays quiet when they are not.
 ## Running from a checkout
 
 ```sh
+sh patch-packages.sh
 cd web && npm ci && npm run build && cd ..
 mkdir -p data
 EMGUIO_PUBLIC_URL=http://localhost EMGUIO_DATA_DIR=data \

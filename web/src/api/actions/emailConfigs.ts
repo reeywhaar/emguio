@@ -135,6 +135,12 @@ export const postEmailConfigsByIdSend = (id: string, body: Outgoing) =>
     { method: "POST", body },
   );
 
+/** Until when the outgoing server holds a message to send later; null for never. */
+export const getEmailConfigsByIdHold = (id: string) =>
+  request<{ latest: number | null }>(
+    `/api/email-configs/${encodeURIComponent(id)}/hold`,
+  );
+
 /** Keeps a new draft in emguio, written to Drafts in a while; with close, now. */
 export const postEmailConfigsByIdDrafts = <T extends KeptDraft | ClosedDraft>(
   id: string,

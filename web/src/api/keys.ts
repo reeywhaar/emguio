@@ -10,6 +10,8 @@ export const qk = {
   emailConfigs: ["email-configs"] as const,
   /** The browsers that show the user's notifications. */
   devices: ["devices"] as const,
+  /** Until when a config's outgoing server holds mail to send later. */
+  hold: (config: string) => ["hold", config] as const,
   /** Everything read from every config's mail, for the event stream to invalidate at once. */
   mail: ["mail"] as const,
   mailboxes: (config: string) => ["mail", config, "mailboxes"] as const,

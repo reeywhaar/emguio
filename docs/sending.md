@@ -52,6 +52,18 @@ attachments go with it: the window lists them, any can be taken off, and the ser
 from the mail server by its section as it builds the message. The images an HTML message shows
 in place are not attachments, and are not carried.
 
+## A message can be sent later, held by the outgoing server
+
+Send later hands the message to the outgoing server now, with `HOLDUNTIL` on `MAIL FROM`
+(FUTURERELEASE, RFC 4865), and the server sends it at that time. Nothing waits in emguio and no
+device has to be on. It is offered only where the server's greeting lists FUTURERELEASE, and up
+to the latest time it names: the longest hold, or the latest date, whichever is earlier. emguio
+signs in to ask, when a message is written, and keeps the answer ten minutes.
+
+The message is dated the time it goes, since that is when its recipients get it, and its copy in
+Sent is filed at once, dated that time too, so it sorts where it will belong. The standard has no
+way to take a held message back, so emguio offers none.
+
 ## A copy is filed in Sent unless the server filed one
 
 Once the outgoing server has the message, the writer is told, and in the background, three

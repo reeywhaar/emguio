@@ -17,3 +17,6 @@ data/
 /emguio
 
 .DS_Store
+
+# Modules with their patches from patches/ applied, made by patch-packages.sh.
+.patched/

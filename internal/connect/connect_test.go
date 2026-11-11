@@ -82,7 +82,7 @@ func TestSMTPSendsAMessage(t *testing.T) {
 	msg := "From: misha@example.com\r\nTo: robin@example.com\r\nSubject: Hi\r\n\r\nHello.\r\n"
 
 	err := connector(cert).Send(context.Background(), s, "misha@example.com",
-		[]string{"robin@example.com", "kim@example.com"}, strings.NewReader(msg))
+		[]string{"robin@example.com", "kim@example.com"}, strings.NewReader(msg), time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,13 +93,49 @@ func TestSMTPSendsAMessage(t *testing.T) {
 	}
 
 	err = connector(cert).Send(context.Background(), s, "misha@example.com",
-		[]string{"robin@example.com", "nobody@" + connecttest.Refused}, strings.NewReader(msg))
+		[]string{"robin@example.com", "nobody@" + connecttest.Refused}, strings.NewReader(msg), time.Time{})
 	f := failure(t, err, "refused")
 	if !strings.Contains(f.Sentence, "No such user here") {
 		t.Errorf("sentence = %q", f.Sentence)
 	}
 	if n := len(box.Sent()); n != 1 {
 		t.Errorf("%d sent after a refusal", n)
+	}
+}
+
+// A server with FUTURERELEASE says how long it holds mail, and holds a message until the time
+// given; one without says so, and is handed nothing.
+func TestAMessageIsHeldToBeSentLater(t *testing.T) {
+	cert := connecttest.NewCert(t)
+	box := &connecttest.Outbox{Holds: 24 * time.Hour}
+	s := server(connecttest.SMTPInto(t, cert, connect.Implicit, "misha", "hunter2", box), connect.Implicit, "misha", "hunter2")
+	latest, err := connector(cert).Holds(context.Background(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Until(latest); d < 23*time.Hour || d > 24*time.Hour {
+		t.Errorf("holds until %s", latest)
+	}
+	until := time.Now().Add(time.Hour).Truncate(time.Second)
+	msg := "From: misha@example.com\r\nTo: robin@example.com\r\nSubject: Later\r\n\r\nHello.\r\n"
+	if err := connector(cert).Send(context.Background(), s, "misha@example.com",
+		[]string{"robin@example.com"}, strings.NewReader(msg), until); err != nil {
+		t.Fatal(err)
+	}
+	if sent := box.Sent(); len(sent) != 1 || !sent[0].HoldUntil.Equal(until) {
+		t.Fatalf("sent = %+v", sent)
+	}
+
+	plain := &connecttest.Outbox{}
+	s = server(connecttest.SMTPInto(t, cert, connect.Implicit, "misha", "hunter2", plain), connect.Implicit, "misha", "hunter2")
+	if latest, err := connector(cert).Holds(context.Background(), s); err != nil || !latest.IsZero() {
+		t.Errorf("a server without FUTURERELEASE holds until %s, %v", latest, err)
+	}
+	err = connector(cert).Send(context.Background(), s, "misha@example.com",
+		[]string{"robin@example.com"}, strings.NewReader(msg), until)
+	failure(t, err, "refused")
+	if n := len(plain.Sent()); n != 0 {
+		t.Errorf("%d handed over to hold to a server that holds none", n)
 	}
 }
 

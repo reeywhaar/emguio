@@ -214,7 +214,7 @@ func TestASentMessageIsFiledOnceAndItsOriginalAnswered(t *testing.T) {
 	if h := filed()[0]; h.Subject != "Re: Question" || !h.Flags.Seen {
 		t.Errorf("filed = %+v", h)
 	}
-	if err := w.mirror.file(ctx, w.target, "Sent", "<reply@example.com>", raw); err != nil || len(filed()) != 1 {
+	if err := w.mirror.file(ctx, w.target, "Sent", "<reply@example.com>", raw, time.Time{}); err != nil || len(filed()) != 1 {
 		t.Errorf("filed again: %v, %d in Sent", err, len(filed()))
 	}
 }

@@ -221,6 +221,8 @@ export type Outgoing = {
   /** The draft kept in emguio that this is, and the attachments it holds that go with it. */
   draft_id: string | null;
   parts: string[];
+  /** When the outgoing server is to send it, Unix seconds; 0 or none is now. */
+  send_at?: number;
   /** The window closing: the draft is written to the mail server now. */
   close?: boolean;
 };

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/mail"
 	"strings"
+	"sync"
+	"time"
 
 	"emguio/internal/compose"
 	"emguio/internal/connect"
@@ -47,6 +49,8 @@ type sendBody struct {
 	Parts   []string `json:"parts"`
 	// Close is a draft's window closing: it is written to the mail server now.
 	Close bool `json:"close"`
+	// SendAt is when the outgoing server is to send it, Unix seconds; 0 is now.
+	SendAt int64 `json:"send_at"`
 }
 
 type attachmentBody struct {
@@ -119,9 +123,21 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var until time.Time
+	if body.SendAt != 0 {
+		until = time.Unix(body.SendAt, 0).UTC()
+		if until.Before(s.store.Now().Add(time.Minute)) {
+			refuse(w, http.StatusBadRequest, CodeInvalid, "Choose a time at least a minute from now.")
+			return
+		}
+	}
 	wr, ok := s.gather(w, r, c, t, &body, held, parts)
 	if !ok {
 		return
+	}
+	date := s.store.Now()
+	if !until.IsZero() {
+		date = until
 	}
 	m := compose.Mail{
 		From:        mail.Address{Name: c.SenderName, Address: c.Email},
@@ -130,7 +146,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		Attachments: wr.files,
 		InReplyTo:   wr.inReplyTo,
 		References:  wr.references,
-		Date:        s.store.Now(),
+		Date:        date,
 	}
 	if err := m.SetAddresses(body.To, body.Cc, body.Bcc); err != nil {
 		refuse(w, http.StatusBadRequest, CodeInvalid, err.Error())
@@ -150,7 +166,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	// leaves the sending to finish, rather than cutting it off halfway.
 	err = s.connector.Send(context.WithoutCancel(r.Context()), connect.Server{
 		Host: out.Host, Port: out.Port, TLS: out.TLS, Username: out.Username, Password: out.Password,
-	}, c.Email, built.Recipients, bytes.NewReader(built.Raw))
+	}, c.Email, built.Recipients, bytes.NewReader(built.Raw), until)
 	whose := []any{"user", u.ID, "email_config", c.ID, "host", out.Host}
 	var f *connect.Failure
 	switch {
@@ -162,8 +178,13 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.log.Info("message sent", append(whose, "recipients", len(built.Recipients),
-		"attachments", len(wr.files), "bytes", len(built.Raw))...)
+	if until.IsZero() {
+		s.log.Info("message sent", append(whose, "recipients", len(built.Recipients),
+			"attachments", len(wr.files), "bytes", len(built.Raw))...)
+	} else {
+		s.log.Info("message handed over to send later", append(whose, "recipients", len(built.Recipients),
+			"attachments", len(wr.files), "bytes", len(built.Raw), "until", until.Format(time.RFC3339))...)
+	}
 
 	gone = true
 	if s.mirror != nil {
@@ -176,7 +197,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.log.Warn("Sent could not be found, so the message is not filed there", "user", u.ID, "email_config", c.ID, "error", err.Error())
 		}
-		s.mirror.Sent(t, mirror.Sending{Sent: sent, ID: built.ID, Raw: built.Raw, Answers: wr.answers, Draft: wr.replaces})
+		s.mirror.Sent(t, mirror.Sending{Sent: sent, ID: built.ID, Raw: built.Raw, Date: date, Answers: wr.answers, Draft: wr.replaces})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"message_id": built.ID})
 }
@@ -349,4 +370,67 @@ func attachment(name, kind string, data []byte) compose.Attachment {
 		kind = "application/octet-stream"
 	}
 	return compose.Attachment{Name: name, Type: kind, Data: data}
+}
+
+// holdFresh is how long what an outgoing server said about holding mail is taken as still true.
+const holdFresh = 10 * time.Minute
+
+// holds is what each email config's outgoing server last said about holding mail to send later.
+type holds struct {
+	mu   sync.Mutex
+	said map[string]heldUntil
+}
+
+type heldUntil struct {
+	// config is the email config as it was saved when asked: another save may name another server.
+	config time.Time
+	asked  time.Time
+	latest time.Time
+}
+
+// holdLimit says until when an email config's outgoing server will hold a message to send it
+// later: FUTURERELEASE in its greeting. Asked of the server, and kept a while. See docs/sending.md.
+func (s *Server) holdLimit(w http.ResponseWriter, r *http.Request) {
+	u := userOf(r)
+	c, err := s.store.EmailConfig(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	logins, err := s.store.TargetLogins(r.Context(), targetOf(u, c))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if logins.Outgoing == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"latest": nil})
+		return
+	}
+	s.holds.mu.Lock()
+	said, ok := s.holds.said[c.ID]
+	s.holds.mu.Unlock()
+	if !ok || !said.config.Equal(c.UpdatedAt) || time.Since(said.asked) > holdFresh {
+		out := logins.Outgoing
+		latest, err := s.connector.Holds(r.Context(), connect.Server{
+			Host: out.Host, Port: out.Port, TLS: out.TLS, Username: out.Username, Password: out.Password,
+		})
+		var f *connect.Failure
+		switch {
+		case errors.As(err, &f):
+			refuse(w, http.StatusBadGateway, CodeUnreachable, f.Sentence)
+			return
+		case err != nil:
+			s.fail(w, r, err)
+			return
+		}
+		said = heldUntil{config: c.UpdatedAt, asked: time.Now(), latest: latest}
+		s.holds.mu.Lock()
+		s.holds.said[c.ID] = said
+		s.holds.mu.Unlock()
+	}
+	if said.latest.IsZero() {
+		writeJSON(w, http.StatusOK, map[string]any{"latest": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"latest": said.latest.Unix()})
 }

@@ -29,6 +29,10 @@ jobs:
           go-version: "1.27"
           cache: true
 
+      # go.mod points the modules in patches/ at their releases with the patches applied, made here.
+      - name: Patch packages
+        run: sh patch-packages.sh
+
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l .)
