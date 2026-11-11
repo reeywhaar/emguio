@@ -11,18 +11,22 @@ import (
 	"testing"
 )
 
-// Front is an IMAP server here with what the one it fronts lacks, NOTIFY (RFC 5465) and THREAD
-// (RFC 5256): it takes those commands itself, and a test says for it what a server with them would
-// say.
+// Front is an IMAP server here with what the one it fronts lacks, NOTIFY (RFC 5465), THREAD and
+// SORT (RFC 5256): it takes those commands itself, and a test says for it what a server with them
+// would say.
 type Front struct {
 	mu       sync.Mutex
 	asked    []string
 	threaded int
+	sorted   int
 	clients  []*notified
 	// Refuse, when set, is whether to answer a NOTIFY with BAD, given what it asked.
 	Refuse func(asked string) bool
 	// Threads is the answer to THREAD, as the server says it: "(1 2)(3)".
 	Threads string
+	// Sorts is the answer to SORT, as the server says it: "3 1 2". SORT is offered only while it
+	// is set.
+	Sorts string
 }
 
 // notified is one client's connection, written to one whole response at a time, so what is
@@ -74,6 +78,13 @@ func (n *Front) Tell(line string) {
 	}
 }
 
+// Sorted is how many times SORT was asked.
+func (n *Front) Sorted() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.sorted
+}
+
 // Threaded is how many times THREAD was asked.
 func (n *Front) Threaded() int {
 	n.mu.Lock()
@@ -93,6 +104,7 @@ var (
 	literal       = regexp.MustCompile(`\{(\d+)\+?\}\r?\n$`)
 	notifyCommand = regexp.MustCompile(`(?i)^(\S+) NOTIFY (.*?)\r?\n$`)
 	threadCommand = regexp.MustCompile(`(?i)^(\S+) UID THREAD `)
+	sortCommand   = regexp.MustCompile(`(?i)^(\S+) UID SORT `)
 	capability    = regexp.MustCompile(`^(\* CAPABILITY|\* OK \[CAPABILITY|\S+ OK \[CAPABILITY)`)
 )
 
@@ -118,7 +130,13 @@ func (n *Front) serve(t testing.TB, client net.Conn, behind int) {
 				return
 			}
 			// The server behind says only what it has itself.
-			response = capability.ReplaceAll(response, []byte("${1} NOTIFY THREAD=REFERENCES"))
+			has := "${1} NOTIFY THREAD=REFERENCES"
+			n.mu.Lock()
+			if n.Sorts != "" {
+				has += " SORT"
+			}
+			n.mu.Unlock()
+			response = capability.ReplaceAll(response, []byte(has))
 			if c.write(response) != nil {
 				return
 			}
@@ -139,6 +157,14 @@ func (n *Front) serve(t testing.TB, client net.Conn, behind int) {
 			threads := n.Threads
 			n.mu.Unlock()
 			c.write([]byte("* THREAD " + threads + "\r\n" + m[1] + " OK THREAD done\r\n"))
+			continue
+		}
+		if m := sortCommand.FindStringSubmatch(line); m != nil {
+			n.mu.Lock()
+			n.sorted++
+			sorts := n.Sorts
+			n.mu.Unlock()
+			c.write([]byte("* SORT " + sorts + "\r\n" + m[1] + " OK SORT done\r\n"))
 			continue
 		}
 		if m := notifyCommand.FindStringSubmatch(line); m != nil {

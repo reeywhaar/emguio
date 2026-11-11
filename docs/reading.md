@@ -231,13 +231,27 @@ Another incoming host or another username is another mailbox store, and what was
 old one is not this config's mail any more. A new port or security setting is the same server,
 and what is kept stays.
 
-## A list is read a page at a time, by UID
+## A list is in the order mail arrived, read a page at a time
 
-A folder opens on its window, from here. Past it, and all of a folder not looked at yet, is read
-from the server, fifty at a time and newest to arrive first. The first page is the last messages
-by sequence number, which needs only the count the mailbox opens with. A later page asks the
-server which UIDs are below the last one shown, so mail arriving or leaving between two pages
-does not shift the second.
+A list is newest first by when each message arrived at the server, its internal date, and by UID
+within a second. Not by UID alone: a message moved in from another folder gets the next UID there
+but keeps the date it first arrived on, and by UID old mail moved into a folder would be at its
+top.
+
+The order is the server's `UID SORT (ARRIVAL)` (RFC 5256) where it has `SORT`: the folder's UIDs in
+order, in one answer. Dovecot and Cyrus have it; Gmail and Yandex do not. Elsewhere emguio asks for
+every message's date, `UID FETCH 1:… (UID INTERNALDATE)`, a few dozen bytes each, and sorts them.
+Either way the order is kept in memory, for the last sixteen folders asked about, while each holds
+what it held: the same UIDVALIDITY, `UIDNEXT` and count. A dated one is brought up to date rather
+than read again: the dates of what arrived since, and one `UID SEARCH` of what is there when the
+count says something left.
+
+A folder opens on its window, from here: its newest in that order. A pass works the order out only
+for a folder whose `UIDNEXT` or count moved, or whose window is short; otherwise the newest are the
+ones it keeps. Past the window, and all of a folder not looked at yet, is read from the server,
+fifty at a time. Each page goes on from the last message shown, named by its UID and its date, so
+mail arriving or leaving between two pages does not shift the second, and a message gone since is
+placed by its date. `SORT` says no dates, so there that one case dates the folder after all.
 
 The next page is asked for while the end of the list is still 200px below what shows of it, so
 scrolling down rarely reaches it. Until it arrives, the end is rows shaped like messages. A list
@@ -253,8 +267,8 @@ sender's claim, which spam and misconfigured clients get wrong; it is kept besid
 ## A folder is searched on the mail server
 
 Nothing is kept here to search, so a search is the server's `UID SEARCH` in the folder open,
-INBOX included: `?q=` on the folder's list, paged like it, fifty at a time and newest first, each
-run asking which matching UIDs are below the last shown. A server's own index — Gmail's,
+INBOX included: `?q=` on the folder's list, paged like it, fifty at a time and in its order, each
+run asking which UIDs match and going on past the last shown. A server's own index — Gmail's,
 Fastmail's, Dovecot's FTS — answers fast; one without searches every message and takes as long.
 One folder at a time because `SEARCH` is: across folders would be a search of each.
 

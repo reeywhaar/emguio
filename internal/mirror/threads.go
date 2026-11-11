@@ -132,7 +132,7 @@ func (m *Mirror) keepThreads(k *keptThreads) {
 	m.threads = append(m.threads, k)
 }
 
-// Headers is what a list shows of some of a mailbox's messages, by UID, newest first.
+// Headers is what a list shows of some of a mailbox's messages, highest UID first.
 func (m *Mirror) Headers(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32) ([]store.Header, error) {
 	var out []store.Header
 	err := m.use(ctx, t, func(f *fetcher) error {
@@ -158,7 +158,7 @@ const relatedMax = 60
 
 // Related is what of a mailbox belongs to a conversation, told by Message-IDs: messages that
 // answer one of answered, and those that are one of answers. It says the mailbox's UIDVALIDITY
-// with their headers, newest first.
+// with their headers, highest UID first.
 func (m *Mirror) Related(ctx context.Context, t store.SyncTarget, mailbox string, answered, answers []string) (*Listing, error) {
 	var keys []imap.SearchCriteria
 	header := func(name, id string) imap.SearchCriteria {

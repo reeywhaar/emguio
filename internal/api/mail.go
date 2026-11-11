@@ -20,9 +20,9 @@ type Mirror interface {
 	Reconcile()
 	// Refresh looks at every mailbox of one email config now.
 	Refresh(id string)
-	// List is a run of a mailbox's messages from the server, newest first; with q, of those
-	// the server finds for it.
-	List(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, before uint32, limit int, q string) (*mirror.Listing, error)
+	// List is a run of a mailbox's messages from the server, newest first, from the top or after
+	// a message a run before showed; with q, of those the server finds for it.
+	List(ctx context.Context, t store.SyncTarget, mailbox string, after mirror.After, limit int, q string) (*mirror.Listing, error)
 	// Read is one message as the server holds it, or mirror.ErrGone.
 	Read(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Opened, error)
 	// Part is one part of a message, its MIME header and its body, or mirror.ErrGone.
@@ -169,10 +169,10 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
-	var uidValidity, before uint32
+	var after mirror.After
 	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
 		var ok bool
-		if uidValidity, before, ok = ids.ParseMessage(cursor); !ok {
+		if after, ok = parseCursor(cursor); !ok {
 			refuse(w, http.StatusBadRequest, CodeInvalid, "That cursor is not one this gave out. Start the list again.")
 			return
 		}
@@ -186,7 +186,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		msgs []*store.Message
 		more bool
 	)
-	if q == "" && before == 0 && mb.SyncedAt != nil {
+	if q == "" && after.UID == 0 && mb.SyncedAt != nil {
 		window, err := s.store.Window(r.Context(), mb)
 		if err != nil {
 			s.fail(w, r, err)
@@ -198,7 +198,7 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 			refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
 			return
 		}
-		listing, err := s.mirror.List(r.Context(), targetOf(userOf(r), c), mb.Name, uidValidity, before, limit, q)
+		listing, err := s.mirror.List(r.Context(), targetOf(userOf(r), c), mb.Name, after, limit, q)
 		if !s.serverError(w, r, c.ID, err, "This folder has changed on the server since the list was opened. Open it again.") {
 			return
 		}
@@ -214,9 +214,28 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	body := map[string]any{"messages": out}
 	if more && len(msgs) > 0 {
-		body["next_cursor"] = msgs[len(msgs)-1].ID()
+		body["next_cursor"] = cursorOf(msgs[len(msgs)-1])
 	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+// cursorOf is where the next run of a list starts: after a message, named with the date it
+// arrived, which places it if it is gone by then.
+func cursorOf(m *store.Message) string {
+	return m.ID() + "-" + strconv.FormatInt(max(m.InternalDate.Unix(), 0), 10)
+}
+
+func parseCursor(cursor string) (mirror.After, bool) {
+	at := strings.LastIndex(cursor, "-")
+	if at < 0 {
+		return mirror.After{}, false
+	}
+	uidValidity, uid, ok := ids.ParseMessage(cursor[:at])
+	date, err := strconv.ParseInt(cursor[at+1:], 10, 64)
+	if !ok || err != nil || date < 0 {
+		return mirror.After{}, false
+	}
+	return mirror.After{UIDValidity: uidValidity, UID: uid, Date: time.Unix(date, 0)}, true
 }
 
 // syncEmailConfig asks for a look at every mailbox now. It answers at once: what the look finds

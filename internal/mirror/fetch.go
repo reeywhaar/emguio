@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"slices"
@@ -139,14 +140,12 @@ type Listing struct {
 	More bool
 }
 
-// List is a run of up to limit of a mailbox's messages, newest first: the newest, or with
-// before, the ones that arrived before that UID under uidValidity. With q, only those the server
-// finds for it, see Criteria.
+// List is a run of up to limit of a mailbox's messages, newest first: the newest, or the ones
+// after a message a run before showed. With q, only those the server finds for it, see Criteria.
 //
-// The first run is the last messages by sequence number, which needs only the count the mailbox
-// opens with. A later one, and every run of a search, asks the server which UIDs match below the
-// cursor, so mail arriving or leaving between two runs does not shift the second.
-func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, before uint32, limit int, q string) (*Listing, error) {
+// Every run is read off the mailbox's order by date, see orderOf, and goes on from the message
+// named, so mail arriving or leaving between two runs does not shift the second.
+func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, after After, limit int, q string) (*Listing, error) {
 	criteria := Criteria(q)
 	var out *Listing
 	err := m.use(ctx, t, func(f *fetcher) error {
@@ -154,53 +153,65 @@ func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, u
 		if err != nil {
 			return err
 		}
+		if after.UID != 0 && have != after.UIDValidity {
+			return ErrGone
+		}
 		out = &Listing{UIDValidity: have}
-		var set imap.NumSet
-		if before == 0 && criteria == nil {
-			if n == 0 {
-				return nil
-			}
-			from := uint32(1)
-			if n > uint32(limit) {
-				from = n - uint32(limit) + 1
-			}
-			set, out.More = seqRange(from, n), from > 1
-		} else {
-			var search imap.SearchCriteria
-			if criteria != nil {
-				search = *criteria
-			}
-			if before > 0 {
-				if have != uidValidity {
-					return ErrGone
+		at := counts{uidValidity: have, uidNext: f.uidNext, messages: n}
+		o, err := f.session.orderOf(mailbox, at, false)
+		if err != nil {
+			return err
+		}
+		from := 0
+		if after.UID != 0 {
+			var ok bool
+			if from, ok = o.after(after); !ok {
+				if o, err = f.session.orderOf(mailbox, at, true); err != nil {
+					return err
 				}
-				if before == 1 {
-					return nil
-				}
-				search.UID = []imap.UIDSet{{{Start: 1, Stop: imap.UID(before - 1)}}}
+				from, _ = o.after(after)
 			}
-			var opts *imap.SearchOptions
-			if caps := f.session.client.Caps(); caps.Has(imap.CapESearch) || caps.Has(imap.CapIMAP4rev2) {
-				opts = &imap.SearchOptions{ReturnAll: true}
-			}
-			found, err := f.session.client.UIDSearch(&search, opts).Wait()
+		}
+		var found map[uint32]bool
+		if criteria != nil {
+			res, err := f.session.client.UIDSearch(criteria, f.session.all()).Wait()
 			if err != nil {
 				return refused(err)
 			}
-			uids := found.AllUIDs()
-			slices.Sort(uids)
-			if len(uids) == 0 {
-				return nil
+			found = map[uint32]bool{}
+			for _, uid := range res.AllUIDs() {
+				found[uint32(uid)] = true
 			}
-			if len(uids) > limit {
-				uids, out.More = uids[len(uids)-limit:], true
-			}
-			set = imap.UIDSetNum(uids...)
 		}
-		out.Headers, err = f.session.fetch(set)
+		var uids []uint32
+		for _, p := range o.places[from:] {
+			if found != nil && !found[p.uid] {
+				continue
+			}
+			if len(uids) == limit {
+				out.More = true
+				break
+			}
+			uids = append(uids, p.uid)
+		}
+		if len(uids) == 0 {
+			return nil
+		}
+		headers, err := f.session.fetch(uidSet(uids))
+		out.Headers = inOrder(headers, uids)
 		return err
 	})
 	return out, err
+}
+
+// inOrder is headers in the order of uids.
+func inOrder(headers []store.Header, uids []uint32) []store.Header {
+	at := make(map[uint32]int, len(uids))
+	for i, uid := range uids {
+		at[uid] = i
+	}
+	slices.SortFunc(headers, func(a, b store.Header) int { return cmp.Compare(at[a.UID], at[b.UID]) })
+	return headers
 }
 
 // Opened is a message as a reading pane needs it: what a list shows of it, and its structure

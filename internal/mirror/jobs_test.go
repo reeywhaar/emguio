@@ -54,7 +54,7 @@ func TestJobsAreDoneOnTheServerInTheOrderAsked(t *testing.T) {
 	if got := subjects(kept); got != "Read me" || !kept[0].Flags.Seen || !kept[0].Flags.Flagged {
 		t.Errorf("INBOX keeps %q %+v", got, kept)
 	}
-	moved, err := w.mirror.List(context.Background(), w.target, "Archive", 0, 0, 10, "")
+	moved, err := w.mirror.List(context.Background(), w.target, "Archive", After{}, 10, "")
 	if err != nil || headers(moved.Headers) != "Archive me" {
 		t.Errorf("Archive = %v, %v", moved, err)
 	}
@@ -99,7 +99,7 @@ func TestARunOfTheSameJobIsOneCommand(t *testing.T) {
 	if !strings.HasSuffix(left.Message, "-4") || left.Error != "This message is no longer on the server." {
 		t.Errorf("left = %+v", left)
 	}
-	moved, err := w.mirror.List(context.Background(), w.target, "Archive", 0, 0, 10, "")
+	moved, err := w.mirror.List(context.Background(), w.target, "Archive", After{}, 10, "")
 	if err != nil || headers(moved.Headers) != "Three, Two, One" {
 		t.Errorf("Archive = %v, %v", moved, err)
 	}
@@ -204,7 +204,7 @@ func TestASentMessageIsFiledOnceAndItsOriginalAnswered(t *testing.T) {
 	w.mirror.Sent(w.target, Sending{Sent: sent, ID: "<reply@example.com>", Raw: raw,
 		Answers: &Located{Mailbox: inbox, UIDValidity: inbox.UIDValidity, UID: 1}})
 	filed := func() []store.Header {
-		listing, err := w.mirror.List(ctx, w.target, "Sent", 0, 0, 10, "")
+		listing, err := w.mirror.List(ctx, w.target, "Sent", After{}, 10, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -231,7 +231,7 @@ func TestADraftReplacesTheLastAndGoesOnceSent(t *testing.T) {
 	drafts := w.mailbox("Drafts")
 	ctx := context.Background()
 	kept := func() []store.Header {
-		listing, err := w.mirror.List(ctx, w.target, "Drafts", 0, 0, 10, "")
+		listing, err := w.mirror.List(ctx, w.target, "Drafts", After{}, 10, "")
 		if err != nil {
 			t.Fatal(err)
 		}

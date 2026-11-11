@@ -450,13 +450,13 @@ func (s *Store) DeleteMessages(ctx context.Context, mailboxID string, uids []uin
 	return tx.Commit()
 }
 
-// Window is the messages kept of a mailbox, newest to arrive first: INBOX's newest, which a
-// list opens on without asking the server.
+// Window is the messages kept of a mailbox, newest to arrive first and by UID within a second:
+// its newest, which a list opens on without asking the server.
 func (s *Store) Window(ctx context.Context, mb *Mailbox) ([]*Message, error) {
 	rows, err := s.reader.QueryContext(ctx,
 		`SELECT uid, internal_date, date, size, seen, flagged, answered, draft,
 		        subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview
-		   FROM messages WHERE mailbox_id = ? ORDER BY uid DESC`, mb.ID)
+		   FROM messages WHERE mailbox_id = ? ORDER BY internal_date DESC, uid DESC`, mb.ID)
 	if err != nil {
 		return nil, fmt.Errorf("window: %w", err)
 	}

@@ -246,23 +246,36 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 	}
 	defer s.unselect()
 
-	current := map[uint32]store.Flags{}
-	if n := data.NumMessages; n > 0 {
-		from := uint32(1)
-		if size := windowOf(mb); n > size {
-			from = n - size + 1
+	kept, err := s.m.store.MessageFlags(ctx, mb.ID)
+	if err != nil {
+		return false, err
+	}
+	// Nothing in or out since, and none of the window missing: the newest are those kept, without
+	// the order by date.
+	var newest []uint32
+	size := min(windowOf(mb), data.NumMessages)
+	same := mb.SyncedAt != nil && data.UIDValidity == mb.UIDValidity && uint32(data.UIDNext) == mb.UIDNext && data.NumMessages == mb.Messages
+	if !same || len(kept) != int(size) {
+		at := counts{uidValidity: data.UIDValidity, uidNext: uint32(data.UIDNext), messages: data.NumMessages}
+		o, err := s.orderOf(mb.Name, at, false)
+		if err != nil {
+			return false, err
 		}
-		msgs, err := s.client.Fetch(seqRange(from, n), &imap.FetchOptions{UID: true, Flags: true}).Collect()
+		newest = o.newest(int(size))
+	} else {
+		for uid := range kept {
+			newest = append(newest, uid)
+		}
+	}
+	current := map[uint32]store.Flags{}
+	if len(newest) > 0 {
+		msgs, err := s.client.Fetch(uidSet(newest), &imap.FetchOptions{UID: true, Flags: true}).Collect()
 		if err != nil {
 			return false, err
 		}
 		for _, msg := range msgs {
 			current[uint32(msg.UID)] = flagsOf(msg.Flags)
 		}
-	}
-	kept, err := s.m.store.MessageFlags(ctx, mb.ID)
-	if err != nil {
-		return false, err
 	}
 
 	var gone, missing []uint32
@@ -331,7 +344,7 @@ func arrivals(mb *store.Mailbox, now store.MailboxStatus, headers []store.Header
 	return out
 }
 
-// fetch is what a list shows of the messages in set, newest to arrive first.
+// fetch is what a list shows of the messages in set, highest UID first.
 func (s *session) fetch(set imap.NumSet) ([]store.Header, error) {
 	msgs, err := s.client.Fetch(set, &imap.FetchOptions{
 		UID:           true,
@@ -614,12 +627,6 @@ func clean(s string) string {
 		return r
 	}, s)
 	return strings.Join(strings.Fields(s), " ")
-}
-
-func seqRange(from, to uint32) imap.SeqSet {
-	var set imap.SeqSet
-	set.AddRange(from, to)
-	return set
 }
 
 func deref(n *uint32) uint32 {

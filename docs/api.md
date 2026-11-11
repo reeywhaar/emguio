@@ -385,12 +385,12 @@ A page of a folder's messages, newest to arrive first. Query parameters:
 | `q` | A search, at most 500 bytes; see [Search](#search). |
 
 ```json
-{"messages": [ … ], "next_cursor": "1700000000-4471"}
+{"messages": [ … ], "next_cursor": "1700000000-4471-1789990000"}
 ```
 
 `next_cursor` is there only while older messages remain; pass it, with the same `q`, for the next
-page. Pages after the first are read by UID, so mail arriving or leaving in between does not shift
-them. A cursor from before the folder's UIDVALIDITY changed answers `404 gone`: start the list
+page. It names the last message of the page and when it arrived, and the next page goes on after
+it, so mail arriving or leaving in between does not shift it. A cursor from before the folder's UIDVALIDITY changed answers `404 gone`: start the list
 again without one.
 
 A folder's first page, without `q`, is the newest messages emguio keeps of it — INBOX's 30, any

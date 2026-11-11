@@ -24,7 +24,7 @@ func (w *world) keep(f store.DraftFields, parts ...store.DraftPart) *store.Draft
 // drafts is what the mail server holds in Drafts.
 func (w *world) drafts() []store.Header {
 	w.t.Helper()
-	listing, err := w.mirror.List(context.Background(), w.target, "Drafts", 0, 0, 10, "")
+	listing, err := w.mirror.List(context.Background(), w.target, "Drafts", After{}, 10, "")
 	if err != nil {
 		w.t.Fatal(err)
 	}

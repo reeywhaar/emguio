@@ -51,6 +51,8 @@ type Mirror struct {
 	kick     chan struct{}
 	// threads are the conversations of the mailboxes last asked about, most recent last.
 	threads []*keptThreads
+	// orders are the order by date of the mailboxes last listed, most recent last.
+	orders []*order
 	// drafts wakes the draft writer, and drafting keeps it to one draft at a time.
 	drafts   chan struct{}
 	drafting sync.Mutex

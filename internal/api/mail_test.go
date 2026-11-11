@@ -26,7 +26,7 @@ type fakeMirror struct {
 	// listing is what a list from the server gets, listed the cursor of each one asked for, and
 	// searched the query of each that had one.
 	listing  *mirror.Listing
-	listed   []uint32
+	listed   []mirror.After
 	searched []string
 	// opened is the message on the server, and fetched how many times it was asked for.
 	opened  message.Structure
@@ -208,10 +208,10 @@ func (f *fakeMirror) Refresh(id string) {
 	f.refreshed = append(f.refreshed, id)
 	f.mu.Unlock()
 }
-func (f *fakeMirror) List(_ context.Context, _ store.SyncTarget, _ string, _, before uint32, _ int, q string) (*mirror.Listing, error) {
+func (f *fakeMirror) List(_ context.Context, _ store.SyncTarget, _ string, after mirror.After, _ int, q string) (*mirror.Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.listed = append(f.listed, before)
+	f.listed = append(f.listed, after)
 	if q != "" {
 		f.searched = append(f.searched, q)
 	}
@@ -333,18 +333,22 @@ func TestINBOXOpensOnTheWindowAndGoesOnFromTheServer(t *testing.T) {
 	// More on the server than is kept: the next run starts below the oldest kept.
 	st.SetMailboxStatus(context.Background(), inbox, store.MailboxStatus{UIDValidity: 7, Messages: 40})
 	first = c.json(c.do("GET", base, ""))
-	if first["next_cursor"] != "7-1" {
+	// The cursor says when the oldest kept arrived, to place it by if it is gone by then.
+	oldest := time.Date(2026, 9, 1, 9, 1, 0, 0, time.UTC)
+	cursor := fmt.Sprintf("7-1-%d", oldest.Unix())
+	if first["next_cursor"] != cursor {
 		t.Fatalf("next = %v", first["next_cursor"])
 	}
-	second := c.json(c.do("GET", base+"?cursor=7-1", ""))
-	if got := subjectsOf(second); got != "Older" || len(fake.listed) != 1 || fake.listed[0] != 1 {
+	second := c.json(c.do("GET", base+"?cursor="+cursor, ""))
+	if got := subjectsOf(second); got != "Older" || len(fake.listed) != 1 ||
+		fake.listed[0] != (mirror.After{UIDValidity: 7, UID: 1, Date: oldest.Local()}) {
 		t.Errorf("second page = %q, asked from %v", got, fake.listed)
 	}
 	if _, more := second["next_cursor"]; more {
 		t.Error("the last run offers another")
 	}
 
-	for _, bad := range []string{"?limit=9999", "?cursor=nonsense", "?cursor=7-0"} {
+	for _, bad := range []string{"?limit=9999", "?cursor=nonsense", "?cursor=7-1", "?cursor=7-0-1", "?cursor=7-1-x", "?cursor=7-1--5"} {
 		if resp := c.do("GET", base+bad, ""); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s = %s", bad, resp.Status)
 		}
@@ -354,19 +358,21 @@ func TestINBOXOpensOnTheWindowAndGoesOnFromTheServer(t *testing.T) {
 // Before its first look, a folder is the server's.
 func TestAFolderNotLookedAtIsListedFromTheServer(t *testing.T) {
 	s, _, c, cfg, _ := withMail(t, 1)
-	fake := &fakeMirror{listing: &mirror.Listing{UIDValidity: 9, Headers: []store.Header{{UID: 5, Subject: "Contract"}, {UID: 2, Subject: "Brief"}}, More: true}}
+	brief := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	fake := &fakeMirror{listing: &mirror.Listing{UIDValidity: 9, Headers: []store.Header{{UID: 5, Subject: "Contract"}, {UID: 2, Subject: "Brief", InternalDate: brief}}, More: true}}
 	s.mirror = fake
 	boxes := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes", ""))["mailboxes"].([]any)
 	work := boxes[1].(map[string]any)["id"].(string)
 
 	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+work+"/messages", ""))
-	if got := subjectsOf(page); got != "Contract,Brief" || page["next_cursor"] != "9-2" || fake.listed[0] != 0 {
+	cursor := fmt.Sprintf("9-2-%d", brief.Unix())
+	if got := subjectsOf(page); got != "Contract,Brief" || page["next_cursor"] != cursor || fake.listed[0].UID != 0 {
 		t.Errorf("page = %q next %v asked %v", got, page["next_cursor"], fake.listed)
 	}
 
 	// Renumbered since the list was opened: start again, and the sidebar is looked at.
 	fake.err = mirror.ErrGone
-	resp := c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+work+"/messages?cursor=9-2", "")
+	resp := c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+work+"/messages?cursor="+cursor, "")
 	if resp.StatusCode != http.StatusNotFound || c.json(resp)["code"] != CodeGone || len(fake.refreshed) != 1 {
 		t.Errorf("renumbered = %s, refreshed %v", resp.Status, fake.refreshed)
 	}
