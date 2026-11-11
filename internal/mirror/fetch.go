@@ -42,6 +42,9 @@ type fetcher struct {
 	writable    bool
 	uidValidity uint32
 	uidNext     uint32
+
+	// signingIn is how long the request under way waited for the session to sign in again.
+	signingIn time.Duration
 }
 
 // fetcherFor is the config's session for reading, or for changing, a new one when the config
@@ -148,8 +151,21 @@ type Listing struct {
 func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, after After, limit int, q string) (*Listing, error) {
 	criteria := Criteria(q)
 	var out *Listing
+	began := time.Now()
+	took := steps{began: began}
+	defer func() {
+		if total := time.Since(began); total >= slowList {
+			m.log.Info("a list read from the mail server was slow", append(who(t), append([]any{
+				"took", total.Round(time.Millisecond)}, took.said...)...)...)
+		}
+	}()
 	err := m.use(ctx, t, func(f *fetcher) error {
+		took.said = append(took.said, "waiting", (time.Since(began) - f.signingIn).Round(time.Millisecond),
+			"signing_in", f.signingIn.Round(time.Millisecond))
+		took.began = time.Now()
 		have, n, err := f.open(mailbox, false, true)
+		took.step("opening")
+		took.said = append(took.said, "messages", n)
 		if err != nil {
 			return err
 		}
@@ -172,9 +188,11 @@ func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, a
 				from, _ = o.after(after)
 			}
 		}
+		took.step("ordering")
 		var found map[uint32]bool
 		if criteria != nil {
 			res, err := f.session.client.UIDSearch(criteria, f.session.all()).Wait()
+			took.step("searching")
 			if err != nil {
 				return refused(err)
 			}
@@ -197,11 +215,32 @@ func (m *Mirror) List(ctx context.Context, t store.SyncTarget, mailbox string, a
 		if len(uids) == 0 {
 			return nil
 		}
-		headers, err := f.session.fetch(uidSet(uids))
+		msgs, headers, err := f.session.heads(uidSet(uids))
+		took.step("headers")
+		if err != nil {
+			return err
+		}
+		f.session.previews(msgs, headers)
+		took.step("previews")
 		out.Headers = inOrder(headers, uids)
-		return err
+		return nil
 	})
 	return out, err
+}
+
+// slowList is how long a list read from the server takes before what took how long is logged.
+var slowList = 2 * time.Second
+
+// steps is how long each step of a request took, said as a log says it.
+type steps struct {
+	began time.Time
+	said  []any
+}
+
+func (s *steps) step(name string) {
+	now := time.Now()
+	s.said = append(s.said, name, now.Sub(s.began).Round(time.Millisecond))
+	s.began = now
 }
 
 // inOrder is headers in the order of uids.
@@ -530,11 +569,14 @@ func refused(err error) error {
 
 // ready opens the session if there is none, or the one there was has closed.
 func (f *fetcher) ready(m *Mirror) error {
+	f.signingIn = 0
 	if f.session != nil && !f.closed() {
 		f.rest()
 		return nil
 	}
 	f.close()
+	began := time.Now()
+	defer func() { f.signingIn = time.Since(began) }()
 	life, cancel := context.WithCancel(context.Background())
 	s, err := m.open(life, f.target)
 	if err != nil {

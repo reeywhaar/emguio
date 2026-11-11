@@ -352,6 +352,16 @@ func arrivals(mb *store.Mailbox, now store.MailboxStatus, headers []store.Header
 
 // fetch is what a list shows of the messages in set, highest UID first.
 func (s *session) fetch(set imap.NumSet) ([]store.Header, error) {
+	msgs, out, err := s.heads(set)
+	if err != nil {
+		return nil, err
+	}
+	s.previews(msgs, out)
+	return out, nil
+}
+
+// heads is fetch without the previews.
+func (s *session) heads(set imap.NumSet) ([]*imapclient.FetchMessageBuffer, []store.Header, error) {
 	msgs, err := s.client.Fetch(set, &imap.FetchOptions{
 		UID:           true,
 		Flags:         true,
@@ -361,15 +371,14 @@ func (s *session) fetch(set imap.NumSet) ([]store.Header, error) {
 		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
 	}).Collect()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return cmp.Compare(b.UID, a.UID) })
 	out := make([]store.Header, 0, len(msgs))
 	for _, msg := range msgs {
 		out = append(out, header(msg))
 	}
-	s.previews(msgs, out)
-	return out, nil
+	return msgs, out, nil
 }
 
 // How much of a text part a preview is read from. A line of text and room for the markup an HTML

@@ -1,8 +1,10 @@
 package mirror
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -231,5 +233,31 @@ func TestAWindowKeptByAnOlderRuleIsChosenAgain(t *testing.T) {
 	}
 	if got := subjects(kept); got != "o20, o19, o18, o17, o16, o15, o14, o13, o12, o11" {
 		t.Errorf("Orders keeps %q, want its newest by date", got)
+	}
+}
+
+// A slow list says how long each step took: waiting for the session, signing in, opening the
+// folder, ordering it, reading the headers and the previews.
+func TestASlowListSaysWhatTookHowLong(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Archive")
+	w.deliver("Archive", 1, "alice@example.com", "a1")
+	var logged bytes.Buffer
+	w.mirror.log = slog.New(slog.NewTextHandler(&logged, nil))
+	was := slowList
+	slowList = 0
+	t.Cleanup(func() { slowList = was })
+
+	if _, err := w.mirror.List(context.Background(), w.target, "Archive", After{}, 10, "a1"); err != nil {
+		t.Fatal(err)
+	}
+	line := logged.String()
+	for _, key := range []string{"took=", "waiting=", "signing_in=", "opening=", "messages=1", "ordering=", "searching=", "headers=", "previews="} {
+		if !strings.Contains(line, key) {
+			t.Errorf("the log says %q, without %s", line, key)
+		}
+	}
+	if strings.Contains(line, "signing_in=0s") {
+		t.Errorf("the first list signed in, yet the log says %q", line)
 	}
 }

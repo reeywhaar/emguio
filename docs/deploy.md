@@ -97,9 +97,11 @@ sentence. A line says what happened in words, and its fields say whose it was �
 words a user is shown, the `error` as it came, and what happens next, such as `retry_in`.
 Durations are written as they read, `"1.2s"`.
 
-At `info`: every request with its status and how long it took; mail sync connecting, being up to
-date, failing and stopping; each mail action and each message sent; accounts, folders and settings
-lookups as they change; and the sweeps. At `debug`, also each routine look at the mail server.
+At `info`: every request with its status and how long it took; a list read from the mail server
+that took two seconds or more, with how long each step took — waiting for the connection, signing
+in, opening the folder, ordering it, searching, the headers and the previews; mail sync connecting,
+being up to date, failing and stopping; each mail action and each message sent; accounts, folders
+and settings lookups as they change; and the sweeps. At `debug`, also each routine look at the mail server.
 
 Never in a line: a password, an email address, a subject, a folder's name, what somebody searched
 for, or a request's query. A folder is named by its id and its use — `sent`, `drafts` or `own`.
