@@ -21,6 +21,14 @@ describe("the usual times to send later", () => {
     expect(usual(now, at(now) + 30 * 86400)).toHaveLength(2);
   });
 
+  // The minutes go in fives, so an hour on is the next five after it.
+  it("put an hour on at the next five minutes", () => {
+    const now = new Date(2026, 10, 11, 10, 32);
+    expect(usual(now, at(now) + 30 * 86400)[0]!.at).toBe(
+      at(new Date(2026, 10, 11, 11, 35)),
+    );
+  });
+
   it("go no further than the server holds mail", () => {
     const now = new Date(2026, 10, 11, 10, 30);
     expect(usual(now, at(now) + 2 * 3600).map((t) => t.at)).toEqual([

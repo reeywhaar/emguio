@@ -219,7 +219,10 @@ will skip the edit forever.
 - `main.go` pins `time.Local = time.UTC`. Everything stored and logged is UTC.
 - Stored as **Unix seconds in an `INTEGER` column**. Not text, not milliseconds. A message's
   internal date and its `Date:` header are converted on the way in.
-- The server never formats a date for a person. The browser shows it in the viewer's zone.
+- The server never formats a date for a person. The browser shows it in the viewer's zone, as
+  ISO 8601 writes a day (`2026-03-04`) and on a 24-hour clock (`09:05`), whatever the locale would:
+  built from the date's own fields in `web/src/format.ts`. A browser's own date and time inputs
+  follow the locale and cannot be told otherwise, so a time is picked with selects.
 
 ## Logging
 

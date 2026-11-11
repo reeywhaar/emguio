@@ -2,52 +2,68 @@ import { useState } from "react";
 
 import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
-import { Field } from "@app/components/Field";
-import { TextField } from "@app/components/TextField";
+import { Field, Select } from "@app/components/Field";
+import { clock, isoDay, weekday } from "@app/format";
 
 const two = (n: number) => String(n).padStart(2, "0");
 
-/** A time of day, as the reader's clock says it. */
-const clock = (unix: number) =>
-  new Date(unix * 1000).toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+const day = (unix: number) => isoDay(new Date(unix * 1000));
 
-/** A time as a date and time field holds it: local, to the minute. */
-function local(unix: number): string {
-  const d = new Date(unix * 1000);
-  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}`;
+/** Every day from one to another, as the date list offers them. */
+function daysBetween(from: number, to: number): Date[] {
+  const out: Date[] = [];
+  const d = new Date(from * 1000);
+  d.setHours(12, 0, 0, 0);
+  while (isoDay(d) <= day(to) && out.length < 400) {
+    out.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
 }
 
 /** A morning some days from now, at 8:00. */
-function morning(now: Date, days: number): number {
+function morning(now: Date, ahead: number): number {
   const d = new Date(now);
-  d.setDate(d.getDate() + days);
+  d.setDate(d.getDate() + ahead);
   d.setHours(8, 0, 0, 0);
   return Math.floor(d.getTime() / 1000);
 }
+
+/** Minutes go in fives, so a time picked is one the minute list has. */
+const step = 5 * 60;
 
 /** The usual times to send later, from now: those the server holds until. */
 export function usual(now: Date, latest: number) {
   const at = Math.floor(now.getTime() / 1000);
   const monday = (8 - now.getDay()) % 7 || 7;
   const times = [
-    { label: "In an hour", at: at + 3600 },
-    { label: `Tomorrow, ${clock(morning(now, 1))}`, at: morning(now, 1) },
+    { label: "In an hour", at: Math.ceil((at + 3600) / step) * step },
+    {
+      label: `Tomorrow, ${clock(new Date(morning(now, 1) * 1000))}`,
+      at: morning(now, 1),
+    },
   ];
   if (monday > 1) {
     times.push({
-      label: `Monday, ${clock(morning(now, monday))}`,
+      label: `Monday, ${clock(new Date(morning(now, monday) * 1000))}`,
       at: morning(now, monday),
     });
   }
   return times.filter((t) => t.at <= latest);
 }
 
+/** This device's time zone, and its offset from UTC at a time: Asia/Dubai (GMT+4). */
+function zone(unix: number): string {
+  const name = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const offset = new Intl.DateTimeFormat("en", { timeZoneName: "shortOffset" })
+    .formatToParts(new Date(unix * 1000))
+    .find((p) => p.type === "timeZoneName")?.value;
+  return offset ? `${name} (${offset})` : name;
+}
+
 /**
- * When a message goes, a while from now: one of the usual times, or one picked, up to the latest
- * the outgoing server holds mail until. See docs/sending.md.
+ * When a message goes, a while from now: one of the usual times, or a day and a time picked, up to
+ * the latest the outgoing server holds mail until. See docs/sending.md.
  */
 export function SendLater({
   open,
@@ -62,12 +78,24 @@ export function SendLater({
 }) {
   const [now] = useState(() => new Date());
   const times = usual(now, latest);
-  const [value, setValue] = useState(() =>
-    local(times[0]?.at ?? Math.floor(now.getTime() / 1000) + 3600),
+  const first = times[0]?.at ?? Math.floor(now.getTime() / 1000) + 3600;
+  const [date, setDate] = useState(() => day(first));
+  const [hour, setHour] = useState(() => new Date(first * 1000).getHours());
+  const [minute, setMinute] = useState(() =>
+    new Date(first * 1000).getMinutes(),
   );
-  const at = Math.floor(new Date(value).getTime() / 1000);
+  const [y, m, d] = date.split("-").map(Number);
+  const at = Math.floor(
+    new Date(y ?? NaN, (m ?? NaN) - 1, d, hour, minute).getTime() / 1000,
+  );
   const soonest = Math.floor(now.getTime() / 1000) + 120;
   const fits = Number.isFinite(at) && at >= soonest && at <= latest;
+  const choose = (t: number) => {
+    const picked = new Date(t * 1000);
+    setDate(day(t));
+    setHour(picked.getHours());
+    setMinute(picked.getMinutes());
+  };
   return (
     <Dialog
       open={open}
@@ -89,27 +117,63 @@ export function SendLater({
               <Button
                 key={t.label}
                 size="bar"
-                aria-pressed={local(t.at) === value}
+                aria-pressed={t.at === at}
                 className="aria-pressed:border-brand"
-                onClick={() => setValue(local(t.at))}
+                onClick={() => choose(t.at)}
               >
                 {t.label}
               </Button>
             ))}
           </div>
         ) : null}
-        <Field label="Date and time">
-          <TextField
-            type="datetime-local"
-            value={value}
-            min={local(soonest)}
-            max={local(latest)}
-            onChange={(e) => setValue(e.target.value)}
-          />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+          <Field label="Date">
+            <Select value={date} onChange={(e) => setDate(e.target.value)}>
+              {daysBetween(soonest, latest).map((each) => (
+                <option key={isoDay(each)} value={isoDay(each)}>
+                  {isoDay(each)} {weekday(each)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <div role="group" aria-label="Time" className="flex flex-col gap-1">
+            <span aria-hidden="true" className="caps text-sm text-muted">
+              Time
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Select
+                aria-label="Hour"
+                className="w-20"
+                value={hour}
+                onChange={(e) => setHour(Number(e.target.value))}
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {two(h)}
+                  </option>
+                ))}
+              </Select>
+              <span aria-hidden="true">:</span>
+              <Select
+                aria-label="Minute"
+                className="w-20"
+                value={minute}
+                onChange={(e) => setMinute(Number(e.target.value))}
+              >
+                {Array.from({ length: 12 }, (_, i) => i * 5).map((mm) => (
+                  <option key={mm} value={mm}>
+                    {two(mm)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+        </div>
         <p className="text-sm text-muted">
-          The mail server sends it at this time, even if this device is off.
-          emguio cannot cancel it once it is scheduled.
+          Times are in this device's time zone,{" "}
+          {zone(Number.isFinite(at) ? at : first)}. The mail server sends it at
+          this time, even if this device is off. emguio cannot cancel it once it
+          is scheduled.
         </p>
       </div>
     </Dialog>

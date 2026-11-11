@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@app/api/transport";
+import { full, isoDay } from "@app/format";
 import type {
   JobDraft,
   Mailbox,
@@ -489,21 +490,24 @@ describe("the reading pane", () => {
         "dialog",
       )!,
     );
-    const at = new Date(Date.now() + 3 * 3600 * 1000);
-    at.setSeconds(0, 0);
-    // The field holds local time, to the minute.
-    const local = new Date(at.getTime() - at.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    fireEvent.change(later.getByLabelText("Date and time"), {
-      target: { value: local },
+    const at = new Date();
+    at.setDate(at.getDate() + 1);
+    at.setHours(9, 30, 0, 0);
+    fireEvent.change(later.getByRole("combobox", { name: "Date" }), {
+      target: { value: isoDay(at) },
+    });
+    fireEvent.change(later.getByRole("combobox", { name: "Hour" }), {
+      target: { value: "9" },
+    });
+    fireEvent.change(later.getByRole("combobox", { name: "Minute" }), {
+      target: { value: "30" },
     });
     fireEvent.click(later.getByRole("button", { name: "Schedule" }));
 
     await waitFor(() => expect(postSend).toHaveBeenCalledTimes(1));
     const [, body] = postSend.mock.calls[0] as [string, Outgoing];
     expect(body.send_at).toBe(at.getTime() / 1000);
-    await screen.findByText(/^Scheduled for /);
+    await screen.findByText(`Scheduled for ${full(at.getTime() / 1000)}.`);
   });
 
   it("offers no later sending where the server holds no mail", async () => {

@@ -1,15 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { ago, size, when } from "@app/format";
+import { ago, full, size, when } from "@app/format";
 
 const now = new Date(2026, 9, 1, 15, 30);
 const unix = (d: Date) => d.getTime() / 1000;
 
 describe("a date in a list", () => {
-  it("is a time today, a day this year, and a date before", () => {
-    expect(when(unix(new Date(2026, 9, 1, 9, 5)), now)).toMatch(/09.05/);
-    expect(when(unix(new Date(2026, 2, 4, 9, 5)), now)).not.toMatch(/2026/);
-    expect(when(unix(new Date(2025, 2, 4, 9, 5)), now)).toMatch(/2025/);
+  it("is a time today, on a 24-hour clock, and the day otherwise, as ISO writes it", () => {
+    expect(when(unix(new Date(2026, 9, 1, 21, 5)), now)).toBe("21:05");
+    expect(when(unix(new Date(2026, 2, 4, 9, 5)), now)).toBe("2026-03-04");
+    expect(when(unix(new Date(2025, 11, 31, 9, 5)), now)).toBe("2025-12-31");
+  });
+});
+
+describe("a date in full", () => {
+  it("is its weekday, its day as ISO writes it, and its time on a 24-hour clock", () => {
+    expect(full(unix(new Date(2026, 2, 4, 21, 5)))).toMatch(
+      /^\S+ 2026-03-04 21:05$/,
+    );
   });
 });
 

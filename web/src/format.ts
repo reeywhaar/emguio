@@ -1,5 +1,6 @@
 /**
- * Dates for a person, in the viewer's own zone and words. The server never formats one.
+ * Dates for a person, in the viewer's own zone: days as ISO 8601 writes them and times on a
+ * 24-hour clock, whatever the locale would. The server never formats one.
  */
 
 function sameDay(a: Date, b: Date) {
@@ -10,31 +11,33 @@ function sameDay(a: Date, b: Date) {
   );
 }
 
-/** As short as it can be and still say when: a time today, a day this year, a date before. */
-export function when(unix: number, now = new Date()): string {
-  const d = new Date(unix * 1000);
-  if (sameDay(d, now)) {
-    return d.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-  if (d.getFullYear() === now.getFullYear()) {
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** A day as ISO 8601 writes it, whatever the locale: 2026-03-04. */
+export function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
 }
 
-/** The whole of it, for a title to show on hover. */
+/** A time of day on a 24-hour clock, whatever the locale: 09:05. */
+export function clock(d: Date): string {
+  return `${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/** A day of the week, short, in the reader's words: Wed. */
+export function weekday(d: Date): string {
+  return d.toLocaleDateString(undefined, { weekday: "short" });
+}
+
+/** As short as it can be and still say when: a time today, the day otherwise. */
+export function when(unix: number, now = new Date()): string {
+  const d = new Date(unix * 1000);
+  return sameDay(d, now) ? clock(d) : isoDay(d);
+}
+
+/** The whole of it: Wed 2026-03-04 09:05. */
 export function full(unix: number): string {
-  return new Date(unix * 1000).toLocaleString(undefined, {
-    dateStyle: "full",
-    timeStyle: "short",
-  });
+  const d = new Date(unix * 1000);
+  return `${weekday(d)} ${isoDay(d)} ${clock(d)}`;
 }
 
 /** How long ago, in words: "just now", "5 minutes ago", "3 hours ago". */
