@@ -246,9 +246,10 @@ what it held: the same UIDVALIDITY, `UIDNEXT` and count. A dated one is brought 
 than read again: the dates of what arrived since, and one `UID SEARCH` of what is there when the
 count says something left.
 
-A folder opens on its window, from here: its newest in that order. A pass works the order out only
-for a folder whose `UIDNEXT` or count moved, or whose window is short; otherwise the newest are the
-ones it keeps. Past the window, and all of a folder not looked at yet, is read from the server,
+A folder opens on its window, from here: its newest in that order. A pass works the order out for
+every folder once after emguio starts, so a window kept from before, chosen by an older rule, is
+put right; after that only for a folder whose `UIDNEXT` or count moved, or whose window is short.
+Otherwise the newest are the ones it keeps. Past the window, and all of a folder not looked at yet, is read from the server,
 fifty at a time. Each page goes on from the last message shown, named by its UID and its date, so
 mail arriving or leaving between two pages does not shift the second, and a message gone since is
 placed by its date. `SORT` says no dates, so there that one case dates the folder after all.

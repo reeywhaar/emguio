@@ -53,6 +53,9 @@ type Mirror struct {
 	threads []*keptThreads
 	// orders are the order by date of the mailboxes last listed, most recent last.
 	orders []*order
+	// windowed are the mailboxes whose window a pass has chosen by date since this started: what
+	// is kept of another was chosen before, maybe by an older rule.
+	windowed map[string]bool
 	// drafts wakes the draft writer, and drafting keeps it to one draft at a time.
 	drafts   chan struct{}
 	drafting sync.Mutex
@@ -71,6 +74,7 @@ func New(st *store.Store, conn *connect.Connector, log *slog.Logger) *Mirror {
 		log:      log,
 		workers:  map[string]*worker{},
 		fetchers: map[string]*fetcher{},
+		windowed: map[string]bool{},
 		runners:  map[string]chan struct{}{},
 		kick:     make(chan struct{}, 1),
 		drafts:   make(chan struct{}, 1),

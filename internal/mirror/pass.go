@@ -250,12 +250,15 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// Nothing in or out since, and none of the window missing: the newest are those kept, without
-	// the order by date.
+	// Chosen by date once since this started, nothing in or out since, and none of the window
+	// missing: the newest are those kept, without the order by date.
 	var newest []uint32
 	size := min(windowOf(mb), data.NumMessages)
+	s.m.mu.Lock()
+	chosen := s.m.windowed[mb.ID]
+	s.m.mu.Unlock()
 	same := mb.SyncedAt != nil && data.UIDValidity == mb.UIDValidity && uint32(data.UIDNext) == mb.UIDNext && data.NumMessages == mb.Messages
-	if !same || len(kept) != int(size) {
+	if !chosen || !same || len(kept) != int(size) {
 		at := counts{uidValidity: data.UIDValidity, uidNext: uint32(data.UIDNext), messages: data.NumMessages}
 		o, err := s.orderOf(mb.Name, at, false)
 		if err != nil {
@@ -317,6 +320,9 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 		}
 	}
 	changed = changed || len(gone) > 0 || len(moved) > 0 || len(missing) > 0
+	s.m.mu.Lock()
+	s.m.windowed[mb.ID] = true
+	s.m.mu.Unlock()
 	if mb.SpecialUse == store.UseInbox {
 		s.saw = &now
 	}

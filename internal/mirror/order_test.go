@@ -197,3 +197,39 @@ func TestAPassDatesOnlyAFolderThatChanged(t *testing.T) {
 		t.Errorf("INBOX keeps %q", subjects(msgs))
 	}
 }
+
+// What is kept of a folder from before, chosen by highest UID, is chosen again by date on the
+// first pass after emguio starts, though nothing in the folder changed.
+func TestAWindowKeptByAnOlderRuleIsChosenAgain(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	w.create("Orders")
+	for i := 10; i < 10+FolderWindow+1; i++ {
+		w.deliver("Orders", i, "shop@example.com", fmt.Sprintf("o%d", i))
+	}
+	w.deliver("Orders", 1, "shop@example.com", "receipt")
+	w.sync()
+
+	// As the older rule kept it: the receipt, moved in last, in place of o11.
+	ctx := context.Background()
+	mb := w.mailbox("Orders")
+	receipt, err := w.mirror.Headers(ctx, w.target, "Orders", mb.UIDValidity, []uint32{12})
+	if err != nil || len(receipt) != 1 {
+		t.Fatalf("receipt = %+v, %v", receipt, err)
+	}
+	if err := w.store.DeleteMessages(ctx, mb.ID, []uint32{2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.store.PutMessages(ctx, mb.ID, receipt); err != nil {
+		t.Fatal(err)
+	}
+
+	w.mirror.windowed = map[string]bool{}
+	w.sync()
+	kept, err := w.store.Window(ctx, w.mailbox("Orders"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := subjects(kept); got != "o20, o19, o18, o17, o16, o15, o14, o13, o12, o11" {
+		t.Errorf("Orders keeps %q, want its newest by date", got)
+	}
+}
