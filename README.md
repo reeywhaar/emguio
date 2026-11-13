@@ -41,11 +41,12 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
   servers. They are listed in the order the user puts them.
 - The header shows which accounts have unread mail, and the tab's icon gets a dot.
 
-**On a phone or a computer**
+**Web app and notifications**
 
-- Installs as an app.
-- Tells the devices a user chooses about new mail, per account: as it arrives, or in a digest every
-  30 minutes to 4 hours, from the folders ticked.
+- Runs as a web app: installed from the browser on a phone or a computer, it opens in its own
+  window like any other app.
+- Sends notifications of new mail to the devices a user chooses. Each account sends them right
+  away or as a digest, every 30 minutes to 4 hours, from the folders ticked.
 
 **Small**
 
