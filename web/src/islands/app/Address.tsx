@@ -14,7 +14,7 @@ export function CopyAddress({ email }: { email: string }) {
         type="button"
         title="Copy"
         aria-label={`Copy ${email}`}
-        className="relative inline-grid max-w-full min-w-0 rounded bg-fill px-1.5 text-xs leading-5 font-normal text-muted hover:bg-line hover:text-fg"
+        className="relative inline-grid max-w-full min-w-0 rounded bg-fill px-1.5 text-xs leading-5 font-normal text-muted mix-blend-multiply hover:bg-line hover:text-fg dark:mix-blend-screen"
         onClick={() =>
           navigator.clipboard?.writeText(email).then(
             () => setCopied(true),

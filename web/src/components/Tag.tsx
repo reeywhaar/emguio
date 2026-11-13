@@ -10,7 +10,7 @@ export function Tag({
 }) {
   return (
     <span
-      className={`inline-block shrink-0 self-center rounded bg-fill px-1 align-middle text-[0.6875rem] leading-4 font-normal text-muted ${className}`}
+      className={`inline-block shrink-0 self-center rounded bg-fill px-1 align-middle mix-blend-multiply dark:mix-blend-screen text-[0.6875rem] leading-4 font-normal text-muted ${className}`}
     >
       {children}
     </span>
