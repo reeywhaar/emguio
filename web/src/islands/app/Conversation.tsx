@@ -14,6 +14,7 @@ import { full, when } from "@app/format";
 import { Link } from "@app/islands/app/Link";
 import { usePending, withPending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
+import { Subject } from "@app/islands/app/Subject";
 
 /** How many of a conversation show before the rest wait to be asked for. */
 const SHOWN = 6;
@@ -129,7 +130,7 @@ function Line({
       </span>
       {m.seen ? null : <span className="sr-only">Unread.</span>}
       <span className="min-w-0 flex-1 truncate text-muted">
-        {m.preview || m.subject || "(no subject)"}
+        {m.preview || <Subject subject={m.subject} />}
       </span>
       {m.seen ? null : (
         <span

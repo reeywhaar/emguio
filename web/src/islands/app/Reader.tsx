@@ -43,6 +43,8 @@ import { Link } from "@app/islands/app/Link";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { paths } from "@app/islands/app/route";
 import { NewsletterTag, Unsubscribe } from "@app/islands/app/Unsubscribe";
+import { CopyAddress } from "@app/islands/app/Address";
+import { Subject } from "@app/islands/app/Subject";
 
 /** One message, and what can be done to it. Opening it marks it read, here and on the server. */
 export function Reader({
@@ -112,7 +114,7 @@ export function Reader({
               className={`font-semibold break-words ${subjectLook(known.subject)}`}
               title={known.subject}
             >
-              {known.subject || "(no subject)"}
+              <Subject subject={known.subject} />
             </h2>
             {mailbox.special_use === "drafts" ||
             mailbox.special_use === "scheduled" ? null : (
@@ -123,11 +125,13 @@ export function Reader({
               />
             )}
             <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-              <span className="font-medium">
-                {known.from.name || known.from.email || "(no sender)"}
-              </span>
-              {known.from.name && known.from.email ? (
-                <span className="text-muted">&lt;{known.from.email}&gt;</span>
+              {known.from.name || !known.from.email ? (
+                <span className="font-medium">
+                  {known.from.name || "(no sender)"}
+                </span>
+              ) : null}
+              {known.from.email ? (
+                <CopyAddress email={known.from.email} />
               ) : null}
               {known.newsletter || m?.unsubscribe ? <NewsletterTag /> : null}
               {m?.unsubscribe ? (
@@ -275,18 +279,25 @@ function Replies({ config, m }: { config: string; m: ReadMessage }) {
   );
 }
 
+/** Who a message went to, each by name with their address beside it, to copy. */
 function People({ label, people }: { label: string; people: Address[] }) {
   if (people.length === 0) return null;
   return (
-    <p className="text-sm text-muted">
-      {label}:{" "}
-      {people.map((p, i) => (
-        <span key={i} title={p.email}>
-          {i > 0 ? ", " : ""}
-          {p.name || p.email}
-        </span>
-      ))}
-    </p>
+    <div className="flex gap-x-3 text-sm text-muted">
+      <span className="shrink-0">{label}:</span>
+      {/* Wrapped, the people line up under each other rather than under the label. */}
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+        {people.map((p, i) => (
+          <span
+            key={i}
+            className="inline-flex max-w-full min-w-0 items-baseline gap-x-1.5"
+          >
+            {p.name ? <span>{p.name}</span> : null}
+            {p.email ? <CopyAddress email={p.email} /> : null}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 

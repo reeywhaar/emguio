@@ -4,14 +4,11 @@ import { postEmailConfigsByIdMailboxesByMailboxMessagesByMessageUnsubscribe } fr
 import { messageOf } from "@app/api/transport";
 import type { ReadMessage } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
+import { Tag } from "@app/components/Tag";
 
 /** The mark of mail that says how to unsubscribe from it. */
 export function NewsletterTag() {
-  return (
-    <span className="shrink-0 self-center rounded border border-line px-1 text-[0.6875rem] leading-4 text-muted">
-      Newsletter
-    </span>
-  );
+  return <Tag>Newsletter</Tag>;
 }
 
 /**

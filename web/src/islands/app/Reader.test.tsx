@@ -286,10 +286,34 @@ describe("the reading pane", () => {
     open();
     await screen.findByRole("heading", { name: "Quarterly numbers" });
     screen.getByText("Alice");
-    screen.getByText("<alice@example.com>");
-    screen.getByText("misha@example.com");
+    screen.getByRole("button", { name: "Copy alice@example.com" });
+    screen.getByRole("button", { name: "Copy misha@example.com" });
     screen.getByText("Bob");
     screen.getByText("The numbers are in.");
+    expect(screen.queryByText(/</)).toBeNull();
+  });
+
+  it("copies an address at a press, and says so", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    open();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy alice@example.com" }),
+    );
+    expect(writeText).toHaveBeenCalledWith("alice@example.com");
+    await waitFor(() =>
+      expect(screen.getAllByText("Copied").length).toBeGreaterThan(0),
+    );
+  });
+
+  it("marks a message with no subject rather than standing words in for one", async () => {
+    getMessage.mockResolvedValue(read({ subject: "Re: (No subject)" }));
+    open();
+    await screen.findByRole("heading", { name: "Re: No subject" });
+    expect(screen.queryByText(/\(no subject\)/i)).toBeNull();
   });
 
   it("lists the attachments and not the images shown in place", async () => {

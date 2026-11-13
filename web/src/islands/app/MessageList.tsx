@@ -17,6 +17,7 @@ import { counterpart } from "@app/islands/app/mailbox";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
 import { textOf, unreadOnly } from "@app/islands/app/Search";
+import { Subject } from "@app/islands/app/Subject";
 import { NewsletterTag } from "@app/islands/app/Unsubscribe";
 
 /** How far before the end of the list the next run starts loading. */
@@ -346,7 +347,7 @@ function Row({
         </time>
       </div>
       <p className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}>
-        {m.subject || "(no subject)"}
+        <Subject subject={m.subject} />
       </p>
       {scheduled(mailbox, m) ? (
         <p className="truncate text-xs font-medium text-brand">
@@ -367,7 +368,7 @@ function Row({
             checked={selected}
             readOnly
             onClick={(e) => onToggle(e.shiftKey)}
-            aria-label={m.subject || "(no subject)"}
+            aria-label={m.subject || "No subject"}
             className="mt-1 size-4 shrink-0 accent-brand"
           />
           {body}
