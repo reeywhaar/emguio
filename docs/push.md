@@ -86,7 +86,8 @@ and the server's others — Sent, Drafts, Archive, All Mail, Junk, Trash — do 
 of spam, and All Mail of every message twice.
 
 The same folders are what an account's unread count covers, whether or not its notifications are
-on: the number beside it in the header and the dot on the account picker. Mail a rule files into a folder of the user's own is
+on: the number beside it in the header, the dot on the account picker, and the dot on the tab's
+icon while any account has unread mail. Mail a rule files into a folder of the user's own is
 counted as INBOX's is, and old unread mail in Archive is not. One choice says which folders'
 mail matters, for both.
 

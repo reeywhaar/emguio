@@ -10,6 +10,7 @@ import { ProfileMark } from "@app/components/icons";
 import { Menu } from "@app/components/Menu";
 import { Wordmark } from "@app/components/Wordmark";
 import { labelOf, pick } from "@app/islands/app/emailConfig";
+import { markUnread } from "@app/islands/app/favicon";
 import { Link } from "@app/islands/app/Link";
 import { paths, type Route } from "@app/islands/app/route";
 
@@ -28,6 +29,8 @@ export function Header({ route }: { route: Route }) {
   const current = configs.data
     ? pick(configs.data, route.page === "mail" ? route.config : null)
     : undefined;
+  const unread = configs.data?.some((c) => c.unseen > 0) ?? false;
+  useEffect(() => markUnread(unread), [unread]);
 
   return (
     <header className="flex items-center gap-2 border-b border-line bg-bg px-4 py-2 sm:gap-3">

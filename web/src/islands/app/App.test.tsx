@@ -166,6 +166,42 @@ describe("the application", () => {
     }
   });
 
+  it("puts a dot on the tab's icon while any mail account has unread mail", async () => {
+    const icon = document.createElement("link");
+    icon.rel = "icon";
+    icon.href = "/favicon.svg";
+    document.head.append(icon);
+    try {
+      getEmailConfigs.mockResolvedValue([
+        config("ec_1", "Work"),
+        { ...config("ec_2", "Home"), unseen: 2 },
+      ]);
+      mount(<App />);
+      await waitFor(() =>
+        expect(icon.getAttribute("href")).toBe("/favicon-unread.svg"),
+      );
+    } finally {
+      icon.remove();
+    }
+  });
+
+  it("takes the dot off the tab's icon once nothing is unread", async () => {
+    const icon = document.createElement("link");
+    icon.rel = "icon";
+    icon.href = "/favicon-unread.svg";
+    document.head.append(icon);
+    try {
+      getEmailConfigs.mockResolvedValue([config("ec_1", "Work")]);
+      mount(<App />);
+      await screen.findByRole("heading", { name: "Inbox of ec_1" });
+      await waitFor(() =>
+        expect(icon.getAttribute("href")).toBe("/favicon.svg"),
+      );
+    } finally {
+      icon.remove();
+    }
+  });
+
   // The open one's unread are counted beside its folders already.
   it("marks the header while another mail account has unread mail", async () => {
     getEmailConfigs.mockResolvedValue([
