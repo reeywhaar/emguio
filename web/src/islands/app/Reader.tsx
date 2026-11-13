@@ -42,6 +42,7 @@ import { useCached } from "@app/api/cached";
 import { Link } from "@app/islands/app/Link";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { paths } from "@app/islands/app/route";
+import { NewsletterTag, Unsubscribe } from "@app/islands/app/Unsubscribe";
 
 /** One message, and what can be done to it. Opening it marks it read, here and on the server. */
 export function Reader({
@@ -127,6 +128,16 @@ export function Reader({
               </span>
               {known.from.name && known.from.email ? (
                 <span className="text-muted">&lt;{known.from.email}&gt;</span>
+              ) : null}
+              {known.newsletter || m?.unsubscribe ? <NewsletterTag /> : null}
+              {m?.unsubscribe ? (
+                <Unsubscribe
+                  key={m.id}
+                  config={config}
+                  mailbox={mailbox.id}
+                  message={m.id}
+                  how={m.unsubscribe}
+                />
               ) : null}
               <span className="flex-1" />
               <time

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EmailConfig } from "@app/api/types";
 import { Settings } from "@app/islands/app/Settings";
 import { mount } from "@app/test/harness";
+import { later } from "@app/test/later";
 
 const getEmailConfigs = vi.fn();
 const deleteEmailConfigsById = vi.fn();
@@ -100,20 +101,6 @@ const work: EmailConfig = {
 /** The accounts' names, top to bottom. */
 const names = () =>
   screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-
-/** An answer given when the test says. */
-function later<T>() {
-  const out = {} as {
-    promise: Promise<T>;
-    give: (value: T) => void;
-    refuse: (err: Error) => void;
-  };
-  out.promise = new Promise<T>((give, refuse) => {
-    out.give = give;
-    out.refuse = refuse;
-  });
-  return out;
-}
 
 beforeEach(() => {
   getEmailConfigs.mockResolvedValue([work]);

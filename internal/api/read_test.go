@@ -226,7 +226,7 @@ func TestTheProxyRelaysAnImageItSigned(t *testing.T) {
 	s, st := newServerStore(t, nil)
 	c := signIn(t, s, st)
 	srv, pool := imageServer(t)
-	s.imageClient = imageClient(connect.New(connecttest.Loopback).WithRoots(pool))
+	s.web = webClient(connect.New(connecttest.Loopback).WithRoots(pool))
 
 	resp := c.do("GET", s.proxyURL(srv.URL+"/p.gif"), "")
 	body, _ := io.ReadAll(resp.Body)
@@ -266,7 +266,7 @@ func TestTheProxyNeverReachesInside(t *testing.T) {
 	s, st := newServerStore(t, nil)
 	c := signIn(t, s, st)
 	srv, pool := imageServer(t)
-	s.imageClient = imageClient(connect.New(nil).WithRoots(pool))
+	s.web = webClient(connect.New(nil).WithRoots(pool))
 	if resp := c.do("GET", s.proxyURL(srv.URL+"/p.gif"), ""); resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("a loopback image = %s, want refused", resp.Status)
 	}

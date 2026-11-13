@@ -17,6 +17,7 @@ import { counterpart } from "@app/islands/app/mailbox";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
 import { textOf, unreadOnly } from "@app/islands/app/Search";
+import { NewsletterTag } from "@app/islands/app/Unsubscribe";
 
 /** How far before the end of the list the next run starts loading. */
 const AHEAD = 200;
@@ -318,6 +319,7 @@ function Row({
         >
           {counterpart(mailbox, m)}
         </span>
+        {m.newsletter ? <NewsletterTag /> : null}
         {m.has_attachments ? (
           <Paperclip className="shrink-0 self-center text-muted" />
         ) : null}

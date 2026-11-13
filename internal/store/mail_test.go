@@ -336,3 +336,22 @@ func TestScheduledComesAfterSent(t *testing.T) {
 		t.Errorf("sorted %v, want %s", got, want)
 	}
 }
+
+// A message kept before emguio read whether it is a newsletter is unchecked until kept again.
+func TestAMessageKeptAgainSaysWhetherItIsANewsletter(t *testing.T) {
+	st, _, _, mb := mailWorld(t, 2)
+	ctx := context.Background()
+	if _, err := st.writer.ExecContext(ctx, `UPDATE messages SET newsletter = NULL WHERE uid = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Unchecked(ctx, mb.ID); err != nil || len(got) != 1 || got[0] != 2 {
+		t.Fatalf("unchecked = %v, %v", got, err)
+	}
+	st.PutMessages(ctx, mb.ID, []Header{{UID: 2, InternalDate: time.Now(), Newsletter: true}})
+	if got, _ := st.Unchecked(ctx, mb.ID); len(got) != 0 {
+		t.Errorf("still unchecked: %v", got)
+	}
+	if kept, _ := st.Window(ctx, mb); !kept[0].Newsletter || kept[1].Newsletter {
+		t.Errorf("newsletters = %v %v", kept[0].Newsletter, kept[1].Newsletter)
+	}
+}

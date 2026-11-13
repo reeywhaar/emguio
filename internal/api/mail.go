@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"emguio/internal/ids"
+	"emguio/internal/message"
 	"emguio/internal/mirror"
 	"emguio/internal/store"
 )
@@ -39,6 +40,9 @@ type Mirror interface {
 	Delete(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32) (mirror.Had, error)
 	// Empty deletes for good what a mailbox held, and says the UIDNEXT it held up to and how many.
 	Empty(ctx context.Context, t store.SyncTarget, mailbox string) (uint32, uint32, error)
+	// Unsubscribe is how a message says to stop its sender's mail, read from the server, or
+	// mirror.ErrGone.
+	Unsubscribe(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (message.Unsubscribe, error)
 	// Origin is what a reply needs of the message it answers, or mirror.ErrGone.
 	Origin(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (*mirror.Origin, error)
 	// Sent files a sent message in Sent and marks what it answers, in the background.
@@ -137,7 +141,9 @@ type messageJSON struct {
 	Answered       bool   `json:"answered"`
 	Draft          bool   `json:"draft"`
 	HasAttachments bool   `json:"has_attachments"`
-	Preview        string `json:"preview"`
+	// Newsletter is whether it says how to unsubscribe from its sender's mail.
+	Newsletter bool   `json:"newsletter"`
+	Preview    string `json:"preview"`
 }
 
 // How long a run of a list is, unless the request says, and at most.
@@ -265,6 +271,7 @@ func messageOut(m *store.Message) messageJSON {
 		Answered:       m.Flags.Answered,
 		Draft:          m.Flags.Draft,
 		HasAttachments: m.HasAttachments,
+		Newsletter:     m.Newsletter,
 		Preview:        m.Preview,
 	}
 }

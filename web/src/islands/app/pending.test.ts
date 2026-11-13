@@ -23,6 +23,7 @@ const message = (id: string, seen = false): Message => ({
   answered: false,
   draft: false,
   has_attachments: false,
+  newsletter: false,
   preview: "",
 });
 
@@ -122,6 +123,7 @@ it("reads a message again when a job is done on it while it is being read", asyn
     html_text: "",
     html: "",
     held_images: 0,
+    unsubscribe: null,
     parts: [],
   });
   await vi.waitFor(() => expect(reads).toHaveLength(2));
@@ -135,6 +137,7 @@ it("reads a message again when a job is done on it while it is being read", asyn
     html_text: "",
     html: "",
     held_images: 0,
+    unsubscribe: null,
     parts: [],
   });
   await vi.waitFor(() =>

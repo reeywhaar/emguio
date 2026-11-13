@@ -452,6 +452,26 @@ image by its own bytes rather than by the header, and relays at most 10 MB.
 The frame's CSP names this origin as well as `'self'`: Firefox does not count a `srcdoc` frame's
 inherited origin as `'self'`, and with that alone blocks every image in it.
 
+## A newsletter says how to unsubscribe, and one click does it here
+
+A message is a newsletter when its `List-Unsubscribe` header (RFC 2369) names a web address. The
+header is fetched with each message a list shows, in the same command as its envelope, so a list
+row and the reading pane both mark it. A `mailto:` address there is not used: unsubscribing is by
+web address alone.
+
+With `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and an https address,
+Unsubscribe does it here: emguio's server sends that POST, says it is working until the sender
+answers, and then says it worked, or what the sender answered and a link to their page. Without
+it, Unsubscribe opens the sender's page in a new tab, where they ask what they ask. Gmail and
+Yahoo have required one click from bulk senders since 2024, so most newsletters offer it. Nothing
+is kept of it afterwards.
+
+The POST goes to the address the message names on the mail server, read again when Unsubscribe is
+pressed rather than taken from the request, so emguio sends it nowhere a page could choose. It
+dials through the same screen as the image proxy and every mail server: a message naming an
+address inside the network gets nothing from it. It carries no cookie and nothing of the user's,
+and at most ten a minute are sent for one.
+
 ## A part is served so that it cannot act as a page here
 
 An attachment is the sender's file. It is served with `nosniff` and a sandbox CSP, as a download

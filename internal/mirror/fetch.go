@@ -260,8 +260,10 @@ type Opened struct {
 	// ReplyTo is where its sender asks replies to go, when the server says.
 	ReplyTo []store.Address
 	// Bcc is in a message only as its sender keeps it: a draft, or sent mail some clients file.
-	Bcc       []store.Address
-	Structure message.Structure
+	Bcc []store.Address
+	// Unsubscribe is how its sender says to stop their mail, when they do.
+	Unsubscribe message.Unsubscribe
+	Structure   message.Structure
 }
 
 // Read is one message, without its attachments: its headers and the server's description of
@@ -275,21 +277,14 @@ func (m *Mirror) Read(ctx context.Context, t store.SyncTarget, mailbox string, u
 			return err
 		}
 		set := imap.UIDSetNum(imap.UID(uid))
-		msgs, err := f.session.client.Fetch(set, &imap.FetchOptions{
-			UID:           true,
-			Flags:         true,
-			InternalDate:  true,
-			RFC822Size:    true,
-			Envelope:      true,
-			BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
-		}).Collect()
+		msgs, err := f.session.client.Fetch(set, shown()).Collect()
 		if err != nil {
 			return err
 		}
 		if len(msgs) == 0 {
 			return ErrGone
 		}
-		out = &Opened{Header: header(msgs[0])}
+		out = &Opened{Header: header(msgs[0]), Unsubscribe: message.UnsubscribeOf(msgs[0].FindBodySection(unsubscribing))}
 		if env := msgs[0].Envelope; env != nil {
 			out.ReplyTo = addresses(env.ReplyTo)
 			out.Bcc = addresses(env.Bcc)
@@ -312,6 +307,30 @@ func (m *Mirror) Read(ctx context.Context, t store.SyncTarget, mailbox string, u
 			bodies = got[0]
 		}
 		out.Structure = structureOf(msgs[0].BodyStructure, texts, sections, bodies)
+		return nil
+	})
+	return out, err
+}
+
+// Unsubscribe is how a message says to stop its sender's mail, read from the server again rather
+// than taken from whoever asks.
+func (m *Mirror) Unsubscribe(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (message.Unsubscribe, error) {
+	var out message.Unsubscribe
+	err := m.use(ctx, t, func(f *fetcher) error {
+		if err := f.openAt(mailbox, uidValidity, false, uid); err != nil {
+			return err
+		}
+		msgs, err := f.session.client.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{
+			UID:         true,
+			BodySection: []*imap.FetchItemBodySection{unsubscribing},
+		}).Collect()
+		if err != nil {
+			return err
+		}
+		if len(msgs) == 0 {
+			return ErrGone
+		}
+		out = message.UnsubscribeOf(msgs[0].FindBodySection(unsubscribing))
 		return nil
 	})
 	return out, err

@@ -53,6 +53,15 @@ type readJSON struct {
 	// through the proxy, and this is 0.
 	HeldImages int        `json:"held_images"`
 	Parts      []partJSON `json:"parts"`
+	// Unsubscribe is how its sender says to stop their mail, null when they do not say.
+	Unsubscribe *unsubscribeJSON `json:"unsubscribe"`
+}
+
+type unsubscribeJSON struct {
+	// Link is the sender's page for it, opened in the browser when OneClick is false.
+	Link string `json:"link"`
+	// OneClick is whether POST …/unsubscribe does it here, with nothing to read.
+	OneClick bool `json:"one_click"`
 }
 
 // messageAt is the message a request names, and its mailbox and email config. It writes the
@@ -123,7 +132,59 @@ func (s *Server) readMessage(w http.ResponseWriter, r *http.Request) {
 	for _, p := range read.Parts {
 		out.Parts = append(out.Parts, partJSON{Section: p.Section, Name: p.Name, Type: p.Type, Size: p.Size, Listed: p.Listed})
 	}
+	if u := opened.Unsubscribe; u.Any() {
+		out.Unsubscribe = &unsubscribeJSON{Link: u.Link, OneClick: u.OneClick}
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// unsubscribe stops a newsletter's mail the one-click way (RFC 8058): a POST to the link the message
+// names, read from the mail server again rather than taken from the request, and sent through the
+// same screen as the images messages name. See docs/reading.md.
+func (s *Server) unsubscribe(w http.ResponseWriter, r *http.Request) {
+	c, mb, uidValidity, uid, ok := s.messageAt(w, r)
+	if !ok {
+		return
+	}
+	u := userOf(r)
+	if !s.unsubscribes.allow(u.ID) {
+		refuse(w, http.StatusTooManyRequests, CodeRateLimited, "Too many at once. Wait a minute.")
+		return
+	}
+	if s.mirror == nil {
+		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+		return
+	}
+	how, err := s.mirror.Unsubscribe(r.Context(), targetOf(u, c), mb.Name, uidValidity, uid)
+	if !s.serverError(w, r, c.ID, err, "This message is no longer on the server.") {
+		return
+	}
+	if !how.OneClick {
+		refuse(w, http.StatusConflict, CodeConflict, "This message has no one-click unsubscribe. Its link opens the sender's page.")
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, how.Link, strings.NewReader("List-Unsubscribe=One-Click"))
+	if err != nil {
+		refuse(w, http.StatusConflict, CodeConflict, "This message's unsubscribe link is not a web address.")
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "emguio")
+	resp, err := s.web.Do(req)
+	if err != nil {
+		s.log.Warn("an unsubscribe did not reach the sender", "user", u.ID, "email_config", c.ID, "error", err.Error())
+		refuse(w, http.StatusBadGateway, CodeUnreachable, "The sender's server could not be reached. Try again later.")
+		return
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		s.log.Warn("an unsubscribe was refused by the sender", "user", u.ID, "email_config", c.ID, "status", resp.StatusCode)
+		refuse(w, http.StatusBadGateway, CodeUnreachable, fmt.Sprintf("The sender's server answered %s. Try their page instead.", resp.Status))
+		return
+	}
+	s.log.Info("unsubscribed from a newsletter", "user", u.ID, "email_config", c.ID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // serverError writes the refusal for what the mail server said, and reports whether there was
@@ -240,9 +301,9 @@ func (s *Server) proxyURL(remote string) string {
 	}.Encode()
 }
 
-// imageClient fetches what the proxy relays, through the same screen as every mail server: a
+// webClient fetches the addresses messages name, through the same screen as every mail server: a
 // message naming an address inside the network gets nothing from it.
-func imageClient(c *connect.Connector) *http.Client {
+func webClient(c *connect.Connector) *http.Client {
 	return &http.Client{
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{
@@ -285,7 +346,7 @@ func (s *Server) proxyImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("User-Agent", "emguio image proxy")
-	resp, err := s.imageClient.Do(req)
+	resp, err := s.web.Do(req)
 	if err != nil {
 		refuse(w, http.StatusBadGateway, CodeUnreachable, "The image could not be fetched.")
 		return

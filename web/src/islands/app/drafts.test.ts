@@ -34,11 +34,13 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   answered: false,
   draft: false,
   has_attachments: true,
+  newsletter: false,
   preview: "",
   text: "Pizza?\n\nOr sushi.\n",
   html_text: "",
   html: "",
   held_images: 0,
+  unsubscribe: null,
   parts: [
     {
       section: "2",

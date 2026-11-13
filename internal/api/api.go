@@ -51,9 +51,10 @@ type Server struct {
 	holds holds
 	// finder looks up a mail domain's settings; a field so a test can stand in for the web.
 	finder *autoconfig.Finder
-	// imageClient fetches what the image proxy relays, and proxyKey signs what it may fetch.
-	imageClient *http.Client
-	proxyKey    []byte
+	// web fetches the addresses messages name: images the proxy relays, a one-click unsubscribe.
+	// proxyKey signs what the proxy may fetch.
+	web      *http.Client
+	proxyKey []byte
 
 	loginAll  *limiter
 	loginUser *limiter
@@ -61,6 +62,9 @@ type Server struct {
 	lookups   *limiter
 	images    *limiter
 	pushTests *limiter
+	// unsubscribes bounds how many one-click unsubscribes a user sends: each is a request
+	// emguio makes to an address a message names.
+	unsubscribes *limiter
 
 	// writeDeadline is how long a request that changes something may run. A field so a test
 	// can make it short.
@@ -103,17 +107,18 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		holds:     holds{said: map[string]heldUntil{}},
 		proxyKey:  proxyKey(cfg.SecretKey),
 
-		loginAll:  newLimiter(30, 2*time.Second),
-		loginUser: newLimiter(5, 20*time.Second),
-		tests:     newLimiter(10, 6*time.Second),
-		lookups:   newLimiter(10, 6*time.Second),
-		images:    newLimiter(200, 100*time.Millisecond),
-		pushTests: newLimiter(3, 20*time.Second),
+		loginAll:     newLimiter(30, 2*time.Second),
+		loginUser:    newLimiter(5, 20*time.Second),
+		tests:        newLimiter(10, 6*time.Second),
+		lookups:      newLimiter(10, 6*time.Second),
+		images:       newLimiter(200, 100*time.Millisecond),
+		pushTests:    newLimiter(3, 20*time.Second),
+		unsubscribes: newLimiter(10, 6*time.Second),
 
 		writeDeadline: WriteDeadline,
 	}
 
-	s.imageClient = imageClient(s.connector)
+	s.web = webClient(s.connector)
 	s.finder = finderOf(s.connector)
 
 	s.mux.HandleFunc("GET /healthz", s.healthz)
@@ -158,6 +163,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/threads", s.requireSession(s.threadCounts))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.readMessage))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/conversation", s.requireSession(s.conversation))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/unsubscribe", s.requireSession(s.unsubscribe))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireSession(s.readPart))
 	s.handle("GET /api/proxy", s.requireSession(s.proxyImage))
 

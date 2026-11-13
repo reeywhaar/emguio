@@ -160,6 +160,7 @@ const message = (
   answered: false,
   draft: false,
   has_attachments: false,
+  newsletter: false,
   preview: "",
   ...extra,
 });
@@ -173,6 +174,7 @@ beforeEach(() => {
       message("m_1", "Quarterly numbers", {
         seen: false,
         has_attachments: true,
+        newsletter: false,
       }),
       message("m_2", "Lunch?", { flagged: true }),
     ],
@@ -202,6 +204,7 @@ const opened = (id: string) => {
     reply_to: [],
     html_text: "",
     held_images: 0,
+    unsubscribe: null,
     parts: [],
   });
   // The server takes the job and never says it is done: what shows is what the press drew.
@@ -304,6 +307,20 @@ describe("the mail view", () => {
     within(rows[0]!).getByRole("img", { name: "Attachment" });
     within(rows[1]!).getByRole("img", { name: "Flagged" });
     expect(within(rows[1]!).queryByText("Unread.")).toBeNull();
+  });
+
+  it("marks a newsletter in the list", async () => {
+    getMessages.mockResolvedValue({
+      messages: [
+        message("m_1", "Weekly digest", { newsletter: true }),
+        message("m_2", "Lunch?"),
+      ],
+    });
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
+    const list = await screen.findByRole("list", { name: "Messages" });
+    const rows = within(list).getAllByRole("listitem");
+    within(rows[0]!).getByText("Newsletter");
+    expect(within(rows[1]!).queryByText("Newsletter")).toBeNull();
   });
 
   // Asked for once the rows show, a page at a time, and drawn beside the date.
@@ -837,6 +854,7 @@ describe("the mail view", () => {
       reply_to: [],
       html_text: "",
       held_images: 0,
+      unsubscribe: null,
       parts: [],
     });
     mount(<Mail named="ec_1" mailbox="mb_inbox" message="m_2" />);
@@ -911,6 +929,7 @@ describe("the mail view", () => {
         reply_to: [],
         html_text: "",
         held_images: 0,
+        unsubscribe: null,
         parts: [],
       }),
     );

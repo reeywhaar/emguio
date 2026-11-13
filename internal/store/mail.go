@@ -119,6 +119,8 @@ type Header struct {
 	MessageID      string
 	InReplyTo      string
 	HasAttachments bool
+	// Newsletter is whether it says how to unsubscribe from its sender's mail.
+	Newsletter bool
 	// Preview is the start of the text, on one line, empty until something has read it.
 	Preview string
 }
@@ -371,7 +373,8 @@ func (s *Store) MessageFlags(ctx context.Context, mailboxID string) (map[uint32]
 }
 
 // PutMessages keeps messages, in one transaction. One already kept under a UID only has its
-// flags updated: a UID names one message for as long as the UIDVALIDITY lasts.
+// flags updated, and whether it is a newsletter: a UID names one message for as long as the
+// UIDVALIDITY lasts.
 func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Header) error {
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
@@ -380,10 +383,11 @@ func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Hea
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx,
 		`INSERT INTO messages (mailbox_id, uid, internal_date, date, size, seen, flagged, answered, draft,
-		   subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview, newsletter)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (mailbox_id, uid) DO UPDATE SET
-		   seen = excluded.seen, flagged = excluded.flagged, answered = excluded.answered, draft = excluded.draft`)
+		   seen = excluded.seen, flagged = excluded.flagged, answered = excluded.answered, draft = excluded.draft,
+		   newsletter = excluded.newsletter`)
 	if err != nil {
 		return fmt.Errorf("put messages: %w", err)
 	}
@@ -398,7 +402,7 @@ func (s *Store) PutMessages(ctx context.Context, mailboxID string, headers []Hea
 		if _, err := stmt.ExecContext(ctx,
 			mailboxID, h.UID, unix(h.InternalDate), date, h.Size,
 			h.Flags.Seen, h.Flags.Flagged, h.Flags.Answered, h.Flags.Draft,
-			h.Subject, h.From.Name, h.From.Email, string(to), string(cc), h.MessageID, h.InReplyTo, h.HasAttachments, h.Preview); err != nil {
+			h.Subject, h.From.Name, h.From.Email, string(to), string(cc), h.MessageID, h.InReplyTo, h.HasAttachments, h.Preview, h.Newsletter); err != nil {
 			return fmt.Errorf("put messages: %w", err)
 		}
 	}
@@ -450,12 +454,31 @@ func (s *Store) DeleteMessages(ctx context.Context, mailboxID string, uids []uin
 	return tx.Commit()
 }
 
+// Unchecked is the kept messages not known to be newsletters or not, which a pass fetches again.
+func (s *Store) Unchecked(ctx context.Context, mailboxID string) ([]uint32, error) {
+	rows, err := s.reader.QueryContext(ctx, `SELECT uid FROM messages WHERE mailbox_id = ? AND newsletter IS NULL`, mailboxID)
+	if err != nil {
+		return nil, fmt.Errorf("unchecked: %w", err)
+	}
+	defer rows.Close()
+	var out []uint32
+	for rows.Next() {
+		var uid uint32
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("unchecked: %w", err)
+		}
+		out = append(out, uid)
+	}
+	return out, rows.Err()
+}
+
 // Window is the messages kept of a mailbox, newest to arrive first and by UID within a second:
 // its newest, which a list opens on without asking the server.
 func (s *Store) Window(ctx context.Context, mb *Mailbox) ([]*Message, error) {
 	rows, err := s.reader.QueryContext(ctx,
 		`SELECT uid, internal_date, date, size, seen, flagged, answered, draft,
-		        subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview
+		        subject, from_name, from_email, to_json, cc_json, message_id, in_reply_to, has_attachments, preview,
+		        COALESCE(newsletter, 0)
 		   FROM messages WHERE mailbox_id = ? ORDER BY internal_date DESC, uid DESC`, mb.ID)
 	if err != nil {
 		return nil, fmt.Errorf("window: %w", err)
@@ -471,7 +494,8 @@ func (s *Store) Window(ctx context.Context, mb *Mailbox) ([]*Message, error) {
 		)
 		if err := rows.Scan(&m.UID, &internal, &date, &m.Size,
 			&m.Flags.Seen, &m.Flags.Flagged, &m.Flags.Answered, &m.Flags.Draft,
-			&m.Subject, &m.From.Name, &m.From.Email, &to, &cc, &m.MessageID, &m.InReplyTo, &m.HasAttachments, &m.Preview); err != nil {
+			&m.Subject, &m.From.Name, &m.From.Email, &to, &cc, &m.MessageID, &m.InReplyTo, &m.HasAttachments, &m.Preview,
+			&m.Newsletter); err != nil {
 			return nil, fmt.Errorf("window: %w", err)
 		}
 		m.InternalDate = fromUnix(internal)

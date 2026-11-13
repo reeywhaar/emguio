@@ -124,6 +124,8 @@ export type Message = {
   answered: boolean;
   draft: boolean;
   has_attachments: boolean;
+  /** Whether it says how to unsubscribe from its sender's mail. */
+  newsletter: boolean;
   preview: string;
 };
 
@@ -177,6 +179,11 @@ export type ReadMessage = Message & {
    */
   held_images: number;
   parts: Part[];
+  /**
+   * How its sender says to stop their mail, null when they do not: their page, and whether a
+   * press here does it instead.
+   */
+  unsubscribe: { link: string; one_click: boolean } | null;
 };
 
 /** Something asked to be done to a message, as the server is asked it. */

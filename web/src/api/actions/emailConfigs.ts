@@ -211,6 +211,13 @@ export const getEmailConfigsByIdMailboxesByMailboxMessagesByMessageConversation 
   (id: string, mailbox: string, message: string) =>
     request<Conversation>(`${messagePath(id, mailbox, message)}/conversation`);
 
+/** Unsubscribes from a newsletter in one click, where its sender takes that. */
+export const postEmailConfigsByIdMailboxesByMailboxMessagesByMessageUnsubscribe =
+  (id: string, mailbox: string, message: string) =>
+    request<void>(`${messagePath(id, mailbox, message)}/unsubscribe`, {
+      method: "POST",
+    });
+
 /** How many messages each of some is in a conversation with in its folder, those not alone. */
 export const getEmailConfigsByIdMailboxesByMailboxThreads = (
   id: string,

@@ -296,6 +296,16 @@ func (s *session) window(ctx context.Context, mb *store.Mailbox) (bool, error) {
 			missing = append(missing, uid)
 		}
 	}
+	// Kept without knowing whether it is a newsletter: fetched again.
+	unchecked, err := s.m.store.Unchecked(ctx, mb.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, uid := range unchecked {
+		if _, ok := current[uid]; ok {
+			missing = append(missing, uid)
+		}
+	}
 	if err := s.m.store.DeleteMessages(ctx, mb.ID, gone); err != nil {
 		return false, err
 	}
@@ -362,14 +372,7 @@ func (s *session) fetch(set imap.NumSet) ([]store.Header, error) {
 
 // heads is fetch without the previews.
 func (s *session) heads(set imap.NumSet) ([]*imapclient.FetchMessageBuffer, []store.Header, error) {
-	msgs, err := s.client.Fetch(set, &imap.FetchOptions{
-		UID:           true,
-		Flags:         true,
-		InternalDate:  true,
-		RFC822Size:    true,
-		Envelope:      true,
-		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
-	}).Collect()
+	msgs, err := s.client.Fetch(set, shown()).Collect()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -379,6 +382,23 @@ func (s *session) heads(set imap.NumSet) ([]*imapclient.FetchMessageBuffer, []st
 		out = append(out, header(msg))
 	}
 	return msgs, out, nil
+}
+
+// unsubscribing is the header fields that say how to stop a message's mail.
+var unsubscribing = &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: message.ListHeaders, Peek: true}
+
+// shown is what is fetched of a message a list shows: its envelope, flags and structure, and
+// whether it is a newsletter, in the same command.
+func shown() *imap.FetchOptions {
+	return &imap.FetchOptions{
+		UID:           true,
+		Flags:         true,
+		InternalDate:  true,
+		RFC822Size:    true,
+		Envelope:      true,
+		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+		BodySection:   []*imap.FetchItemBodySection{unsubscribing},
+	}
 }
 
 // How much of a text part a preview is read from. A line of text and room for the markup an HTML
@@ -541,6 +561,7 @@ func header(msg *imapclient.FetchMessageBuffer) store.Header {
 		InternalDate:   msg.InternalDate.UTC(),
 		Size:           msg.RFC822Size,
 		HasAttachments: hasAttachments(msg.BodyStructure),
+		Newsletter:     message.UnsubscribeOf(msg.FindBodySection(unsubscribing)).Any(),
 	}
 	if env := msg.Envelope; env != nil {
 		h.Subject = clean(env.Subject)

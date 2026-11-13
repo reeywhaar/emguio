@@ -41,6 +41,8 @@ type fakeMirror struct {
 	// deleted is each message deleted, as mailbox and UID; gone are the UIDs the server no longer has.
 	deleted []string
 	gone    map[uint32]bool
+	// unsubscribing is how the message on the server says to stop its sender's mail.
+	unsubscribing message.Unsubscribe
 	// origin is what a reply reads of its original, and sendings what was sent.
 	origin   *mirror.Origin
 	sendings []mirror.Sending
@@ -188,6 +190,14 @@ func (f *fakeMirror) ForgetDraft(ctx context.Context, userID, id string) (*store
 	return f.store.DeleteDraft(ctx, userID, id)
 }
 
+func (f *fakeMirror) Unsubscribe(context.Context, store.SyncTarget, string, uint32, uint32) (message.Unsubscribe, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return message.Unsubscribe{}, f.err
+	}
+	return f.unsubscribing, nil
+}
 func (f *fakeMirror) Origin(context.Context, store.SyncTarget, string, uint32, uint32) (*mirror.Origin, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -228,7 +238,7 @@ func (f *fakeMirror) Read(_ context.Context, _ store.SyncTarget, _ string, _, ui
 		return nil, f.err
 	}
 	h := store.Header{UID: uid, Subject: "Message A", From: store.Address{Name: "Alice", Email: "alice@example.com"}}
-	return &mirror.Opened{Header: h, Structure: f.opened}, nil
+	return &mirror.Opened{Header: h, Structure: f.opened, Unsubscribe: f.unsubscribing}, nil
 }
 func (f *fakeMirror) Part(_ context.Context, _ store.SyncTarget, _ string, _, _ uint32, section []int) ([]byte, []byte, error) {
 	f.mu.Lock()

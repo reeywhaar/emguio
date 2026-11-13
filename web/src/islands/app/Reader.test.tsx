@@ -14,6 +14,7 @@ import { Compose } from "@app/islands/app/Compose";
 import { Notice } from "@app/islands/app/Notice";
 import { Reader, subjectLook } from "@app/islands/app/Reader";
 import { mount } from "@app/test/harness";
+import { later } from "@app/test/later";
 
 const getMessage = vi.fn();
 const getMailboxes = vi.fn();
@@ -25,6 +26,7 @@ const postDraft = vi.fn();
 const getConversation = vi.fn();
 const putDraft = vi.fn();
 const deleteDraft = vi.fn();
+const postUnsubscribe = vi.fn();
 vi.mock("@app/api/actions/emailConfigs", () => ({
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessage: (
     id: string,
@@ -77,6 +79,11 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   ) => putDraft(id, draft, body),
   deleteEmailConfigsByIdDraftsByDraft: (id: string, draft: string) =>
     deleteDraft(id, draft),
+  postEmailConfigsByIdMailboxesByMailboxMessagesByMessageUnsubscribe: (
+    id: string,
+    mailbox: string,
+    message: string,
+  ) => postUnsubscribe(id, mailbox, message),
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
@@ -130,6 +137,7 @@ const listed = (extra: Partial<Message> = {}): Message => ({
   answered: false,
   draft: false,
   has_attachments: true,
+  newsletter: false,
   preview: "",
   ...extra,
 });
@@ -144,6 +152,7 @@ const read = (extra: Partial<ReadMessage> = {}): ReadMessage => ({
   html_text: "",
   html: "",
   held_images: 0,
+  unsubscribe: null,
   parts: [
     {
       section: "2",
@@ -200,6 +209,79 @@ const ready = async (name: string) => {
 const asked = (): JobDraft[] => postJob.mock.calls.map((c) => c[0]);
 
 describe("the reading pane", () => {
+  it("unsubscribes from a newsletter in one click, saying so while it does", async () => {
+    getMessage.mockResolvedValue(
+      read({
+        newsletter: true,
+        unsubscribe: { link: "https://news.example.com/u", one_click: true },
+      }),
+    );
+    const answer = later<void>();
+    postUnsubscribe.mockReturnValue(answer.promise);
+    open();
+    await screen.findByText("Newsletter");
+    fireEvent.click(await ready("Unsubscribe"));
+    const pending = await screen.findByRole<HTMLButtonElement>("button", {
+      name: "Unsubscribing",
+    });
+    expect(pending.disabled).toBe(true);
+    expect(postUnsubscribe).toHaveBeenCalledWith("ec_1", inbox.id, "m_1");
+    answer.give();
+    await screen.findByText("Unsubscribed");
+    expect(screen.queryByRole("button", { name: /^Unsubscrib/ })).toBeNull();
+  });
+
+  it("says why an unsubscribe failed, and offers the sender's page", async () => {
+    getMessage.mockResolvedValue(
+      read({
+        newsletter: true,
+        unsubscribe: { link: "https://news.example.com/u", one_click: true },
+      }),
+    );
+    postUnsubscribe.mockRejectedValue(
+      new ApiError(
+        502,
+        "unreachable",
+        "The sender's server answered 404 Not Found. Try their page instead.",
+      ),
+    );
+    open();
+    fireEvent.click(await ready("Unsubscribe"));
+    await screen.findByText(/answered 404 Not Found/);
+    const page = screen.getByRole<HTMLAnchorElement>("link", {
+      name: "Open their page",
+    });
+    expect(page.href).toBe("https://news.example.com/u");
+    expect(page.target).toBe("_blank");
+    await ready("Unsubscribe");
+  });
+
+  it("opens the sender's page where one click is not offered", async () => {
+    getMessage.mockResolvedValue(
+      read({
+        newsletter: true,
+        unsubscribe: { link: "https://news.example.com/u", one_click: false },
+      }),
+    );
+    open();
+    const page = await screen.findByRole<HTMLAnchorElement>("link", {
+      name: "Unsubscribe",
+    });
+    expect([page.href, page.target, page.rel]).toEqual([
+      "https://news.example.com/u",
+      "_blank",
+      "noreferrer noopener",
+    ]);
+    expect(screen.queryByRole("button", { name: "Unsubscribe" })).toBeNull();
+  });
+
+  it("offers no unsubscribing for a letter", async () => {
+    open();
+    await screen.findByText("q3.pdf");
+    expect(screen.queryByText("Newsletter")).toBeNull();
+    expect(screen.queryByText("Unsubscribe")).toBeNull();
+  });
+
   it("says who, to whom, and what", async () => {
     open();
     await screen.findByRole("heading", { name: "Quarterly numbers" });
@@ -237,6 +319,7 @@ describe("the reading pane", () => {
       read({
         html: '<p>Rich <img src="data:image/gif;base64,R0lGOD" data-src="/api/proxy?u=x"></p>',
         held_images: 3,
+        unsubscribe: null,
       }),
     );
     open();
@@ -486,7 +569,7 @@ describe("the reading pane", () => {
     open();
     fireEvent.click(await screen.findByRole("button", { name: "Reply" }));
     fireEvent.click(await screen.findByRole("button", { name: "Send later" }));
-    const later = within(
+    const picker = within(
       (await screen.findByRole("heading", { name: "Send later" })).closest(
         "dialog",
       )!,
@@ -494,16 +577,16 @@ describe("the reading pane", () => {
     const at = new Date();
     at.setDate(at.getDate() + 1);
     at.setHours(9, 30, 0, 0);
-    fireEvent.change(later.getByRole("combobox", { name: "Date" }), {
+    fireEvent.change(picker.getByRole("combobox", { name: "Date" }), {
       target: { value: isoDay(at) },
     });
-    fireEvent.change(later.getByRole("combobox", { name: "Hour" }), {
+    fireEvent.change(picker.getByRole("combobox", { name: "Hour" }), {
       target: { value: "9" },
     });
-    fireEvent.change(later.getByRole("combobox", { name: "Minute" }), {
+    fireEvent.change(picker.getByRole("combobox", { name: "Minute" }), {
       target: { value: "30" },
     });
-    fireEvent.click(later.getByRole("button", { name: "Schedule" }));
+    fireEvent.click(picker.getByRole("button", { name: "Schedule" }));
 
     await waitFor(() => expect(postSend).toHaveBeenCalledTimes(1));
     const [, body] = postSend.mock.calls[0] as [string, Outgoing];

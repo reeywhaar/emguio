@@ -423,6 +423,7 @@ A message as a list shows it:
 | `sent` | Its own `Date` header, which is the sender's claim; `null` when it has none. |
 | `seen`, `flagged`, `answered`, `draft` | Its flags on the server: read, starred, replied to, a draft. |
 | `preview` | The start of its text on one line, cut at 160 characters. May be empty. |
+| `newsletter` | Whether it names a web address to unsubscribe at, in `List-Unsubscribe`. |
 
 Listing a folder changes nothing on the server, and neither does reading a message. To mark one
 read, post a `seen` job.
@@ -445,6 +446,7 @@ It is the list's message object, with these besides:
 | `html` | Its HTML body, sanitized; empty when it has none. |
 | `held_images` | How many remote images are held back. Above 0 only in a Junk folder. |
 | `parts` | Its other parts: attachments, and the images its HTML shows. |
+| `unsubscribe` | How its sender says to stop their mail, `null` when it says nothing: `{"link": "https://…", "one_click": true}`. `link` is their page; `one_click` is whether `POST …/unsubscribe` does it here instead. |
 
 A part:
 
@@ -462,6 +464,16 @@ this instance, by paths relative to it: an image the message carries at its part
 at the [image proxy](#images). In a Junk folder a remote image is a blank `data:` image instead,
 with its proxy address in `data-src`, so the sender learns nothing until somebody chooses to load
 it.
+
+```
+POST /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/unsubscribe
+```
+
+Unsubscribes from a newsletter that takes one click: emguio sends its sender's server the POST RFC
+8058 describes, to the address the message names on the mail server, and answers `204` once the
+sender has answered `2xx`. No body. A message without one click answers `409 conflict`: open its
+`link` instead. A sender that cannot be reached, or answers otherwise, is `502 unreachable`,
+saying what it answered. At most ten a minute; past that, `429 rate_limited`.
 
 ```
 GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}
