@@ -91,7 +91,7 @@ const work: EmailConfig = {
   updated_at: 0,
   synced_at: null,
   sync_error: "",
-  inbox_unseen: 0,
+  unseen: 0,
   archive_mailbox: null,
   notify: "now",
   digest_every: 60,

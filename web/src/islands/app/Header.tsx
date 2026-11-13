@@ -111,20 +111,20 @@ function Accounts({
   );
 }
 
-/** How many are unread in a config's Inbox, when any are. */
+/** How many are unread in the folders a config notifies from, when any are. */
 function Unread({ config }: { config: EmailConfig }) {
-  if (!config.inbox_unseen) return null;
+  if (!config.unseen) return null;
   return (
     <span className="shrink-0 text-xs font-medium text-brand tabular-nums">
-      <span className="sr-only">, unread in Inbox: </span>
-      {config.inbox_unseen.toLocaleString()}
+      <span className="sr-only">, unread: </span>
+      {config.unseen.toLocaleString()}
     </span>
   );
 }
 
 /**
  * The mail account open, which opens the list of them beside it to choose another, and is marked
- * while another has unread mail in its Inbox.
+ * while another has unread mail.
  */
 function ConfigPicker({
   configs,
@@ -133,9 +133,7 @@ function ConfigPicker({
   configs: EmailConfig[];
   current: EmailConfig | undefined;
 }) {
-  const elsewhere = configs.some(
-    (c) => c.id !== current?.id && c.inbox_unseen > 0,
-  );
+  const elsewhere = configs.some((c) => c.id !== current?.id && c.unseen > 0);
   const item =
     "flex min-h-8 items-center gap-2 rounded-md px-3 text-sm pointer-coarse:min-h-10";
   return (

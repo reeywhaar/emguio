@@ -50,8 +50,8 @@ type EmailConfig struct {
 	// did not, or empty when it did.
 	SyncedAt  *time.Time
 	SyncError string
-	// InboxUnseen is how many messages in its INBOX are unread, as last counted.
-	InboxUnseen uint32
+	// Unseen is how many messages are unread in the folders it notifies from, as last counted.
+	Unseen uint32
 	// ArchiveMailbox is the folder its user chose to archive to, empty for the one the server
 	// names.
 	ArchiveMailbox string
@@ -108,10 +108,12 @@ const emailConfigColumns = `id, user_id, name, email, sender_name,
   created_at, updated_at`
 
 // emailConfigSelect is what a read takes: every written column, the sync state the mirror
-// keeps beside them, what is unread in INBOX, and the folder chosen to archive to.
+// keeps beside them, what is unread in the folders it notifies from (see notifies), and the
+// folder chosen to archive to.
 const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error,
   (SELECT COALESCE(SUM(unseen), 0) FROM mailboxes
-    WHERE mailboxes.email_config_id = email_configs.id AND special_use = 'inbox'),
+    WHERE mailboxes.email_config_id = email_configs.id
+      AND (notify = 1 OR (notify IS NULL AND special_use IN ('inbox', '')))),
   COALESCE(archive_mailbox, ''), notify, digest_every`
 
 func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error) {
@@ -125,7 +127,7 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email, &r.SenderName,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
-		&created, &updated, &synced, &r.SyncError, &r.InboxUnseen, &r.ArchiveMailbox, &r.Notify, &r.DigestEvery)
+		&created, &updated, &synced, &r.SyncError, &r.Unseen, &r.ArchiveMailbox, &r.Notify, &r.DigestEvery)
 	if err != nil {
 		return nil, err
 	}

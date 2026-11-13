@@ -278,12 +278,41 @@ func withMail(t *testing.T, n int) (*Server, *store.Store, *client, string, stri
 	return s, st, c, made.ID, boxes[0].ID
 }
 
-// A config says how much of its INBOX is unread, for the switcher to mark the ones with mail.
-func TestAConfigSaysWhatIsUnreadInItsInbox(t *testing.T) {
-	_, _, c, _, _ := withMail(t, 3)
-	got := c.json(c.do("GET", "/api/email-configs", ""))["email_configs"].([]any)[0].(map[string]any)
-	if got["inbox_unseen"] != float64(3) {
-		t.Errorf("inbox_unseen = %v", got["inbox_unseen"])
+// A config says how much is unread in the folders it notifies from, for the switcher to mark the
+// ones with mail: INBOX and the user's own, unless chosen otherwise.
+func TestAConfigSaysWhatIsUnreadWhereItNotifies(t *testing.T) {
+	_, st, c, cfg, _ := withMail(t, 3)
+	ctx := context.Background()
+	st.PutMailboxes(ctx, cfg, []store.Listed{
+		{Name: "INBOX", SpecialUse: store.UseInbox, Selectable: true},
+		{Name: "Work", Delimiter: "/", Selectable: true},
+		{Name: "Work/Clients", Delimiter: "/", Selectable: true},
+		{Name: "Junk", SpecialUse: store.UseJunk, Selectable: true},
+	})
+	id := map[string]string{}
+	boxes, _ := st.MirrorMailboxes(ctx, cfg)
+	for _, mb := range boxes {
+		id[mb.Name] = mb.ID
+	}
+	unread := func(name string, n uint32) {
+		st.SetMailboxStatus(ctx, id[name], store.MailboxStatus{UIDValidity: 7, UIDNext: n + 1, Messages: n, Unseen: n})
+	}
+	unread("Work", 20)
+	unread("Work/Clients", 100)
+	unread("Junk", 400)
+	unseen := func() any {
+		return c.json(c.do("GET", "/api/email-configs", ""))["email_configs"].([]any)[0].(map[string]any)["unseen"]
+	}
+	if got := unseen(); got != float64(123) {
+		t.Errorf("unseen = %v, want INBOX's and the user's own folders'", got)
+	}
+
+	me := c.json(c.do("GET", "/api/auth/me", ""))["id"].(string)
+	if err := st.SetNotifications(ctx, me, cfg, store.NotifyNow, 0, map[string]bool{id["Work/Clients"]: false, id["Junk"]: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := unseen(); got != float64(423) {
+		t.Errorf("unseen = %v, want the folders chosen", got)
 	}
 }
 

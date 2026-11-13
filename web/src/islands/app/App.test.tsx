@@ -47,7 +47,7 @@ const config = (id: string, name: string): EmailConfig => ({
   updated_at: 0,
   synced_at: null,
   sync_error: "",
-  inbox_unseen: 0,
+  unseen: 0,
   archive_mailbox: null,
   notify: "now",
   digest_every: 60,
@@ -105,12 +105,12 @@ describe("the application", () => {
     within(dialog).getByRole("heading", { name: "Add mail account" });
   });
 
-  // One config at a time, chosen in the header from a list that counts the unread in each Inbox,
-  // and the address says which.
+  // One config at a time, chosen in the header from a list that counts the unread in each, and the
+  // address says which.
   it("switches mail account from the header", async () => {
     getEmailConfigs.mockResolvedValue([
       config("ec_1", "Work"),
-      { ...config("ec_2", "Home"), inbox_unseen: 2 },
+      { ...config("ec_2", "Home"), unseen: 2 },
     ]);
     mount(<App />);
     await screen.findByRole("heading", { name: "Inbox of ec_1" });
@@ -120,7 +120,7 @@ describe("the application", () => {
     const menu = within(await screen.findByRole("menu"));
     expect(menu.getAllByRole("menuitem").map((l) => l.textContent)).toEqual([
       "Workwork@example.com",
-      "Homehome@example.com, unread in Inbox: 2",
+      "Homehome@example.com, unread: 2",
       "Add mail account",
     ]);
     fireEvent.click(menu.getByRole("menuitem", { name: /^Home/ }));
@@ -133,7 +133,7 @@ describe("the application", () => {
   it("puts the mail accounts side by side where they fit", async () => {
     getEmailConfigs.mockResolvedValue([
       config("ec_1", "Work"),
-      { ...config("ec_2", "Home"), inbox_unseen: 2 },
+      { ...config("ec_2", "Home"), unseen: 2 },
     ]);
     const real = globalThis.ResizeObserver;
     globalThis.ResizeObserver = class {
@@ -154,7 +154,7 @@ describe("the application", () => {
         row.getAllByRole("link").map((l) => [l.textContent, l.ariaCurrent]),
       ).toEqual([
         ["Work", "page"],
-        ["Home, unread in Inbox: 2", null],
+        ["Home, unread: 2", null],
       ]);
       expect(
         screen.queryByRole("button", { name: /^Mail account/ }),
@@ -169,7 +169,7 @@ describe("the application", () => {
   // The open one's unread are counted beside its folders already.
   it("marks the header while another mail account has unread mail", async () => {
     getEmailConfigs.mockResolvedValue([
-      { ...config("ec_1", "Work"), inbox_unseen: 3 },
+      { ...config("ec_1", "Work"), unseen: 3 },
       config("ec_2", "Home"),
     ]);
     mount(<App />);

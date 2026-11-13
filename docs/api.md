@@ -131,7 +131,7 @@ An email config:
 {"id": "ec_01k6r2n8v4b7c9d3f5g1h6j8k2", "name": "Work", "email": "ann@example.com", "sender_name": "Ann Smith",
  "incoming": {"protocol": "imap", "host": "imap.example.com", "port": 993, "tls": "implicit", "username": "ann@example.com"},
  "outgoing": {"host": "smtp.example.com", "port": 465, "tls": "implicit", "username": ""},
- "created_at": 1790000000, "updated_at": 1790000000, "synced_at": 1790000300, "sync_error": "", "inbox_unseen": 3,
+ "created_at": 1790000000, "updated_at": 1790000000, "synced_at": 1790000300, "sync_error": "", "unseen": 3,
  "archive_mailbox": null, "notify": "now", "digest_every": 60}
 ```
 
@@ -145,7 +145,7 @@ An email config:
 | `tls` | `implicit`, TLS from the first byte (usually ports 993 and 465), or `starttls` (usually 143 and 587). There is no unencrypted choice. |
 | `synced_at` | When its mail was last brought up to date; `null` before the first time. |
 | `sync_error` | Why the latest try did not, in a sentence; empty when it did. |
-| `inbox_unseen` | How many messages in INBOX are unread. |
+| `unseen` | How many messages are unread in the folders it notifies from — INBOX and the user's own unless chosen otherwise, see [Notifications](#notifications). Its badge in the interface. |
 | `archive_mailbox` | The folder chosen to archive to; `null` for the one the server names. See below. |
 | `notify` | How its new mail is told to the user's devices: `now`, each message as it arrives; `digest`, gathered; or `off`. `now` for a new one. See below. |
 | `digest_every` | How many minutes a digest gathers: 30, 60, 120 or 240. 60 for a new one. |

@@ -35,8 +35,8 @@ type emailConfigJSON struct {
 	// SyncError is why the latest try did not, and empty when it did.
 	SyncedAt  *int64 `json:"synced_at"`
 	SyncError string `json:"sync_error"`
-	// InboxUnseen is how many messages in its INBOX are unread.
-	InboxUnseen uint32 `json:"inbox_unseen"`
+	// Unseen is how many messages are unread in the folders it notifies from.
+	Unseen uint32 `json:"unseen"`
 	// ArchiveMailbox is the folder its user chose to archive to, null for the one the server
 	// names.
 	ArchiveMailbox *string `json:"archive_mailbox"`
@@ -57,7 +57,7 @@ func toJSON(c *store.EmailConfig) emailConfigJSON {
 		UpdatedAt:   c.UpdatedAt.Unix(),
 		SyncedAt:    unixOrNil(c.SyncedAt),
 		SyncError:   c.SyncError,
-		InboxUnseen: c.InboxUnseen,
+		Unseen:      c.Unseen,
 		Notify:      c.Notify,
 		DigestEvery: c.DigestEvery,
 	}

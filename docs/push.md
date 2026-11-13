@@ -85,6 +85,11 @@ A folder notifies or not as its user chose; until then INBOX and the folders the
 and the server's others — Sent, Drafts, Archive, All Mail, Junk, Trash — do not. Junk would tell
 of spam, and All Mail of every message twice.
 
+The same folders are what an account's unread count covers, whether or not its notifications are
+on: the number beside it in the header and the dot on the account picker. Mail a rule files into a folder of the user's own is
+counted as INBOX's is, and old unread mail in Archive is not. One choice says which folders'
+mail matters, for both.
+
 ## A digest waits its interval from the first message it holds
 
 An account notifies `now`, as a `digest` every 30, 60, 120 or 240 minutes, or not at all.

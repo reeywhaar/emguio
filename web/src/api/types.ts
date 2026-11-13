@@ -34,8 +34,8 @@ export type EmailConfig = {
   synced_at: number | null;
   /** Why the latest try did not, in a sentence; empty when it did. */
   sync_error: string;
-  /** How many messages in its INBOX are unread. */
-  inbox_unseen: number;
+  /** How many messages are unread in the folders it notifies from. */
+  unseen: number;
   /** The folder chosen to archive to; null for the one the server names. */
   archive_mailbox: string | null;
   /** How its new mail is told to the user's devices. */
