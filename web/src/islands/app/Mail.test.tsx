@@ -309,16 +309,21 @@ describe("the mail view", () => {
     expect(within(rows[1]!).queryByText("Unread.")).toBeNull();
   });
 
-  it("marks a message with no subject in the list", async () => {
+  // Its text takes the subject's place, on two lines; with no text either, it is marked.
+  it("shows a message with no subject by its text", async () => {
     getMessages.mockResolvedValue({
-      messages: [message("m_1", ""), message("m_2", "Re: (No subject)")],
+      messages: [
+        message("m_1", "Re: (No subject)", { preview: "Got it, thanks" }),
+        message("m_2", ""),
+      ],
     });
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const list = await screen.findByRole("list", { name: "Messages" });
     const rows = within(list).getAllByRole("listitem");
-    within(rows[0]!).getByText("No subject");
+    within(rows[0]!).getByText("Got it, thanks");
+    expect(within(rows[0]!).queryByText("No subject")).toBeNull();
+    expect(within(rows[0]!).queryByText(/^Re:/)).toBeNull();
     within(rows[1]!).getByText("No subject");
-    within(rows[1]!).getByText(/^Re:/);
     expect(within(list).queryByText(/\(no subject\)/i)).toBeNull();
   });
 

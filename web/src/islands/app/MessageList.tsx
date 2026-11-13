@@ -17,7 +17,7 @@ import { counterpart } from "@app/islands/app/mailbox";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
 import { textOf, unreadOnly } from "@app/islands/app/Search";
-import { Subject } from "@app/islands/app/Subject";
+import { Subject, untitled } from "@app/islands/app/Subject";
 import { NewsletterTag } from "@app/islands/app/Unsubscribe";
 
 /** How far before the end of the list the next run starts loading. */
@@ -310,6 +310,7 @@ function Row({
   onToggle?: (range: boolean) => void;
 }) {
   const unread = !m.seen;
+  const bare = untitled(m.subject) && m.preview !== "";
   const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"} ${arrived ? "arrived" : ""}`;
   const body = (
     <div className="min-w-0 flex-1">
@@ -346,15 +347,24 @@ function Row({
           {when(m.date)}
         </time>
       </div>
-      <p className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}>
-        <Subject subject={m.subject} />
-      </p>
+      {/* With no subject, its text takes the subject's line and the next. */}
+      {bare ? null : (
+        <p className={`truncate text-sm ${unread ? "text-fg" : "text-muted"}`}>
+          <Subject subject={m.subject} />
+        </p>
+      )}
       {scheduled(mailbox, m) ? (
         <p className="truncate text-xs font-medium text-brand">
           Scheduled · {full(m.date)}
         </p>
       ) : null}
-      {m.preview ? (
+      {bare ? (
+        <p
+          className={`line-clamp-2 text-sm wrap-anywhere ${unread ? "text-fg" : "text-muted"}`}
+        >
+          {m.preview}
+        </p>
+      ) : m.preview ? (
         <p className="truncate text-sm text-faint">{m.preview}</p>
       ) : null}
     </div>
@@ -368,7 +378,7 @@ function Row({
             checked={selected}
             readOnly
             onClick={(e) => onToggle(e.shiftKey)}
-            aria-label={m.subject || "No subject"}
+            aria-label={bare ? m.preview : m.subject || "No subject"}
             className="mt-1 size-4 shrink-0 accent-brand"
           />
           {body}

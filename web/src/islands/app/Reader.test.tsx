@@ -310,9 +310,9 @@ describe("the reading pane", () => {
   });
 
   it("marks a message with no subject rather than standing words in for one", async () => {
-    getMessage.mockResolvedValue(read({ subject: "Re: (No subject)" }));
+    getMessage.mockResolvedValue(read({ subject: "Re: Re: Re: No Subject" }));
     open();
-    await screen.findByRole("heading", { name: "Re: No subject" });
+    await screen.findByRole("heading", { name: "No subject" });
     expect(screen.queryByText(/\(no subject\)/i)).toBeNull();
   });
 
