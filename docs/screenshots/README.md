@@ -11,7 +11,7 @@ That builds the frontend and a Linux binary, and starts in Docker a Dovecot hold
 `smtp.example.com` and publishes both as `autoconfig.example.com`, and emguio on an empty data
 directory, with certificates made for the run and nothing outside resolving. Then it walks the
 install in headless Chromium over the DevTools protocol — the invitation, the mail account, the
-mail — and overwrites the PNGs here. Everything it starts is stopped on the way out. Each PNG says
+mail, and the mail on a phone — and overwrites the PNGs here. Everything it starts is stopped on the way out. Each PNG says
 its density, 72 dpi times `SCALE`, as a macOS screenshot does.
 
 emguio runs in a container even on a Mac: a binary built for macOS trusts only the system's
@@ -21,8 +21,9 @@ Needs `go`, `node`, `docker`, `openssl` and Chromium or Chrome.
 
 **A run with nothing changed changes nothing.** The mail is dated from a fixed moment and the
 page's clock starts there, in UTC and `en-US`, so the dates drawn are the same on any day; the
-caret is hidden and animations finished. A new shot that differs from the file already there in
-under a thousandth of its pixels, by at most 24 levels, leaves the file alone.
+caret is hidden and animations finished. A new shot leaves the file already there alone when every
+8 by 8 block of CSS pixels has the same average colour in both, within 24 levels: a Chromium update
+redraws the edges of letters all over a picture, and that alone is not a new picture.
 
 | knob | |
 | --- | --- |
@@ -33,11 +34,12 @@ under a thousandth of its pixels, by at most 24 levels, leaves the file alone.
 | `TIMEOUT=30` | seconds a shot may take; one that runs over says what it was waiting for |
 
 **The data** is `seed.mjs`: the user, the mail account, the folders, and the messages, each with
-the folder it is in, how long ago it came, its flags, the one it answers, and its attachments.
-Mail is appended oldest first, since a list is in the order mail arrived.
+the folder it is in, how long ago it came, its flags, the one it answers, its attachments, and,
+for a newsletter, the address it says to unsubscribe at. Each is dated how long ago it came,
+which is the order a list is in.
 
 **The shots** are the list at the bottom of
 [`capture.mjs`](../../web/scripts/screenshots/capture.mjs), in the install's order: where to go,
-what to do there, optionally one element to crop to, and what to do after, which runs whether or
-not the shot is taken. Each can carry notes: small popovers drawn over the page, pointing at what
+what to do there, optionally one element to crop to or a phone to take it as, and what to do
+after, which runs whether or not the shot is taken. Each can carry notes: small popovers drawn over the page, pointing at what
 they explain.

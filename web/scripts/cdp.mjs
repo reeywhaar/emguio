@@ -156,12 +156,17 @@ export class Browser {
     });
   }
 
-  viewport(width, height, scale = 1) {
+  /** The window's size; a phone's is also touched rather than pointed at. */
+  async viewport(width, height, scale = 1, phone = false) {
+    await this.send(
+      "Emulation.setTouchEmulationEnabled",
+      phone ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+    );
     return this.send("Emulation.setDeviceMetricsOverride", {
       width,
       height,
       deviceScaleFactor: scale,
-      mobile: false,
+      mobile: phone,
     });
   }
 

@@ -10,6 +10,7 @@
 //   replyTo      the key of the message it answers, which puts it in that conversation
 //   attachments  [{ name, type, size }], filled with bytes of that size
 //   html         an HTML part beside the text one
+//   unsubscribe  the web address it says to unsubscribe at, in one click: a newsletter
 // `to` is Langdon when it is left out, and `from` is Langdon in Sent and Drafts.
 
 // The moment the pictures are taken at. Fixed, so a run on another day draws the same dates.
@@ -101,6 +102,16 @@ The jacket draft is attached. Design hid a Fibonacci spiral in it; I am told you
 Jonas`,
   },
 
+  {
+    key: "symbols",
+    folder: "INBOX",
+    from: "Signs & Symbols Weekly <weekly@symbols.example>",
+    subject: "This week: the vesica piscis, and where to find it",
+    ago: "5h",
+    unread: true,
+    unsubscribe: "https://symbols.example/unsubscribe/l7q2",
+    body: `Three cathedrals, one coin and a corporate logo, all hiding the same two circles.`,
+  },
   {
     key: "lunch",
     folder: "INBOX",

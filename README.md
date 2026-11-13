@@ -8,7 +8,51 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 - **Email configs belong to the user.** Added in Settings rather than in a config file, and never
   mixed: one is shown at a time.
 
-Early: users add their email configs and read their mail — folders, lists, messages with their attachments, HTML shown safely, remote images through a proxy that hides the reader and held back in Junk. Only each folder's newest headers are kept, INBOX's 30 and every other's 10, so a folder opens at once; everything else is read from the server when it is asked for. Read, star, archive, delete, spam and move — one message or a selection — are done on the server, and a folder is searched there too; a message shows the conversation it is in, where the server threads. Mail is written and sent from here: new, reply, reply all and forward, through the config's outgoing server, and kept in Drafts as it is written. A message can be scheduled to go later when the outgoing server can hold mail (FUTURERELEASE), as mailio can. It installs as an app on a phone or a computer, and notifies the devices a user chooses of new mail: per account, as it arrives or in a digest every half hour to four hours, from the folders chosen.
+## What it does
+
+**Reading**
+
+- Folders with their unread counts, and lists newest first by the date mail arrived.
+- Messages open with their attachments listed. HTML is shown in a sandbox, and remote images load
+  through a proxy that hides the reader; in Junk they wait until asked for.
+- A folder is searched on the mail server, and Unread only narrows any list.
+- A message shows the conversation it is in, where the server threads, with the replies from Sent.
+- Newsletters are tagged. Unsubscribe stops one in a click where its sender allows that, and
+  otherwise opens their page.
+
+**Keeping it tidy**
+
+- Read, star, archive, delete, spam and move, for one message or a selection, done on the mail
+  server. Gmail's keys work.
+- Trash and Junk empty in one go.
+- Folders of one's own are made, renamed, moved, deleted when empty, and dragged into order. The
+  server's own stay as they are.
+
+**Writing**
+
+- New, reply, reply all and forward, sent through the account's outgoing server and kept in Drafts
+  while being written.
+- Send later, where the outgoing server can hold mail (FUTURERELEASE), as mailio can. Where the
+  server shows held mail in a Scheduled folder, it can be changed or cancelled until it goes.
+
+**Accounts**
+
+- Any number of mail accounts, added in Settings, where the address is often enough to find the
+  servers. They are listed in the order the user puts them.
+- The header shows which accounts have unread mail, and the tab's icon gets a dot.
+
+**On a phone or a computer**
+
+- Installs as an app.
+- Tells the devices a user chooses about new mail, per account: as it arrives, or in a digest every
+  30 minutes to 4 hours, from the folders ticked.
+
+**Small**
+
+- Only each folder's newest headers are kept, Inbox's 30 and every other's 10, so a folder opens at
+  once. Everything else is read from the mail server when asked for. Message bodies and attachments
+  are not stored, except a draft's while it is being written.
+- Dates are ISO, like 2026-11-13, and times are on a 24-hour clock.
 
 ## Install
 
@@ -80,11 +124,21 @@ anything is saved.
 
 [![The mail](docs/screenshots/mail.png)](docs/screenshots/mail.png)
 
+On a phone:
+
+<a href="docs/screenshots/phone.png"><img src="docs/screenshots/phone.png" width="320" alt="The mail on a phone"></a>
+
 Invented mail, captured from the real thing by `npm --prefix web run screenshots`; see
 [docs/screenshots](docs/screenshots/).
 
-More users with `docker compose exec emguio emguio invite`. The environment, the image and running from a
-checkout are in [docs/deploy.md](docs/deploy.md); the HTTP API is at `/docs` on any instance, from
-[docs/api.md](docs/api.md); how mail is read is in
-[docs/reading.md](docs/reading.md); how the code is written is in
-[docs/conventions.md](docs/conventions.md).
+More users with `docker compose exec emguio emguio invite`.
+
+## More
+
+- [docs/deploy.md](docs/deploy.md): the environment, the image, and running from a checkout.
+- [docs/api.md](docs/api.md): the HTTP API, also served at `/docs` on any instance.
+- [docs/email-configs.md](docs/email-configs.md): mail accounts, their servers and passwords.
+- [docs/reading.md](docs/reading.md): how mail is read.
+- [docs/sending.md](docs/sending.md): how mail is written and sent.
+- [docs/push.md](docs/push.md): the app and its notifications.
+- [docs/conventions.md](docs/conventions.md): how the code is written.

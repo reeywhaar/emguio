@@ -472,8 +472,7 @@ for (const folder of folders)
 const moment = Date.parse(now);
 const at = (ago) => new Date(moment - seconds(ago) * 1000);
 const keyed = Object.fromEntries(messages.map((m) => [m.key, m]));
-// Oldest first: a list is in the order mail arrived, and real mail arrives in the order it is
-// dated.
+// Oldest first, as real mail comes: a list is in the order of the dates APPEND gives.
 const arrival = messages.toSorted((a, b) => seconds(b.ago) - seconds(a.ago));
 for (const m of arrival) {
   const flags = [
@@ -518,6 +517,12 @@ function message(m) {
     `Message-ID: ${id(m.key)}`,
     ...(thread.length
       ? [`In-Reply-To: ${thread.at(-1)}`, `References: ${thread.join(" ")}`]
+      : []),
+    ...(m.unsubscribe
+      ? [
+          `List-Unsubscribe: <${m.unsubscribe}>`,
+          "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
+        ]
       : []),
     "MIME-Version: 1.0",
   ];
@@ -766,7 +771,8 @@ const still = () =>
 
 // The install, in order: each shot brings the page to a step and is taken there; then completes
 // it, whether or not it was taken, since the next one starts where it left off. A shot is the
-// whole window unless it names an element, which is photographed alone.
+// whole window unless it names an element, which is photographed alone; phone takes it as a
+// phone does.
 const shots = [
   {
     name: "invite",
@@ -867,6 +873,28 @@ const shots = [
       );
     },
   },
+  {
+    name: "phone",
+    window: [390, 844],
+    phone: true,
+    go: async () => {
+      const config = (await api("/api/email-configs")).email_configs[0];
+      const inbox = (
+        await api(`/api/email-configs/${config.id}/mailboxes`)
+      ).mailboxes.find((mb) => mb.special_use === "inbox");
+      await browser.open(`/c/${config.id}/${inbox.id}`);
+      await until("Inbox's list, its newsletter among it", () =>
+        browser.eval(
+          `[...document.querySelectorAll("ul[aria-label=Messages] li")].some((li) => li.textContent.includes("Newsletter"))`,
+        ),
+      );
+      await until("the conversation counts", () =>
+        browser.eval(
+          `[...document.querySelectorAll("ul[aria-label=Messages] li")].some((li) => li.textContent.includes("Conversation of"))`,
+        ),
+      );
+    },
+  },
 ];
 
 step(`photographing at ${SCALE}x, ${THEME}`);
@@ -881,7 +909,7 @@ for (const shot of shots) {
     TIMEOUT * 1000,
   );
   const taken = !ONLY.length || ONLY.includes(shot.name);
-  await browser.viewport(...shot.window, SCALE);
+  await browser.viewport(...shot.window, SCALE, shot.phone);
   await shot.go();
   if (taken) {
     await settled();
@@ -892,7 +920,7 @@ for (const shot of shots) {
     const file = join(OUT, `${shot.name}.png`);
     const png = stamp(await browser.png(clip), SCALE);
     const before = existsSync(file) ? readFileSync(file) : null;
-    if (before && alike(before, png)) {
+    if (before && alike(before, png, SCALE)) {
       // The same picture, kept; its metadata brought up to date if the stamp has changed.
       const restamped = stamp(before, SCALE);
       if (!restamped.equals(before)) writeFileSync(file, restamped);
@@ -969,12 +997,12 @@ function stamp(png, scale) {
 /**
  * Whether two captures are one picture, give or take the rasteriser.
  *
- * With the content pinned, a run still moved a few dozen anti-aliased pixels at an edge by a few
- * levels now and then, and git saw a new file. Kept when under a thousandth of the pixels differ
- * and none by more than 24 of 255: a moved icon or a changed word is far more than 24 levels,
- * and a changed colour is far more than a thousandth of the picture.
+ * A Chromium update redraws the edges of letters a pixel over here and there, all over the
+ * picture, which pixel by pixel reads as a change. Compared instead block by block, 8 by 8 CSS
+ * pixels, by average colour: a letter that moved inside its block leaves the average where it
+ * was, and a changed word, icon or colour moves it by far more than 24 of 255.
  */
-function alike(before, after) {
+function alike(before, after, scale) {
   const a = decode(before);
   const b = decode(after);
   if (
@@ -986,16 +1014,24 @@ function alike(before, after) {
   ) {
     return false;
   }
-  let differing = 0;
-  for (let at = 0; at < a.pixels.length; at += a.channels) {
-    let worst = 0;
-    for (let c = 0; c < a.channels; c++) {
-      worst = Math.max(worst, Math.abs(a.pixels[at + c] - b.pixels[at + c]));
+  const size = 8 * scale;
+  for (let top = 0; top < a.height; top += size) {
+    for (let left = 0; left < a.width; left += size) {
+      for (let c = 0; c < a.channels; c++) {
+        let sum = 0;
+        let n = 0;
+        for (let y = top; y < Math.min(top + size, a.height); y++) {
+          for (let x = left; x < Math.min(left + size, a.width); x++) {
+            const at = (y * a.width + x) * a.channels + c;
+            sum += a.pixels[at] - b.pixels[at];
+            n++;
+          }
+        }
+        if (Math.abs(sum) / n > 24) return false;
+      }
     }
-    if (worst > 24) return false;
-    if (worst > 0) differing++;
   }
-  return differing <= (a.pixels.length / a.channels) * 0.001;
+  return true;
 }
 
 /** The pixels of an 8-bit, non-interlaced RGB or RGBA PNG, which is what Chromium writes. */
