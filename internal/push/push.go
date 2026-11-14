@@ -106,7 +106,7 @@ func (p *Pusher) Once(ctx context.Context) time.Time {
 				"user", b.UserID, "email_config", b.EmailConfigID, "error", err.Error())
 			continue
 		}
-		ch := webpush.Channel{Topic: b.EmailConfigID, TTL: int(mailTTL.Seconds())}
+		ch := webpush.Channel{Topic: topic(b.EmailConfigID), TTL: int(mailTTL.Seconds())}
 		delivered := 0
 		for _, n := range notes {
 			delivered += p.fanOut(ctx, devices, n, ch)
@@ -116,6 +116,9 @@ func (p *Pusher) Once(ctx context.Context) time.Time {
 	}
 	return next
 }
+
+// topic is an email config's id as a push service takes it, without the underscore.
+func topic(configID string) string { return strings.ReplaceAll(configID, "_", "") }
 
 // mailTTL is how long a push service holds a notification for a device that is off: a phone off
 // overnight hears in the morning, and of each account only the newest.

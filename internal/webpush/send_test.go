@@ -18,7 +18,7 @@ func TestWhatIsSentOpensInTheBrowser(t *testing.T) {
 	sender.SetClient(service.Client())
 
 	if err := sender.Send(t.Context(), service.Subscription(), []byte("Lunch on Thursday?"),
-		webpush.Channel{Topic: "ec_test", TTL: 60}); err != nil {
+		webpush.Channel{Topic: "ectest", TTL: 60}); err != nil {
 		t.Fatal(err)
 	}
 	got := service.Got()

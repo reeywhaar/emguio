@@ -128,8 +128,8 @@ func TestAMessageIsToldAsItArrives(t *testing.T) {
 	if got[0] != want {
 		t.Errorf("told %+v, want %+v", got[0], want)
 	}
-	if topic := w.service.Got()[0].Header.Get("Topic"); topic != w.config {
-		t.Errorf("topic %q, want the config's id", topic)
+	if topic := w.service.Got()[0].Header.Get("Topic"); topic != strings.ReplaceAll(w.config, "_", "") {
+		t.Errorf("topic %q, want the config's id without the underscore", topic)
 	}
 	w.pusher.Once(context.Background())
 	if len(w.told()) != 1 {

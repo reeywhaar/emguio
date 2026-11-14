@@ -30,7 +30,7 @@ const (
 		"pK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN"
 )
 
-var test = Channel{Topic: "ec_test", TTL: 600}
+var test = Channel{Topic: "ectest", TTL: 600}
 
 func decode(t *testing.T, s string) []byte {
 	t.Helper()
@@ -174,6 +174,25 @@ func TestTheChannelDecidesTopicAndTTL(t *testing.T) {
 	}
 	if got.Get("Content-Encoding") != "aes128gcm" {
 		t.Errorf("Content-Encoding %q", got.Get("Content-Encoding"))
+	}
+}
+
+// Apple refuses a topic with an underscore as BadWebPushTopic, though RFC 8030 allows it.
+func TestATopicPushServicesRefuseIsNotSent(t *testing.T) {
+	sent := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = true
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	for _, topic := range []string{"", "ec_01m70egwar0rjd12kte9x2ggnh", "ec-test", strings.Repeat("a", 33)} {
+		if err := testSender(t).Send(t.Context(), Subscription{Endpoint: srv.URL, P256dh: vectorUAPublic, Auth: vectorAuth},
+			[]byte("hi"), Channel{Topic: topic, TTL: 60}); err == nil {
+			t.Errorf("topic %q was taken", topic)
+		}
+	}
+	if sent {
+		t.Error("a refused topic was sent")
 	}
 }
 

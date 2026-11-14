@@ -31,10 +31,23 @@ const MaxBody = 4096
 // Channel is one stream of messages as a push service sees it. The topic and the TTL are one
 // decision: a push service keeps only the newest undelivered message of a topic.
 type Channel struct {
-	// Topic is at most 32 characters of the URL-safe alphabet, per RFC 8030.
+	// Topic is 1 to 32 letters and digits. RFC 8030 allows - and _ too; push services refuse them.
 	Topic string
 	// TTL is how long, in seconds, a push service holds a message it could not deliver.
 	TTL int
+}
+
+// validTopic is whether a push service takes topic.
+func validTopic(topic string) bool {
+	if topic == "" || len(topic) > 32 {
+		return false
+	}
+	for _, r := range topic {
+		if !('a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // recordSize is what the header says. One record, so it only has to hold the whole payload.
@@ -81,6 +94,9 @@ func (s *Sender) PublicKey() string { return b64.EncodeToString(s.pub) }
 // that is not a success is a *Failure, so a subscription that is gone can be told from one
 // that is busy.
 func (s *Sender) Send(ctx context.Context, sub Subscription, payload []byte, ch Channel) error {
+	if !validTopic(ch.Topic) {
+		return fmt.Errorf("push topic %q is not 1 to 32 letters and digits", ch.Topic)
+	}
 	body, err := s.seal(sub, payload)
 	if err != nil {
 		return err

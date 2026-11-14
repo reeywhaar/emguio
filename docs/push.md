@@ -117,7 +117,8 @@ how many, and who and what for the first five; a tap opens their folder, or the 
 they are in more than one. A user with more than one account is told which.
 
 Each account's notifications share a `Topic`, so a phone that was off hears, of each account,
-only the newest, for up to a day. A digest carries the account as its tag, so a newer one takes
+only the newest, for up to a day. The topic is the account's id without its underscore: RFC 8030
+allows `_` and `-`, but Apple refuses them as `BadWebPushTopic`. A digest carries the account as its tag, so a newer one takes
 the older's place on screen; a message carries its own.
 
 WebKit does not replace a notification by its tag
