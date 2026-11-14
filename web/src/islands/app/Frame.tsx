@@ -21,13 +21,14 @@ const policy = (origin: string) =>
 // The frame fills the space under the headers, edge to edge, and scrolls itself: a mail lays
 // itself out to fill a page. Taller than its space and left to the pane to scroll, it could not
 // be scrolled on a phone, because Mobile Safari does not hand a touch on a frame to the pane
-// around it.
+// around it. Its page is padded as a plain text one is: mail that is a few lines of HTML brings no
+// margin of its own.
 const frame = (html: string) =>
   `<!doctype html><html><head><meta charset="utf-8">` +
   `<meta http-equiv="Content-Security-Policy" content="${policy(window.location.origin)}">` +
   `<base target="_blank">` +
   `<style>html{color-scheme:light;overflow:auto}` +
-  `body{margin:0;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +
+  `body{margin:0;padding:16px;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +
   `overflow-wrap:anywhere;width:fit-content;min-width:100%;box-sizing:border-box}` +
   `img{max-width:100%;height:auto}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
 
