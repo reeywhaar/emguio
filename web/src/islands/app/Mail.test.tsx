@@ -425,7 +425,7 @@ describe("the mail view", () => {
   it("offers nothing of the kind for the server's own folders", async () => {
     window.history.pushState({}, "", "/c/ec_1/mb_sent");
     mount(<Routed />);
-    await screen.findAllByText("To: Bob");
+    await screen.findAllByText("Bob");
     expect(screen.queryByRole("combobox", { name: "Folder" })).toBeNull();
   });
 
@@ -620,7 +620,7 @@ describe("the mail view", () => {
   // In mail somebody sent, the useful name is who it went to.
   it("shows who sent mail went to", async () => {
     mount(<Mail named="ec_1" mailbox="mb_sent" message={null} />);
-    await screen.findAllByText("To: Bob");
+    await screen.findAllByText("Bob");
   });
 
   // A search is the server's, in the folder open; the address keeps it, so a result opened has

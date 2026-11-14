@@ -10,6 +10,7 @@ import { messageOf } from "@app/api/transport";
 import type { Mailbox, Message } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
+import { Tag } from "@app/components/Tag";
 import { Paperclip, Star } from "@app/components/icons";
 import { full, when } from "@app/format";
 import { Link } from "@app/islands/app/Link";
@@ -310,6 +311,7 @@ function Row({
   onToggle?: (range: boolean) => void;
 }) {
   const unread = !m.seen;
+  const who = counterpart(mailbox, m);
   const bare = untitled(m.subject) && m.preview !== "";
   const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"} ${arrived ? "arrived" : ""}`;
   const body = (
@@ -317,9 +319,10 @@ function Row({
       <div className="flex items-baseline gap-2">
         {unread ? <span className="sr-only">Unread.</span> : null}
         <span
-          className={`min-w-0 flex-1 truncate text-sm ${unread ? "font-semibold" : ""}`}
+          className={`flex min-w-0 flex-1 items-center gap-1.5 text-sm ${unread ? "font-semibold" : ""}`}
         >
-          {counterpart(mailbox, m)}
+          {who.to ? <Tag>To:</Tag> : null}
+          <span className="truncate">{who.who}</span>
         </span>
         {m.newsletter ? <NewsletterTag /> : null}
         {m.has_attachments ? (

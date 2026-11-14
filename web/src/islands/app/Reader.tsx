@@ -18,6 +18,7 @@ import type {
 } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
+import { Tag } from "@app/components/Tag";
 import {
   ForwardMark,
   Paperclip,
@@ -283,8 +284,10 @@ function Replies({ config, m }: { config: string; m: ReadMessage }) {
 function People({ label, people }: { label: string; people: Address[] }) {
   if (people.length === 0) return null;
   return (
-    <div className="flex gap-x-3 text-sm text-muted">
-      <span className="shrink-0">{label}:</span>
+    <div className="flex items-baseline gap-x-2 text-sm text-muted">
+      <span className="shrink-0">
+        <Tag size="badge">{label}:</Tag>
+      </span>
       {/* Wrapped, the people line up under each other rather than under the label. */}
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
         {people.map((p, i) => (

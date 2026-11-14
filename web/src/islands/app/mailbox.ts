@@ -55,14 +55,20 @@ export function usual(boxes: Mailbox[]): Mailbox | undefined {
 }
 
 /**
- * Who a row is about. In mail one sent, that is who it went to; everywhere else, who it came
- * from — the name when there is one, the address when there is not.
+ * Who a row is about. In mail one sent, that is who it went to, and to says so; everywhere else,
+ * who it came from — the name when there is one, the address when there is not.
  */
-export function counterpart(mb: Mailbox, m: Message): string {
+export function counterpart(
+  mb: Mailbox,
+  m: Message,
+): { to: boolean; who: string } {
   if (["sent", "drafts", "scheduled"].includes(mb.special_use)) {
     const to = m.to[0];
-    if (!to) return "(no recipient)";
-    return `To: ${to.name || to.email}${m.to.length > 1 ? ` +${m.to.length - 1}` : ""}`;
+    if (!to) return { to: true, who: "(no recipient)" };
+    return {
+      to: true,
+      who: `${to.name || to.email}${m.to.length > 1 ? ` +${m.to.length - 1}` : ""}`,
+    };
   }
-  return m.from.name || m.from.email || "(no sender)";
+  return { to: false, who: m.from.name || m.from.email || "(no sender)" };
 }
