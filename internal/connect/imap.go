@@ -107,6 +107,10 @@ func imapFailure(s Server, stage string, err error) *Failure {
 	if f, ok := netFailure(s, err); ok {
 		return f
 	}
+	// go-imap says a connection closed before its greeting in words alone.
+	if stage == "greeting" && strings.Contains(err.Error(), "connection closed before greeting") {
+		return fail("network", "%s closed the connection.", s.addr())
+	}
 	if stage == "starttls" && strings.Contains(err.Error(), "PREAUTH") {
 		return fail("starttls", "%s signed in before STARTTLS, which would have sent the password in the clear.", s.addr())
 	}

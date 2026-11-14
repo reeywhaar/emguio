@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"strconv"
@@ -214,6 +215,8 @@ func tlsFailure(s Server, err error) *Failure {
 		return fail("tls", "%s did not answer with TLS. If the port expects STARTTLS, choose that instead.", s.addr())
 	case timedOut(err):
 		return timeoutFailure(s)
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, syscall.ECONNRESET):
+		return fail("network", "%s closed the connection.", s.addr())
 	default:
 		return fail("tls", "The TLS handshake with %s failed.", s.addr())
 	}
@@ -247,7 +250,8 @@ func netFailure(s Server, err error) (*Failure, bool) {
 		return tlsFailure(s, err), true
 	case timedOut(err):
 		return timeoutFailure(s), true
-	case errors.As(err, &netErr), errors.Is(err, syscall.ECONNRESET), errors.Is(err, net.ErrClosed):
+	case errors.As(err, &netErr), errors.Is(err, syscall.ECONNRESET), errors.Is(err, net.ErrClosed),
+		errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return fail("network", "%s closed the connection.", s.addr()), true
 	}
 	return nil, false

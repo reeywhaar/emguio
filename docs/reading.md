@@ -180,7 +180,10 @@ worker waiting on the server sees it close the connection the moment it does, no
 worker, so it never goes on signing in with what was saved before.
 
 The latest failure is the config's `sync_error`, in a sentence, shown above the list and cleared
-by the next pass that works.
+by the next pass that works. One a retry usually gets past — the connection dropped, turned away
+or too slow — is shown only once three tries in a row have failed so; any other, a wrong password
+or a host that does not exist, at once. Every one is logged, with how many in a row and how long
+the connection had worked.
 
 ## INBOX as it changes, every folder every five minutes
 

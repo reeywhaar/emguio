@@ -38,6 +38,13 @@ const (
 // errHungUp is a connection the server closed while it was waited on.
 var errHungUp = fmt.Errorf("the server closed the connection: %w", io.EOF)
 
+// passing are the failures a retry usually gets past: the connection dropped, refused for a
+// moment, or slow. A config shows one only once shownAfter tries in a row have failed so; any
+// other, a wrong password say, at once.
+var passing = map[string]bool{"network": true, "timeout": true, "unknown": true}
+
+const shownAfter = 3
+
 // held is how long a session works before the server closing it is the server tidying up rather
 // than a failure. A variable so a test need not wait it out.
 var held = time.Minute
@@ -232,16 +239,21 @@ func (m *Mirror) work(ctx context.Context, w *worker) {
 		if synced {
 			failures = 0
 		}
+		// How long the connection worked, which says how long a server keeps one.
+		var lasted time.Duration
+		if synced {
+			lasted = time.Since(began)
+		}
 		// Servers close a connection held open long enough. One that worked a while is opened
 		// again at once, and is no failure to show.
-		if _, class := explain(err); synced && class == "network" && time.Since(began) >= held {
+		if _, class := explain(err); synced && class == "network" && lasted >= held {
 			m.log.Info("mail sync reconnecting: the server closed the connection", append(who(w.target),
-				"after", time.Since(began).Round(time.Second))...)
+				"after", lasted.Round(time.Second))...)
 			continue
 		}
 		wait := backoff[min(failures, len(backoff)-1)]
 		failures++
-		m.failed(ctx, w.target, err, wait)
+		m.failed(ctx, w.target, err, wait, failures, lasted)
 		select {
 		case <-ctx.Done():
 			return
@@ -403,12 +415,12 @@ func (s *session) wait(ctx context.Context, tick <-chan time.Time, wake <-chan s
 func (m *Mirror) Once(ctx context.Context, t store.SyncTarget) error {
 	s, err := m.open(ctx, t)
 	if err != nil {
-		m.failed(ctx, t, err, 0)
+		m.failed(ctx, t, err, 0, shownAfter, 0)
 		return err
 	}
 	defer s.client.Close()
 	if _, err := s.pass(ctx, true, nil); err != nil {
-		m.failed(ctx, t, err, 0)
+		m.failed(ctx, t, err, 0, shownAfter, 0)
 		return err
 	}
 	s.client.Logout().Wait()
@@ -466,14 +478,19 @@ func useOf(mb *store.Mailbox) string {
 	return mb.SpecialUse
 }
 
-// failed records why the latest attempt did not work, in a sentence for the settings page, and
-// logs it with when it is tried again: retry, none for a look that is not.
-func (m *Mirror) failed(ctx context.Context, t store.SyncTarget, err error, retry time.Duration) {
+// failed logs why the latest attempt did not work, with when it is tried again (retry, none for a
+// look that is not), how many have failed in a row, and how long the connection had worked
+// (after, none when it never did). The config shows it in a sentence, a passing one only once it
+// has lasted.
+func (m *Mirror) failed(ctx context.Context, t store.SyncTarget, err error, retry time.Duration, inRow int, after time.Duration) {
 	if err == nil || ctx.Err() != nil {
 		return
 	}
 	sentence, class := explain(err)
-	attrs := append(who(t), "why", sentence, "error", err.Error())
+	attrs := append(who(t), "why", sentence, "error", err.Error(), "in_a_row", inRow)
+	if after > 0 {
+		attrs = append(attrs, "after", after.Round(time.Second))
+	}
 	if retry > 0 {
 		attrs = append(attrs, "retry_in", retry.String())
 	}
@@ -483,6 +500,9 @@ func (m *Mirror) failed(ctx context.Context, t store.SyncTarget, err error, retr
 		level = slog.LevelError
 	}
 	m.log.Log(ctx, level, "mail sync failed", attrs...)
+	if passing[class] && inRow < shownAfter {
+		return
+	}
 	if err := m.store.SetSyncState(ctx, t.ID, sentence); err != nil {
 		m.log.Error("mail sync could not record why it failed", append(who(t), "error", err.Error())...)
 		return

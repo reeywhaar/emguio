@@ -2,6 +2,7 @@ package connecttest
 
 import (
 	"bufio"
+	"crypto/tls"
 	"io"
 	"net"
 	"regexp"
@@ -27,6 +28,15 @@ type Front struct {
 	// Sorts is the answer to SORT, as the server says it: "3 1 2". SORT is offered only while it
 	// is set.
 	Sorts string
+	// dropping is whether a new connection is closed once it is made, before the greeting.
+	dropping bool
+}
+
+// Drop has every new connection closed once it is made, as a server turning clients away does.
+func (n *Front) Drop(on bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.dropping = on
 }
 
 // notified is one client's connection, written to one whole response at a time, so what is
@@ -123,6 +133,15 @@ var (
 
 func (n *Front) serve(t testing.TB, client net.Conn, behind int) {
 	defer client.Close()
+	n.mu.Lock()
+	dropping := n.dropping
+	n.mu.Unlock()
+	if dropping {
+		if c, ok := client.(*tls.Conn); ok {
+			c.Handshake()
+		}
+		return
+	}
 	server, err := net.Dial("tcp", net.JoinHostPort(Host, strconv.Itoa(behind)))
 	if err != nil {
 		t.Log(err)
