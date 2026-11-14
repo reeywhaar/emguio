@@ -35,6 +35,13 @@ const (
 	Full = 5 * time.Minute
 )
 
+// errHungUp is a connection the server closed while it was waited on.
+var errHungUp = fmt.Errorf("the server closed the connection: %w", io.EOF)
+
+// held is how long a session works before the server closing it is the server tidying up rather
+// than a failure. A variable so a test need not wait it out.
+var held = time.Minute
+
 // backoff is how long a worker waits after a failure, growing with each one in a row.
 var backoff = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 5 * time.Minute, 15 * time.Minute}
 
@@ -217,12 +224,20 @@ func (m *Mirror) start(parent context.Context, t store.SyncTarget) *worker {
 func (m *Mirror) work(ctx context.Context, w *worker) {
 	failures := 0
 	for {
+		began := time.Now()
 		synced, err := m.session(ctx, w)
 		if ctx.Err() != nil {
 			return
 		}
 		if synced {
 			failures = 0
+		}
+		// Servers close a connection held open long enough. One that worked a while is opened
+		// again at once, and is no failure to show.
+		if _, class := explain(err); synced && class == "network" && time.Since(began) >= held {
+			m.log.Info("mail sync reconnecting: the server closed the connection", append(who(w.target),
+				"after", time.Since(began).Round(time.Second))...)
+			continue
 		}
 		wait := backoff[min(failures, len(backoff)-1)]
 		failures++
@@ -360,6 +375,8 @@ func (s *session) wait(ctx context.Context, tick <-chan time.Time, wake <-chan s
 	select {
 	case <-ctx.Done():
 		return ended, nil
+	case <-s.client.Closed():
+		return why, errHungUp
 	case <-tick:
 	case <-wake:
 		why = poked

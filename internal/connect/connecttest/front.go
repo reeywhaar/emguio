@@ -78,6 +78,19 @@ func (n *Front) Tell(line string) {
 	}
 }
 
+// HangUp closes every client's connection, as a server tidying up the ones held open long does.
+func (n *Front) HangUp() {
+	n.mu.Lock()
+	clients := n.clients
+	n.clients = nil
+	n.mu.Unlock()
+	for _, c := range clients {
+		if conn, ok := c.w.(io.Closer); ok {
+			conn.Close()
+		}
+	}
+}
+
 // Sorted is how many times SORT was asked.
 func (n *Front) Sorted() int {
 	n.mu.Lock()

@@ -173,7 +173,10 @@ another UID there, and its old link is gone too.
 
 The mirror starts a worker for every email config and keeps it signed in. A connection that
 drops is opened again after a pause that grows with each failure in a row — thirty seconds up to
-fifteen minutes — and a pass that gets through resets it. A config that is edited gets a new
+fifteen minutes — and a pass that gets through resets it. Except one the server closes after it
+has worked for a minute or more: servers close a connection held open long enough, Yandex often,
+so that one is opened again at once, logged at `info`, and is not a failure the config shows. A
+worker waiting on the server sees it close the connection the moment it does, not at its next look. A config that is edited gets a new
 worker, so it never goes on signing in with what was saved before.
 
 The latest failure is the config's `sync_error`, in a sentence, shown above the list and cleared
