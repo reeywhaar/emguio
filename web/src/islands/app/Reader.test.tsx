@@ -338,6 +338,13 @@ describe("the reading pane", () => {
     );
   });
 
+  it("gives HTML the margin plain text has", async () => {
+    getMessage.mockResolvedValue(read({ html: "<p>Rich</p>" }));
+    open();
+    const frame = await screen.findByTitle<HTMLIFrameElement>("Message");
+    expect(frame.getAttribute("srcdoc")).toContain("padding:16px");
+  });
+
   it("asks before loading images from elsewhere", async () => {
     getMessage.mockResolvedValue(
       read({

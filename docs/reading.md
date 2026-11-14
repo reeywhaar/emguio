@@ -417,8 +417,10 @@ The second is the browser: the HTML is shown only in an `<iframe sandbox>` witho
 alone stops a script; both are kept because the first is code that can have a bug and the
 second is a browser that can be old.
 
-The frame fills the space under the headers, edge to edge with no margin of its own, and scrolls
-itself while the headers stay above it: mail lays itself out to fill a page. Around HTML the pane
+The frame fills the space under the headers and scrolls itself while the headers stay above it:
+mail lays itself out to fill a page. Its page has the margin a plain message has. Mail laid out
+with margins of its own has them inside that; a message that is a few lines of HTML, as phones
+and webmail send, would otherwise touch the edge. Around HTML the pane
 does not scroll, and the application is pinned to the window rather than as tall as it, so there
 is one scroll on the screen; a plain message, which has no frame, scrolls the pane instead. A frame as tall as
 its content, left to the pane to scroll, cannot be scrolled on a phone, because Mobile Safari does
