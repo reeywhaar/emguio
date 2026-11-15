@@ -155,10 +155,15 @@ export const AllMailMark = () => (
   </Mark>
 );
 
+/** A solid figure on a disc of a button's fill. */
 export const ProfileMark = () => (
-  <Mark>
-    <path d="M8 8a2.75 2.75 0 1 0 0-5.5A2.75 2.75 0 0 0 8 8ZM2.5 14c.5-3 2.75-4.5 5.5-4.5s5 1.5 5.5 4.5" />
-  </Mark>
+  <svg width={22} height={22} viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="12" className="fill-control" />
+    <g fill="currentColor">
+      <circle cx="12" cy="9.5" r="4" />
+      <path d="M3.1 20C4.9 17.2 8.2 15.5 12 15.5s7.1 1.7 8.9 4.5A12 12 0 0 1 3.1 20Z" />
+    </g>
+  </svg>
 );
 
 export const MoreMark = () => (
