@@ -19,7 +19,7 @@ import { Select } from "@app/components/Field";
 import { Tag } from "@app/components/Tag";
 import { useConfirm } from "@app/components/Confirm";
 import { Dialog } from "@app/components/Dialog";
-import { ChevronMark, GripMark } from "@app/components/icons";
+import { ChevronMark, GripMark, WarnMark } from "@app/components/icons";
 import { useCarry } from "@app/islands/app/carry";
 import { ConfigForm } from "@app/islands/app/ConfigForm";
 import { draftOf, labelOf, serversOf } from "@app/islands/app/emailConfig";
@@ -320,7 +320,15 @@ function Entry({
         </span>
       ) : null}
       <span className="min-w-0 flex-1">
-        <span className="block truncate">{labelOf(config)}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="truncate">{labelOf(config)}</span>
+          {config.sync_error ? (
+            <span className="shrink-0 text-warn" title={config.sync_error}>
+              <WarnMark />
+              <span className="sr-only">, its mail cannot be read</span>
+            </span>
+          ) : null}
+        </span>
         {config.name ? (
           <span className="block truncate text-xs font-normal text-muted">
             {config.email}
@@ -370,6 +378,14 @@ function Details({
 
   const body = (
     <>
+      {config.sync_error ? (
+        <p className="flex items-start gap-2 text-sm text-warn">
+          <span className="mt-0.5 shrink-0">
+            <WarnMark />
+          </span>
+          {config.sync_error}
+        </p>
+      ) : null}
       <dl className="flex flex-col gap-4 text-sm">
         <Row label="Incoming">
           <ServerLine

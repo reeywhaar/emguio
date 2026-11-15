@@ -16,8 +16,8 @@ import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
-import { Field, Select } from "@app/components/Field";
-import { PencilMark, WarnMark } from "@app/components/icons";
+import { Select } from "@app/components/Field";
+import { WarnMark } from "@app/components/icons";
 import { labelOf } from "@app/islands/app/emailConfig";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import {
@@ -222,6 +222,10 @@ function foldersOf(boxes: Mailbox[]): string {
   return others === 0 ? "Inbox" : `Inbox and ${folders(others)}`;
 }
 
+/** None kept while the account is unread or failing: its folders are not known, not missing. */
+const unknown = (config: EmailConfig, boxes: Mailbox[]) =>
+  boxes.length === 0 && (config.synced_at === null || config.sync_error !== "");
+
 /** How an account's new mail is told, as its row says it: how often, then from which folders. */
 export function notifiesOf(
   config: EmailConfig,
@@ -230,47 +234,91 @@ export function notifiesOf(
   if (config.notify === "off") return "No notifications";
   const choice = choices.find((c) => c.value === choiceOf(config));
   const how = `Notifies ${choice?.label.toLowerCase() ?? ""}`;
-  return boxes ? `${how}, from ${foldersOf(boxes)}` : how;
+  return boxes && !unknown(config, boxes)
+    ? `${how}, from ${foldersOf(boxes)}`
+    : how;
 }
 
-/** How one mail account's new mail is told, and the dialog that changes it. */
+/** A choice as the API takes it. */
+function settingOf(choice: string) {
+  const digest = choice !== "now" && choice !== "off";
+  return {
+    notify: digest ? ("digest" as const) : (choice as "now" | "off"),
+    digest_every: digest ? Number(choice) : 0,
+  };
+}
+
+/**
+ * How one mail account's new mail is told: how often, saved as it is chosen, and from which
+ * folders, chosen in a dialog.
+ */
 export function Delivery({ config }: { config: EmailConfig }) {
+  const client = useQueryClient();
   const [opened, setOpened] = useState(0);
   const [open, setOpen] = useState(false);
   const boxes = useQuery({
     queryKey: qk.mailboxes(config.id),
     queryFn: () => getEmailConfigsByIdMailboxes(config.id),
   });
-  const choice = choices.find((c) => c.value === choiceOf(config));
+  const often = useMutation({
+    mutationFn: (choice: string) =>
+      putEmailConfigsByIdNotifications(config.id, {
+        ...settingOf(choice),
+        mailboxes: {},
+      }),
+    onSuccess: (saved) =>
+      client.setQueryData<EmailConfig[]>(qk.emailConfigs, (old) =>
+        old?.map((c) => (c.id === saved.id ? saved : c)),
+      ),
+  });
+  const choice = often.isPending ? often.variables : choiceOf(config);
   return (
-    <div className="flex items-center gap-1">
-      <span className="min-w-0">
-        {config.notify === "off" ? (
-          "Never"
-        ) : (
-          <>
-            {choice?.label}, from {boxes.data ? foldersOf(boxes.data) : "…"}
-          </>
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Select
+          size="bar"
+          aria-label="Notify"
+          value={choice}
+          disabled={often.isPending}
+          onChange={(e) => often.mutate(e.target.value)}
+        >
+          {choices.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </Select>
+        {choice === "off" ? null : (
+          <span>
+            from{" "}
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              className="underline decoration-dashed underline-offset-4 hover:decoration-solid disabled:opacity-50"
+              disabled={!boxes.data && !boxes.isError}
+              onClick={() => {
+                setOpened((n) => n + 1);
+                setOpen(true);
+              }}
+            >
+              {boxes.data && !unknown(config, boxes.data)
+                ? foldersOf(boxes.data)
+                : boxes.data || boxes.isError
+                  ? "folders"
+                  : "…"}
+            </button>
+          </span>
         )}
-      </span>
-      <Button
-        variant="link"
-        className="-my-1.5 shrink-0 rounded-md p-1.5 pointer-coarse:-my-2.5 pointer-coarse:p-2.5"
-        aria-label="Change notifications"
-        title="Change"
-        disabled={!boxes.data}
-        onClick={() => {
-          setOpened((n) => n + 1);
-          setOpen(true);
-        }}
-      >
-        <PencilMark />
-      </Button>
-      {boxes.data && opened > 0 ? (
-        <DeliveryDialog
+      </div>
+      {often.error ? (
+        <p className="text-sm text-accent">{messageOf(often.error)}</p>
+      ) : null}
+      {opened > 0 ? (
+        <FoldersDialog
           key={opened}
           config={config}
           boxes={boxes.data}
+          failed={boxes.error}
           open={open}
           onClose={() => setOpen(false)}
         />
@@ -279,30 +327,33 @@ export function Delivery({ config }: { config: EmailConfig }) {
   );
 }
 
-function DeliveryDialog({
+/** The folders whose new mail is told, ticked and saved together. */
+function FoldersDialog({
   config,
   boxes,
+  failed,
   open,
   onClose,
 }: {
   config: EmailConfig;
-  boxes: Mailbox[];
+  /** Nothing when they could not be loaded. */
+  boxes: Mailbox[] | undefined;
+  failed: unknown;
   open: boolean;
   onClose: () => void;
 }) {
+  const usable = boxes?.filter((mb) => mb.selectable) ?? [];
   const client = useQueryClient();
   const form = useId();
-  const [choice, setChoice] = useState(() => choiceOf(config));
   const [changed, setChanged] = useState<Record<string, boolean>>({});
   const save = useMutation({
-    mutationFn: () => {
-      const digest = choice !== "now" && choice !== "off";
-      return putEmailConfigsByIdNotifications(config.id, {
-        notify: digest ? "digest" : (choice as "now" | "off"),
-        digest_every: digest ? Number(choice) : 0,
+    // How often stays as it is: an interval of 0 keeps it.
+    mutationFn: () =>
+      putEmailConfigsByIdNotifications(config.id, {
+        notify: config.notify,
+        digest_every: 0,
         mailboxes: changed,
-      });
-    },
+      }),
     onSuccess: (saved) => {
       client.setQueryData<EmailConfig[]>(qk.emailConfigs, (old) =>
         old?.map((c) => (c.id === saved.id ? saved : c)),
@@ -320,7 +371,7 @@ function DeliveryDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Notifications"
+      title="Notify from"
       aside={<span className="truncate text-muted">{labelOf(config)}</span>}
       footer={
         <>
@@ -334,7 +385,7 @@ function DeliveryDialog({
             type="submit"
             form={form}
             variant="solid"
-            disabled={save.isPending}
+            disabled={save.isPending || usable.length === 0}
           >
             {save.isPending ? "Saving" : "Save"}
           </Button>
@@ -343,49 +394,47 @@ function DeliveryDialog({
     >
       <form
         id={form}
-        className="flex flex-col gap-4"
+        aria-label="Folders"
+        className="flex flex-col gap-1.5"
         onSubmit={(e) => {
           e.preventDefault();
           save.mutate();
         }}
       >
-        <Field
-          label="New mail"
-          hint="A digest is one notification for all the mail that came in since the last one. Mail you have already read is left out."
-        >
-          <Select value={choice} onChange={(e) => setChoice(e.target.value)}>
-            {choices.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <fieldset
-          disabled={choice === "off"}
-          className="flex flex-col gap-1.5 disabled:opacity-50"
-        >
-          <legend className="caps mb-1.5 text-sm text-muted">From</legend>
-          {boxes
-            .filter((mb) => mb.selectable)
-            .map((mb) => (
-              <label
-                key={mb.id}
-                className="flex items-center gap-2 text-sm"
-                style={{ paddingLeft: `${depthOf(mb) * 0.875}rem` }}
-              >
-                <input
-                  type="checkbox"
-                  checked={changed[mb.id] ?? mb.notify}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setChanged((c) => ({ ...c, [mb.id]: on }));
-                  }}
-                />
-                {labelOfMailbox(mb)}
-              </label>
-            ))}
-        </fieldset>
+        {!boxes ? (
+          <p role="alert" className="text-sm text-accent">
+            Unable to load folders. {messageOf(failed)}
+          </p>
+        ) : unknown(config, boxes) ? (
+          config.sync_error ? (
+            <p role="alert" className="text-sm text-accent">
+              Unable to load folders. {config.sync_error}
+            </p>
+          ) : (
+            <p className="text-sm text-muted">
+              The folders have not been read from the server yet.
+            </p>
+          )
+        ) : usable.length === 0 ? (
+          <p className="text-sm text-muted">No folders.</p>
+        ) : null}
+        {usable.map((mb) => (
+          <label
+            key={mb.id}
+            className="flex items-center gap-2 text-sm"
+            style={{ paddingLeft: `${depthOf(mb) * 0.875}rem` }}
+          >
+            <input
+              type="checkbox"
+              checked={changed[mb.id] ?? mb.notify}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setChanged((c) => ({ ...c, [mb.id]: on }));
+              }}
+            />
+            {labelOfMailbox(mb)}
+          </label>
+        ))}
       </form>
     </Dialog>
   );

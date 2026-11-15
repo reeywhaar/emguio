@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@app/api/transport";
 import type { EmailConfig } from "@app/api/types";
 import { Settings } from "@app/islands/app/Settings";
 import { mount } from "@app/test/harness";
@@ -18,6 +19,7 @@ const postEmailConfigsByIdTest = vi.fn();
 const putArchive = vi.fn();
 const putNotifications = vi.fn();
 const putOrder = vi.fn();
+const getMailboxes = vi.fn();
 const getDevices = vi.fn();
 const deleteDevicesById = vi.fn();
 const postDevicesTest = vi.fn();
@@ -39,47 +41,49 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   deleteEmailConfigsById: (id: string) => deleteEmailConfigsById(id),
   postEmailConfigsByIdTest: (id: string, body: unknown) =>
     postEmailConfigsByIdTest(id, body),
-  getEmailConfigsByIdMailboxes: async () => [
-    {
-      id: "mb_inbox",
-      name: "INBOX",
-      path: ["INBOX"],
-      special_use: "inbox",
-      selectable: true,
-      messages: 1,
-      unseen: 0,
-      uid_next: 2,
-      notify: true,
-    },
-    {
-      id: "mb_trash",
-      name: "Trash",
-      path: ["Trash"],
-      special_use: "trash",
-      selectable: true,
-      messages: 1,
-      unseen: 0,
-      uid_next: 2,
-      notify: false,
-    },
-    {
-      id: "mb_old",
-      name: "Old",
-      path: ["Old"],
-      special_use: "",
-      selectable: true,
-      messages: 1,
-      unseen: 0,
-      uid_next: 2,
-      notify: true,
-    },
-  ],
+  getEmailConfigsByIdMailboxes: () => getMailboxes(),
   putEmailConfigsByIdArchive: (id: string, mailbox: string) =>
     putArchive(id, mailbox),
   putEmailConfigsByIdNotifications: (id: string, body: unknown) =>
     putNotifications(id, body),
   putEmailConfigsOrder: (ids: string[]) => putOrder(ids),
 }));
+
+const boxes = [
+  {
+    id: "mb_inbox",
+    name: "INBOX",
+    path: ["INBOX"],
+    special_use: "inbox",
+    selectable: true,
+    messages: 1,
+    unseen: 0,
+    uid_next: 2,
+    notify: true,
+  },
+  {
+    id: "mb_trash",
+    name: "Trash",
+    path: ["Trash"],
+    special_use: "trash",
+    selectable: true,
+    messages: 1,
+    unseen: 0,
+    uid_next: 2,
+    notify: false,
+  },
+  {
+    id: "mb_old",
+    name: "Old",
+    path: ["Old"],
+    special_use: "",
+    selectable: true,
+    messages: 1,
+    unseen: 0,
+    uid_next: 2,
+    notify: true,
+  },
+];
 
 const work: EmailConfig = {
   id: "ec_1",
@@ -119,6 +123,7 @@ const row = (name: string) =>
 
 beforeEach(() => {
   getEmailConfigs.mockResolvedValue([work]);
+  getMailboxes.mockResolvedValue(boxes);
   getDevices.mockResolvedValue([]);
 });
 afterEach(() => vi.clearAllMocks());
@@ -385,7 +390,7 @@ describe("settings", () => {
     expect(body.incoming.password).toBe("");
   });
 
-  // One choice for how often, and the folders it is for, saved together.
+  // How often, saved as it is chosen, and the folders, in a dialog of their own.
   it("chooses how a config's new mail is told, and from which folders", async () => {
     putNotifications.mockResolvedValue({
       ...work,
@@ -393,30 +398,93 @@ describe("settings", () => {
       digest_every: 120,
     });
     mount(<Settings editing={null} />);
-    await screen.findByText("As mail arrives, from Inbox and 1 folder");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Change notifications" }),
+    const open = within(await screen.findByRole("article"));
+    const often = await open.findByRole<HTMLSelectElement>("combobox", {
+      name: "Notify",
+    });
+    expect(often.value).toBe("now");
+
+    // How often is saved as it is chosen.
+    fireEvent.change(often, { target: { value: "120" } });
+    await waitFor(() =>
+      expect(putNotifications).toHaveBeenCalledWith("ec_1", {
+        notify: "digest",
+        digest_every: 120,
+        mailboxes: {},
+      }),
     );
+    await waitFor(() => expect(often.value).toBe("120"));
+
+    // The folders, in a dialog of their own, every one of which can be left out.
+    fireEvent.click(open.getByRole("button", { name: "Inbox and 1 folder" }));
     const dialog = within(await screen.findByRole("dialog"));
     expect(
       dialog
         .getAllByRole<HTMLInputElement>("checkbox")
         .map((box) => `${box.parentElement!.textContent} ${box.checked}`),
     ).toEqual(["Inbox true", "Trash false", "Old true"]);
-    fireEvent.change(dialog.getByRole("combobox", { name: "New mail" }), {
-      target: { value: "120" },
-    });
+    fireEvent.click(dialog.getByRole("checkbox", { name: "Inbox" }));
     fireEvent.click(dialog.getByRole("checkbox", { name: "Old" }));
     fireEvent.click(dialog.getByRole("button", { name: "Save" }));
-
     await waitFor(() =>
-      expect(putNotifications).toHaveBeenCalledWith("ec_1", {
+      expect(putNotifications).toHaveBeenLastCalledWith("ec_1", {
         notify: "digest",
-        digest_every: 120,
-        mailboxes: { mb_old: false },
+        digest_every: 0,
+        mailboxes: { mb_inbox: false, mb_old: false },
       }),
     );
-    await screen.findByText("Every 2 hours, from Inbox");
+    await open.findByRole("button", { name: "no folders" });
+  });
+
+  // An empty dialog would say nothing; it says why there is nothing to tick.
+  it("says when there are no folders to notify from, or they would not load", async () => {
+    getEmailConfigs.mockResolvedValue([{ ...work, synced_at: 1 }]);
+    getMailboxes.mockResolvedValue([]);
+    const { unmount } = mount(<Settings editing={null} />);
+    fireEvent.click(await screen.findByRole("button", { name: "no folders" }));
+    let dialog = within(await screen.findByRole("dialog"));
+    dialog.getByText("No folders.");
+    expect(
+      dialog.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+    unmount();
+
+    getMailboxes.mockRejectedValue(
+      new ApiError(0, "unreachable", "The server could not be reached."),
+    );
+    mount(<Settings editing={null} />);
+    fireEvent.click(await screen.findByRole("button", { name: "folders" }));
+    dialog = within(await screen.findByRole("dialog"));
+    dialog.getByText(
+      "Unable to load folders. The server could not be reached.",
+    );
+  });
+
+  // Unread is not none: while the account cannot be read its folders are unknown, and why is
+  // said where it is open.
+  it("says why an account that cannot be read has no folders", async () => {
+    const refused = "imap.example.com:993 refused the connection.";
+    getEmailConfigs.mockResolvedValue([
+      { ...work, synced_at: 1, sync_error: refused },
+    ]);
+    getMailboxes.mockResolvedValue([]);
+    mount(<Settings editing={null} />);
+    const open = within(await screen.findByRole("article"));
+    open.getByText(refused);
+    within(row("Work")).getByText(", its mail cannot be read");
+    fireEvent.click(await open.findByRole("button", { name: "folders" }));
+    within(await screen.findByRole("dialog")).getByText(
+      `Unable to load folders. ${refused}`,
+    );
+  });
+
+  // Never needs no folders.
+  it("offers no folders to a config that never notifies", async () => {
+    getEmailConfigs.mockResolvedValue([{ ...work, notify: "off" }]);
+    mount(<Settings editing={null} />);
+    const open = within(await screen.findByRole("article"));
+    await open.findByRole("combobox", { name: "Notify" });
+    expect(open.queryByText(/^from/)).toBeNull();
   });
 
   // A browser without push still lists the devices that have it, to remove or to test.
