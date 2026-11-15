@@ -91,7 +91,7 @@ export function Reader({
   const wide = useMatches(SIDE_BY_SIDE);
   const sender = known ? (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         {known.from.name || !known.from.email ? (
           <span className="font-medium">
             {known.from.name || "(no sender)"}
@@ -304,16 +304,16 @@ function Replies({ config, m }: { config: string; m: ReadMessage }) {
 function People({ label, people }: { label: string; people: Address[] }) {
   if (people.length === 0) return null;
   return (
-    <div className="flex items-baseline gap-x-2 text-sm text-muted">
-      <span className="shrink-0">
+    <div className="flex items-start gap-x-2 text-sm text-muted">
+      <span className="flex shrink-0">
         <Tag size="badge">{label}:</Tag>
       </span>
       {/* Wrapped, the people line up under each other rather than under the label. */}
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         {people.map((p, i) => (
           <span
             key={i}
-            className="inline-flex max-w-full min-w-0 items-baseline gap-x-1.5"
+            className="inline-flex max-w-full min-w-0 items-center gap-x-1.5"
           >
             {p.name ? <span>{p.name}</span> : null}
             {p.email ? <CopyAddress email={p.email} /> : null}
