@@ -1,5 +1,5 @@
 import { request } from "@app/api/transport";
-import type { Device, Subscription } from "@app/api/types";
+import type { Device, PushSettings, Subscription } from "@app/api/types";
 
 /** What a browser subscribes with. */
 export const getPushKey = () => request<{ key: string }>("/api/push/key");
@@ -15,6 +15,13 @@ export const deleteDevicesById = (id: string) =>
   request<void>(`/api/devices/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+
+export const getPushSettings = () =>
+  request<PushSettings>("/api/push/settings");
+
+/** Answered with what was kept. */
+export const putPushSettings = (body: PushSettings) =>
+  request<PushSettings>("/api/push/settings", { method: "PUT", body });
 
 /** Sends a notification to every device; answered with how many took it. */
 export const postDevicesTest = () =>

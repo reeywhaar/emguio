@@ -51,6 +51,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
   window like any other app.
 - Sends notifications of new mail to the devices a user chooses. Each account sends them right
   away or as a digest, every 30 minutes to 4 hours, from the folders ticked.
+- Notifications can come without sound, and not at all during quiet hours: what arrives then is
+  told in one notification per account when they end.
 
 **Small**
 

@@ -919,6 +919,26 @@ POST /api/devices/test
 Sends a notification to every one of the user's devices: `200 {"delivered": 2}`, how many push
 services took it. A burst of three, then one every twenty seconds; past that, `429 rate_limited`.
 
+```
+GET /api/push/settings
+PUT /api/push/settings
+```
+
+How all of the user's notifications come, whichever email config and device they are for:
+
+```json
+{"silent": false, "quiet": {"from": "23:00", "until": "07:00", "zone": "Europe/Berlin"}}
+```
+
+`silent` asks each device to show them without a sound; Safari on iPhone and iPad does not take
+it. `quiet` is the hours of every day nothing is sent, on a 24-hour clock in an IANA time zone,
+past midnight when `from` is after `until`, and `null` for none. Mail that arrives in them is told
+when they end, in one notification per email config, leaving out what was read meanwhile. A test
+notification is sent all the same.
+
+`PUT` takes the same and answers with what it kept. A time not written as `HH:MM`, the same time
+twice, or a zone emguio does not know answers `400 invalid`.
+
 ## Events
 
 ```

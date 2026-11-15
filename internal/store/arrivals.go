@@ -147,6 +147,8 @@ type Batch struct {
 	Alone bool
 	// Digest is its gathering what arrived, rather than telling each as it came.
 	Digest bool
+	// Silent is its user's asking for notifications without a sound.
+	Silent bool
 	// Arrivals are what is still worth telling, newest first.
 	Arrivals []Arrival
 	// Settles is every arrival the batch is for, the ones already read among them.
@@ -167,12 +169,14 @@ type Arrival struct {
 //
 // A config that notifies now is due at once, and one that sends a digest once its oldest waiting
 // arrival has waited the interval. What is waiting for one that no longer notifies is settled
-// untold.
+// untold. Quiet hours hold every batch until they end, and what they held is told as a digest.
 func (s *Store) Due(ctx context.Context) ([]Batch, time.Time, error) {
 	rows, err := s.reader.QueryContext(ctx,
 		`SELECT ec.id, ec.user_id, ec.name, ec.email, ec.notify, ec.digest_every, MIN(a.arrived_at),
-		        (SELECT COUNT(*) FROM email_configs o WHERE o.user_id = ec.user_id)
+		        (SELECT COUNT(*) FROM email_configs o WHERE o.user_id = ec.user_id),
+		        u.push_silent, u.quiet_from, u.quiet_until, u.quiet_zone
 		   FROM arrivals a JOIN email_configs ec ON ec.id = a.email_config_id
+		   JOIN users u ON u.id = ec.user_id
 		  WHERE a.told_at IS NULL
 		  GROUP BY ec.id`)
 	if err != nil {
@@ -183,6 +187,7 @@ func (s *Store) Due(ctx context.Context) ([]Batch, time.Time, error) {
 		mode  string
 		ready time.Time
 	}
+	now := s.Now()
 	var all []waiting
 	for rows.Next() {
 		var (
@@ -190,8 +195,11 @@ func (s *Store) Due(ctx context.Context) ([]Batch, time.Time, error) {
 			name, email  string
 			every        int
 			first, users int64
+			from, until  sql.NullInt64
+			zone         string
 		)
-		if err := rows.Scan(&w.batch.EmailConfigID, &w.batch.UserID, &name, &email, &w.mode, &every, &first, &users); err != nil {
+		if err := rows.Scan(&w.batch.EmailConfigID, &w.batch.UserID, &name, &email, &w.mode, &every, &first, &users,
+			&w.batch.Silent, &from, &until, &zone); err != nil {
 			rows.Close()
 			return nil, time.Time{}, fmt.Errorf("due: %w", err)
 		}
@@ -205,6 +213,15 @@ func (s *Store) Due(ctx context.Context) ([]Batch, time.Time, error) {
 		if w.mode == NotifyDigest {
 			w.ready = w.ready.Add(time.Duration(every) * time.Minute)
 		}
+		if from.Valid && until.Valid && w.mode != NotifyOff {
+			q := Quiet{From: int(from.Int64), Until: int(until.Int64), Zone: zone}
+			if _, held := q.End(w.ready); held {
+				w.batch.Digest = true
+			}
+			if end, held := q.End(later(w.ready, now)); held {
+				w.ready = end
+			}
+		}
 		all = append(all, w)
 	}
 	rows.Close()
@@ -212,7 +229,6 @@ func (s *Store) Due(ctx context.Context) ([]Batch, time.Time, error) {
 		return nil, time.Time{}, fmt.Errorf("due: %w", err)
 	}
 
-	now := s.Now()
 	var (
 		out  []Batch
 		next time.Time
@@ -237,6 +253,13 @@ func (s *Store) Due(ctx context.Context) ([]Batch, time.Time, error) {
 		out = append(out, b)
 	}
 	return out, next, nil
+}
+
+func later(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 // waitingFor fills in a batch's untold arrivals, leaving out from what it tells a message read

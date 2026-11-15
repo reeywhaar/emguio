@@ -94,3 +94,29 @@ func TestWithoutAPusherThereIsNoKey(t *testing.T) {
 		t.Errorf("key = %s", resp.Status)
 	}
 }
+
+func TestNotificationSettingsAreChosenOnAClock(t *testing.T) {
+	s, st := newServerStore(t, nil)
+	c := signIn(t, s, st)
+	if got := readAll(t, c.do("GET", "/api/push/settings", "")); got != `{"silent":false,"quiet":null}`+"\n" {
+		t.Errorf("a new user's settings %s", got)
+	}
+	body := `{"silent":true,"quiet":{"from":"23:00","until":"07:30","zone":"Europe/Berlin"}}`
+	resp := c.do("PUT", "/api/push/settings", body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("put = %s %v", resp.Status, c.json(resp))
+	}
+	if got := readAll(t, c.do("GET", "/api/push/settings", "")); got != body+"\n" {
+		t.Errorf("kept %s", got)
+	}
+	for _, bad := range []string{
+		`{"quiet":{"from":"7:00","until":"08:00","zone":"Europe/Berlin"}}`,
+		`{"quiet":{"from":"24:00","until":"08:00","zone":"Europe/Berlin"}}`,
+		`{"quiet":{"from":"08:00","until":"08:00","zone":"Europe/Berlin"}}`,
+		`{"quiet":{"from":"23:00","until":"08:00","zone":"Nowhere/At_All"}}`,
+	} {
+		if resp := c.do("PUT", "/api/push/settings", bad); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s = %s", bad, resp.Status)
+		}
+	}
+}

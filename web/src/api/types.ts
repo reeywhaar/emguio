@@ -285,6 +285,12 @@ export type Device = {
   last_error: string;
 };
 
+/** Hours of every day nothing is sent, on a 24-hour clock in an IANA time zone. */
+export type Quiet = { from: string; until: string; zone: string };
+
+/** How all of the user's notifications come. */
+export type PushSettings = { silent: boolean; quiet: Quiet | null };
+
 /** A browser's push subscription, handed over to be told. */
 export type Subscription = {
   endpoint: string;

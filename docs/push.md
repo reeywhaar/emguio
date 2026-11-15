@@ -110,6 +110,28 @@ waiting.
 An arrival is marked told before it is sent: a notification lost to a crash is better than one
 told twice.
 
+## Quiet hours hold every notification until they end
+
+A user can name hours of every day when nothing is sent. What is due in them waits until they
+end, and is told then as a digest, one notification per email config, however that config
+notifies by day: two messages at three in the morning are one notification at seven, not two.
+What was read meanwhile is left out, as it always is. A test notification is not held: it was
+asked for.
+
+They are one choice for all of a user's email configs and devices, kept as minutes after
+midnight in an IANA time zone, the one the browser that turned them on was in. So they stay at
+23:00 when the clocks change, rather than moving an hour as a time in UTC would. Changing a time
+keeps the zone. A browser in another zone says so and offers to move the hours to its own, so a
+trip never moves them without asking. The zone database is built into the binary with
+`time/tzdata`; the image has none of its own.
+
+## Silent is asked of the device, which may not do it
+
+A user can ask for notifications without sound, for all of them. Each carries `silent`, which
+the service worker passes to the browser. Chrome, Edge, Firefox and Safari on a Mac honor it.
+Safari on iPhone and iPad ignores it, and the phone's own notification settings for emguio decide
+instead; Settings says so beside the switch.
+
 ## What a notification says
 
 One message: who it is from, its subject and the start of its text; a tap opens it. Several:

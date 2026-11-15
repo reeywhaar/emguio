@@ -100,6 +100,9 @@ func (p *Pusher) Once(ctx context.Context) time.Time {
 		if len(notes) == 0 {
 			continue
 		}
+		for i := range notes {
+			notes[i].Silent = b.Silent
+		}
 		devices, err := p.store.Devices(ctx, b.UserID)
 		if err != nil {
 			p.log.Error("notifications could not be sent: the devices could not be read",
@@ -124,13 +127,19 @@ func topic(configID string) string { return strings.ReplaceAll(configID, "_", ""
 // overnight hears in the morning, and of each account only the newest.
 const mailTTL = 24 * time.Hour
 
-// Test sends a notification to every one of a user's devices, and says how many took it.
+// Test sends a notification to every one of a user's devices, and says how many took it. It is
+// asked for, so quiet hours do not hold it.
 func (p *Pusher) Test(ctx context.Context, userID string) (int, error) {
 	devices, err := p.store.Devices(ctx, userID)
 	if err != nil {
 		return 0, err
 	}
-	n := notification{Title: "emguio", Body: "New mail will show up like this.", Tag: "test", URL: "/settings"}
+	settings, err := p.store.PushSettings(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	n := notification{Title: "emguio", Body: "New mail will show up like this.", Tag: "test", URL: "/settings",
+		Silent: settings.Silent}
 	return p.fanOut(ctx, devices, n, webpush.Channel{Topic: "test", TTL: 600}), nil
 }
 
@@ -142,6 +151,8 @@ type notification struct {
 	Tag string `json:"tag"`
 	// URL is where a tap opens.
 	URL string `json:"url"`
+	// Silent asks the device for no sound.
+	Silent bool `json:"silent,omitempty"`
 }
 
 // oneByOne is how many arriving together are told each on its own; more are told as a digest.

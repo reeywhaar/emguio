@@ -11,7 +11,7 @@ function sameDay(a: Date, b: Date) {
   );
 }
 
-const two = (n: number) => String(n).padStart(2, "0");
+export const two = (n: number) => String(n).padStart(2, "0");
 
 /** A day as ISO 8601 writes it, whatever the locale: 2026-03-04. */
 export function isoDay(d: Date): string {

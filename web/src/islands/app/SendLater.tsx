@@ -3,9 +3,7 @@ import { useState } from "react";
 import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Field, Select } from "@app/components/Field";
-import { clock, isoDay, weekday } from "@app/format";
-
-const two = (n: number) => String(n).padStart(2, "0");
+import { clock, isoDay, two, weekday } from "@app/format";
 
 const day = (unix: number) => isoDay(new Date(unix * 1000));
 

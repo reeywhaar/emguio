@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 
 	"emguio/internal/store"
 )
@@ -144,4 +147,76 @@ func (s *Server) putNotifications(w http.ResponseWriter, r *http.Request) {
 		"digest_every", c.DigestEvery, "folders", len(body.Mailboxes))
 	s.store.Notify(u.ID)
 	writeJSON(w, http.StatusOK, toJSON(c))
+}
+
+// quietJSON is quiet hours as a person writes them, on a 24-hour clock.
+type quietJSON struct {
+	From  string `json:"from"`
+	Until string `json:"until"`
+	Zone  string `json:"zone"`
+}
+
+type pushSettingsJSON struct {
+	Silent bool       `json:"silent"`
+	Quiet  *quietJSON `json:"quiet"`
+}
+
+var clockTime = regexp.MustCompile(`^([01][0-9]|2[0-3]):([0-5][0-9])$`)
+
+func minutesOf(s string) (int, error) {
+	m := clockTime.FindStringSubmatch(s)
+	if m == nil {
+		return 0, store.Invalid("Quiet hours are written on a 24-hour clock, as 23:00; %q is not.", s)
+	}
+	h, _ := strconv.Atoi(m[1])
+	mm, _ := strconv.Atoi(m[2])
+	return h*60 + mm, nil
+}
+
+func clockOf(minutes int) string { return fmt.Sprintf("%02d:%02d", minutes/60, minutes%60) }
+
+func pushSettingsOut(p store.PushSettings) pushSettingsJSON {
+	out := pushSettingsJSON{Silent: p.Silent}
+	if q := p.Quiet; q != nil {
+		out.Quiet = &quietJSON{From: clockOf(q.From), Until: clockOf(q.Until), Zone: q.Zone}
+	}
+	return out
+}
+
+func (s *Server) pushSettings(w http.ResponseWriter, r *http.Request) {
+	p, err := s.store.PushSettings(r.Context(), userOf(r).ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, pushSettingsOut(p))
+}
+
+// putPushSettings chooses how all of a user's notifications come. See docs/push.md.
+func (s *Server) putPushSettings(w http.ResponseWriter, r *http.Request) {
+	var body pushSettingsJSON
+	if !decode(w, r, &body) {
+		return
+	}
+	p := store.PushSettings{Silent: body.Silent}
+	if q := body.Quiet; q != nil {
+		from, err := minutesOf(q.From)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		until, err := minutesOf(q.Until)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		p.Quiet = &store.Quiet{From: from, Until: until, Zone: q.Zone}
+	}
+	u := userOf(r)
+	if err := s.store.SetPushSettings(r.Context(), u.ID, p); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("notification settings chosen", "user", u.ID, "silent", p.Silent, "quiet_hours", p.Quiet != nil)
+	writeJSON(w, http.StatusOK, pushSettingsOut(p))
 }

@@ -35,6 +35,7 @@ async function show(data) {
     body: data.body || "",
     tag,
     renotify: true,
+    silent: data.silent === true,
     icon: "/icon.png",
     data: { url: data.url || "/" },
   });

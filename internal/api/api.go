@@ -176,6 +176,8 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("DELETE /api/transfers/{transfer}", s.requireSession(s.dismissTransfer))
 
 	s.handle("GET /api/push/key", s.requireSession(s.pushKey))
+	s.handle("GET /api/push/settings", s.requireSession(s.pushSettings))
+	s.handle("PUT /api/push/settings", s.requireSession(s.putPushSettings))
 	s.handle("GET /api/devices", s.requireSession(s.listDevices))
 	s.handle("POST /api/devices", s.requireSession(s.createDevice))
 	s.handle("POST /api/devices/test", s.requireSession(s.testDevices))

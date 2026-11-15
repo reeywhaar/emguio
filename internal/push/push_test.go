@@ -175,6 +175,47 @@ func TestADigestWaitsItsInterval(t *testing.T) {
 	}
 }
 
+// Two messages at night would be two notifications by day; held, they are one.
+func TestQuietHoursHoldMailAndTellItAsOneWhenTheyEnd(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	berlin, _ := time.LoadLocation("Europe/Berlin")
+	now := time.Date(2026, 9, 1, 23, 30, 0, 0, berlin)
+	w.store.SetClock(func() time.Time { return now })
+	if err := w.store.SetPushSettings(ctx, w.user, store.PushSettings{
+		Quiet: &store.Quiet{From: 23 * 60, Until: 7 * 60, Zone: "Europe/Berlin"}}); err != nil {
+		t.Fatal(err)
+	}
+	w.arrive("Lunch")
+	w.arrive("Report")
+	morning := time.Date(2026, 9, 2, 7, 0, 0, 0, berlin)
+	if next := w.pusher.Once(ctx); len(w.told()) != 0 || !next.Equal(morning) {
+		t.Fatalf("told %d in quiet hours, next at %s", len(w.told()), next)
+	}
+	now = morning
+	w.pusher.Once(ctx)
+	if got := w.told(); len(got) != 1 || got[0].Title != "2 new messages" {
+		t.Errorf("told %+v", got)
+	}
+}
+
+func TestSilentIsAskedOfEveryNotification(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	if err := w.store.SetPushSettings(ctx, w.user, store.PushSettings{Silent: true}); err != nil {
+		t.Fatal(err)
+	}
+	w.arrive("Lunch")
+	w.pusher.Once(ctx)
+	if _, err := w.pusher.Test(ctx, w.user); err != nil {
+		t.Fatal(err)
+	}
+	got := w.told()
+	if len(got) != 2 || !got[0].Silent || !got[1].Silent {
+		t.Errorf("told %+v", got)
+	}
+}
+
 func TestAnotherAccountIsNamed(t *testing.T) {
 	w := newWorld(t)
 	ctx := context.Background()

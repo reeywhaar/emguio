@@ -24,6 +24,8 @@ const getMailboxes = vi.fn();
 const getDevices = vi.fn();
 const deleteDevicesById = vi.fn();
 const postDevicesTest = vi.fn();
+const getPushSettings = vi.fn();
+const putPushSettings = vi.fn();
 
 vi.mock("@app/api/actions/auth", () => ({
   getAuthMe: async () => ({ id: "u_1", username: "misha", created_at: 0 }),
@@ -34,6 +36,8 @@ vi.mock("@app/api/actions/push", () => ({
   getDevices: () => getDevices(),
   deleteDevicesById: (id: string) => deleteDevicesById(id),
   postDevicesTest: () => postDevicesTest(),
+  getPushSettings: () => getPushSettings(),
+  putPushSettings: (body: unknown) => putPushSettings(body),
   getPushKey: vi.fn(),
   postDevices: vi.fn(),
 }));
@@ -111,6 +115,10 @@ const work: EmailConfig = {
   off: false,
 };
 
+/** A paragraph whose whole text is this, however it is split into parts. */
+const line = (text: string) =>
+  screen.findByText((_, el) => el?.tagName === "P" && el.textContent === text);
+
 /** The accounts' names in the list, top to bottom. */
 const names = () =>
   within(screen.getByRole("list", { name: "Mail accounts" }))
@@ -128,6 +136,8 @@ beforeEach(() => {
   getEmailConfigs.mockResolvedValue([work]);
   getMailboxes.mockResolvedValue(boxes);
   getDevices.mockResolvedValue([]);
+  getPushSettings.mockResolvedValue({ silent: false, quiet: null });
+  putPushSettings.mockImplementation(async (body: unknown) => body);
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -512,6 +522,69 @@ describe("settings", () => {
     const open = within(await screen.findByRole("article"));
     await open.findByRole("combobox", { name: "Notify" });
     expect(open.queryByText(/^from/)).toBeNull();
+  });
+
+  // In a line on the page, changed in a dialog and saved together.
+  it("chooses no sound and quiet hours for every notification", async () => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    mount(<Settings editing={null} />);
+    await line("With sound · No quiet hours");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(
+      await screen.findByRole("form", { name: "Sound and quiet hours" }),
+    );
+    const sound = dialog.getByRole("switch", { name: "With sound" });
+    expect(sound.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sound);
+    fireEvent.click(dialog.getByRole("switch", { name: "Quiet hours" }));
+    dialog.getByText(`Times are in ${zone}.`);
+    fireEvent.change(dialog.getByRole("combobox", { name: "Start" }), {
+      target: { value: "22:00" },
+    });
+    expect(putPushSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(putPushSettings).toHaveBeenCalledWith({
+        silent: true,
+        quiet: { from: "22:00", until: "07:00", zone },
+      }),
+    );
+    await line("Silent · Quiet hours 22:00–07:00");
+  });
+
+  // Hours set on a device elsewhere stay in their zone until this one is asked to use its own.
+  it("keeps quiet hours in their time zone, and offers this device's", async () => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    getPushSettings.mockResolvedValue({
+      silent: false,
+      quiet: { from: "22:30", until: "06:10", zone: "Pacific/Chatham" },
+    });
+    mount(<Settings editing={null} />);
+    await line("With sound · Quiet hours 22:30–06:10 in Pacific/Chatham");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(
+      await screen.findByRole("form", { name: "Sound and quiet hours" }),
+    );
+    dialog.getByText(
+      `Times are in Pacific/Chatham, but this device is in ${zone}.`,
+    );
+    const end = dialog.getByRole<HTMLSelectElement>("combobox", {
+      name: "End",
+    });
+    expect(end.value).toBe("06:10");
+    fireEvent.change(end, { target: { value: "06:30" } });
+    fireEvent.click(dialog.getByRole("button", { name: `Use ${zone}` }));
+    dialog.getByText(`Times are in ${zone}.`);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(putPushSettings).toHaveBeenCalledWith({
+        silent: false,
+        quiet: { from: "22:30", until: "06:30", zone },
+      }),
+    );
+    await line("With sound · Quiet hours 22:30–06:30");
   });
 
   // A browser without push still lists the devices that have it, to remove or to test.

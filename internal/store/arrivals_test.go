@@ -171,6 +171,29 @@ func TestADigestIsDueItsIntervalAfterWhatArrivedFirst(t *testing.T) {
 	}
 }
 
+func TestADigestDueInQuietHoursWaitsForThemToEnd(t *testing.T) {
+	st, u, cfg, boxes, now := notifyWorld(t)
+	ctx := context.Background()
+	if err := st.SetNotifications(ctx, u.ID, cfg.ID, NotifyDigest, 30, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPushSettings(ctx, u.ID, PushSettings{Quiet: &Quiet{From: 9*60 + 15, Until: 10 * 60, Zone: "UTC"}}); err != nil {
+		t.Fatal(err)
+	}
+	arrive(t, st, boxes["INBOX"], arrival(10, "Ann", "Lunch", "<1@x>"))
+	if _, next := due(t, st); !next.Equal(time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)) {
+		t.Errorf("next at %s, want the end of the quiet hours", next)
+	}
+	*now = now.Add(45 * time.Minute)
+	if batches, _ := due(t, st); len(batches) != 0 {
+		t.Errorf("due in quiet hours: %+v", batches)
+	}
+	*now = now.Add(15 * time.Minute)
+	if batches, _ := due(t, st); len(batches) != 1 {
+		t.Errorf("due %+v once they end", batches)
+	}
+}
+
 func TestWhatWasReadOrMovedBeforeItIsToldIsLeftOut(t *testing.T) {
 	st, u, cfg, boxes, _ := notifyWorld(t)
 	ctx := context.Background()

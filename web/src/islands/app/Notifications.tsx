@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -8,16 +8,20 @@ import {
 import {
   deleteDevicesById,
   getDevices,
+  getPushSettings,
   postDevicesTest,
+  putPushSettings,
 } from "@app/api/actions/push";
 import { qk } from "@app/api/keys";
 import { ApiError, messageOf } from "@app/api/transport";
-import type { EmailConfig, Mailbox } from "@app/api/types";
+import type { EmailConfig, Mailbox, PushSettings, Quiet } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
 import { WarnMark } from "@app/components/icons";
+import { Switch } from "@app/components/Switch";
+import { two } from "@app/format";
 import { labelOf } from "@app/islands/app/emailConfig";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import {
@@ -43,15 +47,296 @@ function choiceOf(c: Pick<EmailConfig, "notify" | "digest_every">): string {
 }
 
 /**
- * Which devices show the user's notifications, this one among them. How each mail account's new
- * mail is told is on its card. See docs/push.md.
+ * Which devices show the user's notifications, this one among them, and how they all come. How
+ * each mail account's new mail is told is on its card. See docs/push.md.
  */
 export function Notifications() {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="caps text-muted">Notifications</h2>
       <Devices />
+      <Manner />
     </section>
+  );
+}
+
+/** This device's time zone, which quiet hours turned on here are kept in. */
+const zoneHere = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** Quiet hours as first offered. */
+const night = (): Quiet => ({
+  from: "23:00",
+  until: "07:00",
+  zone: zoneHere(),
+});
+
+/** Whether they make a sound, and their quiet hours, in a few words; each part kept whole. */
+function Summary({ settings, zone }: { settings: PushSettings; zone: string }) {
+  const q = settings.quiet;
+  return (
+    <>
+      <span className="whitespace-nowrap">
+        {settings.silent ? "Silent" : "With sound"}
+      </span>
+      {" · "}
+      <span className="whitespace-nowrap">
+        {q ? `Quiet hours ${q.from}–${q.until}` : "No quiet hours"}
+      </span>
+      {q && q.zone !== zone ? (
+        <>
+          {" in "}
+          <span className="whitespace-nowrap">{q.zone}</span>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Whether notifications make a sound, and the hours none are sent, for every account and device:
+ * in a line, and chosen in a dialog.
+ */
+function Manner() {
+  const [opened, setOpened] = useState(0);
+  const [open, setOpen] = useState(false);
+  const settings = useQuery({
+    queryKey: qk.pushSettings,
+    queryFn: getPushSettings,
+  });
+  if (!settings.data) {
+    return settings.error ? (
+      <p role="alert" className="text-sm text-accent">
+        {messageOf(settings.error)}
+      </p>
+    ) : (
+      <Dummy className="h-11 w-full" />
+    );
+  }
+  const zone = zoneHere();
+  // Hours set on a device elsewhere are not this one's.
+  const elsewhere =
+    settings.data.quiet !== null && settings.data.quiet.zone !== zone;
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-bg px-4 py-2">
+      {elsewhere ? (
+        <p className="flex min-w-0 items-start gap-2 text-sm text-warn">
+          <span className="mt-0.5 shrink-0">
+            <WarnMark />
+          </span>
+          <span>
+            <Summary settings={settings.data} zone={zone} />
+          </span>
+        </p>
+      ) : (
+        <p className="min-w-0 text-sm">
+          <Summary settings={settings.data} zone={zone} />
+        </p>
+      )}
+      <Button
+        variant="link"
+        className="-mr-2 shrink-0 rounded-md px-2 py-1.5"
+        aria-haspopup="dialog"
+        onClick={() => {
+          setOpened((n) => n + 1);
+          setOpen(true);
+        }}
+      >
+        Change
+      </Button>
+      {opened > 0 ? (
+        <MannerDialog
+          key={opened}
+          settings={settings.data}
+          open={open}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Sound and quiet hours, changed together and saved at once. */
+function MannerDialog({
+  settings,
+  open,
+  onClose,
+}: {
+  settings: PushSettings;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const client = useQueryClient();
+  const form = useId();
+  const [draft, setDraft] = useState(settings);
+  // Quiet hours turned off and on again come back as they were.
+  const [last, setLast] = useState<Quiet>(() => settings.quiet ?? night());
+  const save = useMutation({
+    mutationFn: () => putPushSettings(draft),
+    onSuccess: (saved) => {
+      client.setQueryData(qk.pushSettings, saved);
+      onClose();
+    },
+  });
+  const quiet = draft.quiet;
+  const zone = zoneHere();
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Sound and quiet hours"
+      footer={
+        <>
+          {save.error ? (
+            <p role="alert" className="w-full text-sm text-accent">
+              {messageOf(save.error)}
+            </p>
+          ) : null}
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            form={form}
+            variant="solid"
+            disabled={save.isPending}
+          >
+            {save.isPending ? "Saving" : "Save"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        id={form}
+        aria-label="Sound and quiet hours"
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate();
+        }}
+      >
+        <Choice
+          title="With sound"
+          note="iPhone and iPad ignore this and use the phone's own settings for emguio."
+        >
+          <Switch
+            on={!draft.silent}
+            label="With sound"
+            onChange={(sound) => setDraft({ ...draft, silent: !sound })}
+          />
+        </Choice>
+        <Choice
+          title="Quiet hours"
+          note="No notifications during these hours. When they end, each mail account sends one notification with its unread new mail."
+        >
+          <Switch
+            on={quiet !== null}
+            label="Quiet hours"
+            onChange={(on) => {
+              if (quiet) setLast(quiet);
+              setDraft({ ...draft, quiet: on ? last : null });
+            }}
+          />
+        </Choice>
+        {quiet ? (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              From
+              <TimeSelect
+                label="Start"
+                value={quiet.from}
+                onChange={(from) =>
+                  setDraft({ ...draft, quiet: { ...quiet, from } })
+                }
+              />
+              to
+              <TimeSelect
+                label="End"
+                value={quiet.until}
+                onChange={(until) =>
+                  setDraft({ ...draft, quiet: { ...quiet, until } })
+                }
+              />
+            </div>
+            {quiet.zone === zone ? (
+              <p className="text-xs text-muted">Times are in {zone}.</p>
+            ) : (
+              <p className="text-xs text-warn">
+                Times are in {quiet.zone}, but this device is in {zone}.{" "}
+                <button
+                  type="button"
+                  className="underline decoration-dashed underline-offset-2 hover:decoration-solid"
+                  onClick={() =>
+                    setDraft({ ...draft, quiet: { ...quiet, zone } })
+                  }
+                >
+                  Use {zone}
+                </button>
+              </p>
+            )}
+          </div>
+        ) : null}
+      </form>
+    </Dialog>
+  );
+}
+
+/** One setting: what it is, a line on what it does, and its control at the right. */
+function Choice({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-sm">{title}</p>
+        <p className="text-xs text-muted">{note}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Every half hour of a day, as HH:MM. */
+const halfHours = Array.from(
+  { length: 48 },
+  (_, i) => `${two(Math.floor(i / 2))}:${i % 2 ? "30" : "00"}`,
+);
+
+/** A time of day as HH:MM, picked from the half hours. */
+function TimeSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  // A time set elsewhere stays choosable.
+  const times = halfHours.includes(value)
+    ? halfHours
+    : [
+        ...halfHours.filter((t) => t < value),
+        value,
+        ...halfHours.filter((t) => t > value),
+      ];
+  return (
+    <Select
+      size="bar"
+      aria-label={label}
+      className="w-24"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {times.map((t) => (
+        <option key={t} value={t}>
+          {t}
+        </option>
+      ))}
+    </Select>
   );
 }
 
