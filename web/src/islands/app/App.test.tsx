@@ -78,6 +78,38 @@ beforeEach(() => {
 
 afterEach(() => vi.clearAllMocks());
 
+/**
+ * Sizes for what jsdom does not measure: each mail account 100 wide in the header, the button for
+ * the rest 30, and the room for them all as given. Undone by what it returns.
+ */
+function measuring(room: number) {
+  const observer = globalThis.ResizeObserver;
+  const rect = HTMLElement.prototype.getBoundingClientRect;
+  globalThis.ResizeObserver = class {
+    constructor(private measure: () => void) {}
+    observe() {
+      this.measure();
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  HTMLElement.prototype.getBoundingClientRect = function () {
+    const width = this.dataset.config
+      ? 100
+      : this.dataset.rest !== undefined
+        ? 30
+        : room;
+    return { width } as DOMRect;
+  };
+  return () => {
+    globalThis.ResizeObserver = observer;
+    HTMLElement.prototype.getBoundingClientRect = rect;
+  };
+}
+
+const row = () =>
+  within(screen.getByRole("navigation", { name: "Mail accounts" }));
+
 describe("the application", () => {
   it("says who is signed in", async () => {
     mount(<App />);
@@ -130,40 +162,74 @@ describe("the application", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  // Side by side where they fit, which jsdom, measuring nothing, says they always do.
+  // Side by side where they fit.
   it("puts the mail accounts side by side where they fit", async () => {
     getEmailConfigs.mockResolvedValue([
       config("ec_1", "Work"),
       { ...config("ec_2", "Home"), unseen: 2 },
     ]);
-    const real = globalThis.ResizeObserver;
-    globalThis.ResizeObserver = class {
-      constructor(private measure: () => void) {}
-      observe() {
-        this.measure();
-      }
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver;
+    const restore = measuring(1000);
     try {
       mount(<App />);
       await screen.findByRole("heading", { name: "Inbox of ec_1" });
-      const row = within(
-        await screen.findByRole("navigation", { name: "Mail accounts" }),
-      );
+      await screen.findByRole("navigation", { name: "Mail accounts" });
       expect(
-        row.getAllByRole("link").map((l) => [l.textContent, l.ariaCurrent]),
+        row()
+          .getAllByRole("link")
+          .map((l) => [l.textContent, l.ariaCurrent]),
       ).toEqual([
         ["Work", "page"],
         ["Home, unread: 2", null],
       ]);
       expect(
-        screen.queryByRole("button", { name: /^Mail account/ }),
+        screen.queryByRole("button", { name: /^(Other )?[Mm]ail account/ }),
       ).toBeNull();
-      fireEvent.click(row.getByRole("link", { name: /^Home/ }));
+      fireEvent.click(row().getByRole("link", { name: /^Home/ }));
       await screen.findByRole("heading", { name: "Inbox of ec_2" });
     } finally {
-      globalThis.ResizeObserver = real;
+      restore();
+    }
+  });
+
+  // The open one and as many as fit beside a button for the rest; the open one stays in the row.
+  it("puts the mail accounts that do not fit behind a button", async () => {
+    getEmailConfigs.mockResolvedValue([
+      config("ec_1", "Work"),
+      config("ec_2", "Home"),
+      { ...config("ec_3", "Shop"), unseen: 2 },
+      config("ec_4", "Club"),
+    ]);
+    // Two of them beside the button.
+    const restore = measuring(250);
+    try {
+      mount(<App />);
+      await screen.findByRole("heading", { name: "Inbox of ec_1" });
+      await waitFor(() =>
+        expect(
+          row()
+            .getAllByRole("link")
+            .map((l) => l.textContent),
+        ).toEqual(["Work", "Home"]),
+      );
+      fireEvent.click(
+        row().getByRole("button", {
+          name: /^Other mail accounts:\s*, unread in one$/,
+        }),
+      );
+      const menu = within(await screen.findByRole("menu"));
+      expect(menu.getAllByRole("menuitem").map((l) => l.textContent)).toEqual([
+        "Shopshop@example.com, unread: 2",
+        "Clubclub@example.com",
+      ]);
+      fireEvent.click(menu.getByRole("menuitem", { name: /^Shop/ }));
+      await screen.findByRole("heading", { name: "Inbox of ec_3" });
+      expect(
+        row()
+          .getAllByRole("link")
+          .map((l) => l.textContent),
+      ).toEqual(["Work", "Shop, unread: 2"]);
+    } finally {
+      restore();
     }
   });
 

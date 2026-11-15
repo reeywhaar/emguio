@@ -166,6 +166,12 @@ export const ProfileMark = () => (
   </svg>
 );
 
+export const OverflowMark = () => (
+  <Mark>
+    <path d="M3.5 4l4 4-4 4M8.5 4l4 4-4 4" />
+  </Mark>
+);
+
 export const MoreMark = () => (
   <Mark>
     <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth={2.25} />

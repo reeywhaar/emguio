@@ -1,6 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { PickerButton } from "@app/components/PickerButton";
+
+/** How far an open menu keeps from the window's edges. */
+const EDGE = 8;
 
 /**
  * A button that opens a short list beside it: below it, for a bar at the top of the screen. It
@@ -10,6 +19,9 @@ export function Menu({
   name,
   label,
   plain = false,
+  chevron,
+  end = false,
+  title,
   disabled,
   className = "",
   children,
@@ -19,6 +31,10 @@ export function Menu({
   label: ReactNode;
   /** Just the label, without a field around it: for a bar, not a form. */
   plain?: boolean;
+  chevron?: boolean;
+  /** Opened along the button's right edge rather than its left: for a button at the right. */
+  end?: boolean;
+  title?: string;
   disabled?: boolean;
   /** The button's. */
   className?: string;
@@ -27,6 +43,22 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+
+  // Moved back inside the window when its button is near an edge, as on a phone.
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (!open || !el) return;
+    const { left, right } = el.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    const off =
+      left < EDGE
+        ? EDGE - left
+        : right > width - EDGE
+          ? width - EDGE - right
+          : 0;
+    el.style.translate = off ? `${off}px 0` : "";
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +81,8 @@ export function Menu({
       <PickerButton
         name={name}
         plain={plain}
+        chevron={chevron}
+        title={title}
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -59,8 +93,9 @@ export function Menu({
       </PickerButton>
       {open ? (
         <div
+          ref={list}
           role="menu"
-          className="absolute top-full left-0 z-40 mt-1.5 flex max-h-[70dvh] w-max max-w-[calc(100vw-2rem)] min-w-56 flex-col overflow-y-auto rounded-lg border border-line bg-bg p-1 shadow-lg"
+          className={`absolute top-full ${end ? "right-0" : "left-0"} z-40 mt-1.5 flex max-h-[70dvh] w-max max-w-[calc(100vw-2rem)] min-w-56 flex-col overflow-y-auto rounded-lg border border-line bg-bg p-1 shadow-lg`}
         >
           {children(() => setOpen(false))}
         </div>

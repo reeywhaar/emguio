@@ -10,6 +10,7 @@ import { fieldLook } from "@app/components/TextField";
 export function PickerButton({
   name,
   plain = false,
+  chevron = true,
   className = "",
   children,
   ...props
@@ -18,6 +19,8 @@ export function PickerButton({
   name: string;
   /** Just the choice, without the field around it: for a bar, not a form. */
   plain?: boolean;
+  /** Off for a label that says it opens something itself. */
+  chevron?: boolean;
 }) {
   const look = plain
     ? "gap-1 rounded-md px-2 hover:bg-fill"
@@ -31,7 +34,7 @@ export function PickerButton({
     >
       <span className="sr-only">{name}: </span>
       {children}
-      <ChevronMark />
+      {chevron ? <ChevronMark /> : null}
     </button>
   );
 }

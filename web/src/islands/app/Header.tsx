@@ -6,12 +6,13 @@ import { getEmailConfigs } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import type { EmailConfig } from "@app/api/types";
 import { Dummy } from "@app/components/Dummy";
-import { ProfileMark } from "@app/components/icons";
+import { OverflowMark, ProfileMark } from "@app/components/icons";
 import { Menu } from "@app/components/Menu";
 import { Wordmark } from "@app/components/Wordmark";
 import { labelOf, pick, turnedOn } from "@app/islands/app/emailConfig";
 import { markUnread } from "@app/islands/app/favicon";
 import { Link } from "@app/islands/app/Link";
+import { fit } from "@app/islands/app/overflow";
 import { paths, type Route } from "@app/islands/app/route";
 
 /**
@@ -64,10 +65,20 @@ export function Header({ route }: { route: Route }) {
   );
 }
 
+/** The room between two accounts in the row: its gap-1. */
+const GAP = 4;
+
+/** What the row has room for, and what each part of it takes. */
+type Sizes = { room: number; widths: Record<string, number>; button: number };
+
+const tab =
+  "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap pointer-coarse:min-h-10";
+
 /**
- * Every mail account side by side where they fit, and otherwise the one open, which opens the list
- * of them. Whether they fit is measured, since that depends on what they are called; the row is
- * drawn unseen to measure it.
+ * The mail accounts side by side, as many as fit, the open one always among them, and the rest
+ * behind a button after them; where not even the open one fits beside it, the open one, which
+ * opens the list of them. What fits is measured, since that depends on what they are called; a
+ * copy of the row is drawn unseen to measure it.
  */
 function Accounts({
   configs,
@@ -77,41 +88,110 @@ function Accounts({
   current: EmailConfig | undefined;
 }) {
   const room = useRef<HTMLDivElement>(null);
-  const row = useRef<HTMLElement>(null);
-  const [fits, setFits] = useState(false);
+  const copy = useRef<HTMLDivElement>(null);
+  const [sizes, setSizes] = useState<Sizes | null>(null);
   useEffect(() => {
     const area = room.current;
-    const all = row.current;
+    const all = copy.current;
     if (!area || !all || typeof ResizeObserver === "undefined") return;
-    const measure = () => setFits(all.scrollWidth <= area.clientWidth);
+    const measure = () => {
+      const widths: Record<string, number> = {};
+      for (const el of all.querySelectorAll<HTMLElement>("[data-config]")) {
+        widths[el.dataset.config!] = el.getBoundingClientRect().width;
+      }
+      const button = all.querySelector("[data-rest]");
+      setSizes({
+        room: area.getBoundingClientRect().width,
+        widths,
+        button: button?.getBoundingClientRect().width ?? 0,
+      });
+    };
     const watch = new ResizeObserver(measure);
     watch.observe(area);
     watch.observe(all);
     return () => watch.disconnect();
   }, []);
-  const side = fits && configs.length > 1;
+  const shown =
+    sizes && configs.length > 1
+      ? fit({
+          ids: configs.map((c) => c.id),
+          ...sizes,
+          gap: GAP,
+          current: current?.id,
+        })
+      : [];
+  const rest = configs.filter((c) => !shown.includes(c.id));
   return (
     <div ref={room} className="relative flex min-w-0 flex-1 items-center">
-      <nav
-        ref={row}
-        aria-label="Mail accounts"
-        aria-hidden={side ? undefined : true}
-        className={`flex w-max shrink-0 items-center gap-1 ${side ? "" : "invisible absolute"}`}
+      {/* Each as wide as it can be, the open one's weight and the rest's dot included. */}
+      <div
+        ref={copy}
+        aria-hidden="true"
+        className="invisible absolute flex w-max items-center"
       >
         {configs.map((c) => (
-          <Link
-            key={c.id}
-            href={paths.mail(c.id)}
-            aria-current={c.id === current?.id ? "page" : undefined}
-            className={`inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap pointer-coarse:min-h-10 ${c.id === current?.id ? "bg-shade font-medium" : "text-muted hover:bg-fill hover:text-fg"}`}
-          >
+          <span key={c.id} data-config={c.id} className={`${tab} font-medium`}>
             {labelOf(c)}
             <Unread config={c} />
-          </Link>
+          </span>
         ))}
-      </nav>
-      {side ? null : <ConfigPicker configs={configs} current={current} />}
+        <span data-rest className="flex h-8 items-center gap-1 px-2">
+          <OverflowMark />
+          <span className="size-2" />
+        </span>
+      </div>
+      {shown.length > 0 ? (
+        <nav aria-label="Mail accounts" className="flex items-center gap-1">
+          {configs
+            .filter((c) => shown.includes(c.id))
+            .map((c) => (
+              <Link
+                key={c.id}
+                href={paths.mail(c.id)}
+                aria-current={c.id === current?.id ? "page" : undefined}
+                className={`${tab} ${c.id === current?.id ? "bg-shade font-medium" : "text-muted hover:bg-fill hover:text-fg"}`}
+              >
+                {labelOf(c)}
+                <Unread config={c} />
+              </Link>
+            ))}
+          {rest.length > 0 ? <Rest configs={rest} /> : null}
+        </nav>
+      ) : (
+        <ConfigPicker configs={configs} current={current} />
+      )}
     </div>
+  );
+}
+
+/** The mail accounts there was no room for beside the others, marked while one has unread mail. */
+function Rest({ configs }: { configs: EmailConfig[] }) {
+  const unread = configs.some((c) => c.unseen > 0);
+  return (
+    <Menu
+      name="Other mail accounts"
+      title="Other mail accounts"
+      plain
+      chevron={false}
+      end
+      className="text-muted hover:text-fg"
+      label={
+        <>
+          <OverflowMark />
+          {unread ? (
+            <>
+              <span className="sr-only">, unread in one</span>
+              <span
+                aria-hidden="true"
+                className="size-2 shrink-0 rounded-full bg-brand"
+              />
+            </>
+          ) : null}
+        </>
+      }
+    >
+      {(close) => <Items configs={configs} close={close} />}
+    </Menu>
   );
 }
 
@@ -138,8 +218,6 @@ function ConfigPicker({
   current: EmailConfig | undefined;
 }) {
   const elsewhere = configs.some((c) => c.id !== current?.id && c.unseen > 0);
-  const item =
-    "flex min-h-8 items-center gap-2 rounded-md px-3 text-sm pointer-coarse:min-h-10";
   return (
     <Menu
       name="Mail account"
@@ -164,22 +242,7 @@ function ConfigPicker({
     >
       {(close) => (
         <>
-          {configs.map((c) => (
-            <Link
-              key={c.id}
-              role="menuitem"
-              href={paths.mail(c.id)}
-              aria-current={c.id === current?.id ? "page" : undefined}
-              className={`${item} ${c.id === current?.id ? "bg-shade font-medium" : "hover:bg-shade"}`}
-              onClick={close}
-            >
-              <span className="min-w-0 flex-1 truncate">{labelOf(c)}</span>
-              {c.name ? (
-                <span className="truncate text-xs text-faint">{c.email}</span>
-              ) : null}
-              <Unread config={c} />
-            </Link>
-          ))}
+          <Items configs={configs} current={current} close={close} />
           <div role="separator" className="my-1 border-t border-line" />
           <Link
             role="menuitem"
@@ -193,4 +256,35 @@ function ConfigPicker({
       )}
     </Menu>
   );
+}
+
+const item =
+  "flex min-h-8 items-center gap-2 rounded-md px-3 text-sm pointer-coarse:min-h-10";
+
+/** Mail accounts as a menu lists them: by name, with the address beside a name, and unread. */
+function Items({
+  configs,
+  current,
+  close,
+}: {
+  configs: EmailConfig[];
+  current?: EmailConfig;
+  close: () => void;
+}) {
+  return configs.map((c) => (
+    <Link
+      key={c.id}
+      role="menuitem"
+      href={paths.mail(c.id)}
+      aria-current={c.id === current?.id ? "page" : undefined}
+      className={`${item} ${c.id === current?.id ? "bg-shade font-medium" : "hover:bg-shade"}`}
+      onClick={close}
+    >
+      <span className="min-w-0 flex-1 truncate">{labelOf(c)}</span>
+      {c.name ? (
+        <span className="truncate text-xs text-faint">{c.email}</span>
+      ) : null}
+      <Unread config={c} />
+    </Link>
+  ));
 }
