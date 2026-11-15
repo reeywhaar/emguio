@@ -148,7 +148,9 @@ describe("settings", () => {
     const open = within(await screen.findByRole("article"));
     open.getByRole("heading", { name: "Work" });
     open.getByText("misha@example.com");
-    open.getByText("IMAP · imap.example.com:993 · TLS");
+    open.getByText("imap.example.com:993");
+    open.getByText("IMAP");
+    open.getByText("TLS");
     open.getByText("None");
   });
 
@@ -198,14 +200,12 @@ describe("settings", () => {
       mount(<Settings editing={null} />);
       await screen.findByRole("list", { name: "Mail accounts" });
       expect(screen.queryByRole("dialog")).toBeNull();
-      expect(
-        screen.queryByText("IMAP · imap.example.com:993 · TLS"),
-      ).toBeNull();
+      expect(screen.queryByText("imap.example.com:993")).toBeNull();
 
       fireEvent.click(row("Home"));
       const dialog = within(await screen.findByRole("dialog"));
       dialog.getByRole("heading", { name: "Home" });
-      dialog.getByText("IMAP · imap.example.com:993 · TLS");
+      dialog.getByText("imap.example.com:993");
 
       fireEvent.click(dialog.getByRole("button", { name: "Close" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

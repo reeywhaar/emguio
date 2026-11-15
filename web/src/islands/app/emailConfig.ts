@@ -1,14 +1,8 @@
-import type { EmailConfig, EmailConfigDraft, Server } from "@app/api/types";
+import type { EmailConfig, EmailConfigDraft } from "@app/api/types";
 
 /** What an email config is called wherever there is room for one line. */
 export function labelOf(config: EmailConfig): string {
   return config.name || config.email;
-}
-
-/** A server in one line: what it speaks, where it is, and how it is secured. */
-export function describe(server: Server, speaks: string): string {
-  const security = server.tls === "implicit" ? "TLS" : "STARTTLS";
-  return `${speaks} · ${server.host}:${server.port} · ${security}`;
 }
 
 /** What an account reads and sends with, a word each. */

@@ -12,20 +12,16 @@ import {
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
-import type { EmailConfig, Mailbox } from "@app/api/types";
+import type { EmailConfig, Mailbox, Server } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
+import { Tag } from "@app/components/Tag";
 import { Dialog } from "@app/components/Dialog";
 import { ChevronMark, GripMark } from "@app/components/icons";
 import { useCarry } from "@app/islands/app/carry";
 import { ConfigForm } from "@app/islands/app/ConfigForm";
-import {
-  describe,
-  draftOf,
-  labelOf,
-  serversOf,
-} from "@app/islands/app/emailConfig";
+import { draftOf, labelOf, serversOf } from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import { say } from "@app/islands/app/notices";
@@ -365,10 +361,17 @@ function Details({
     <>
       <dl className="flex flex-col gap-4 text-sm">
         <Row label="Incoming">
-          {describe(config.incoming, config.incoming.protocol.toUpperCase())}
+          <ServerLine
+            server={config.incoming}
+            speaks={config.incoming.protocol.toUpperCase()}
+          />
         </Row>
         <Row label="Outgoing">
-          {config.outgoing ? describe(config.outgoing, "SMTP") : "None"}
+          {config.outgoing ? (
+            <ServerLine server={config.outgoing} speaks="SMTP" />
+          ) : (
+            "None"
+          )}
         </Row>
         <Row label="Archive to">
           <ArchiveTo config={config} />
@@ -447,6 +450,19 @@ function Details({
       </div>
       {body}
     </article>
+  );
+}
+
+/** A server in one line: tags for what it speaks and how it is secured, then where it is. */
+function ServerLine({ server, speaks }: { server: Server; speaks: string }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+      <Tag>{speaks}</Tag>
+      <Tag>{server.tls === "implicit" ? "TLS" : "STARTTLS"}</Tag>
+      <span className="min-w-0 wrap-anywhere">
+        {server.host}:{server.port}
+      </span>
+    </span>
   );
 }
 
