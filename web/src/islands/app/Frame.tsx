@@ -28,7 +28,7 @@ const frame = (html: string) =>
   `<meta http-equiv="Content-Security-Policy" content="${policy(window.location.origin)}">` +
   `<base target="_blank">` +
   `<style>html{color-scheme:light;overflow:auto}` +
-  `body{margin:0;padding:16px;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +
+  `body{margin:0;padding:8px;font:14px/1.5 system-ui,sans-serif;color:#1f2329;background:#fff;` +
   `overflow-wrap:anywhere;width:fit-content;min-width:100%;box-sizing:border-box}` +
   `img{max-width:100%;height:auto}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
 

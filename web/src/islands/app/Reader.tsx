@@ -125,7 +125,7 @@ export function Reader({
       // a plain message has no frame, and the pane is its scroll.
       className={`relative flex min-w-0 flex-1 flex-col overflow-x-hidden bg-bg ${m?.html ? "overflow-y-hidden" : "overflow-y-auto"}`}
     >
-      <div className="flex shrink-0 flex-col gap-2 border-b border-line px-4 py-4">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-line p-2">
         <Actions
           config={config}
           mailbox={mailbox}
@@ -184,7 +184,7 @@ export function Reader({
       </div>
 
       {!m && !read.error ? (
-        <div className="flex flex-col gap-2 px-4 py-4">
+        <div className="flex flex-col gap-2 p-2">
           <Dummy className="h-4 w-full" />
           <Dummy className="h-4 w-5/6" />
           <Dummy className="h-4 w-2/3" />
@@ -200,7 +200,7 @@ export function Reader({
             parts={m.parts}
           />
           {m.held_images > 0 && !images ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-fill px-4 py-2 text-sm">
+            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-fill p-2 text-sm">
               <span className="text-muted">
                 {m.held_images === 1
                   ? "1 image from the internet is not shown."
@@ -214,19 +214,19 @@ export function Reader({
           {m.html ? (
             <Frame html={m.html} images={images} />
           ) : (
-            <pre className="shrink-0 px-4 py-4 font-sans text-sm whitespace-pre-wrap break-words">
+            <pre className="shrink-0 p-2 font-sans text-sm whitespace-pre-wrap break-words">
               {m.text}
             </pre>
           )}
           {mailbox.special_use === "drafts" ? (
-            <div className="sticky bottom-0 mt-auto flex shrink-0 gap-2 border-t border-line bg-bg px-4 py-2">
+            <div className="sticky bottom-0 mt-auto flex shrink-0 gap-2 border-t border-line bg-bg p-2">
               <Button size="bar" onClick={() => write(resumed(m, config))}>
                 <WriteMark />
                 Edit draft
               </Button>
             </div>
           ) : mailbox.special_use === "scheduled" ? (
-            <div className="sticky bottom-0 mt-auto flex shrink-0 gap-2 border-t border-line bg-bg px-4 py-2">
+            <div className="sticky bottom-0 mt-auto flex shrink-0 gap-2 border-t border-line bg-bg p-2">
               <Button size="bar" onClick={() => write(rescheduled(m, config))}>
                 <WriteMark />
                 Edit
@@ -276,7 +276,7 @@ function Replies({ config, m }: { config: string; m: ReadMessage }) {
   }, []);
 
   return (
-    <div className="sticky bottom-0 mt-auto flex shrink-0 flex-wrap gap-2 border-t border-line bg-bg px-4 py-2">
+    <div className="sticky bottom-0 mt-auto flex shrink-0 flex-wrap gap-2 border-t border-line bg-bg p-2">
       <Button size="bar" title="Reply (r)" onClick={answer.r}>
         <ReplyMark />
         Reply
@@ -345,7 +345,7 @@ function Attachments({
   return (
     <ul
       aria-label="Attachments"
-      className="flex shrink-0 flex-wrap gap-2 border-b border-line px-4 py-3"
+      className="flex shrink-0 flex-wrap gap-2 border-b border-line p-2"
     >
       {listed.map((p) => (
         <li key={p.section}>

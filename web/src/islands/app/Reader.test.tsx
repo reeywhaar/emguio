@@ -385,7 +385,7 @@ describe("the reading pane", () => {
     getMessage.mockResolvedValue(read({ html: "<p>Rich</p>" }));
     open();
     const frame = await screen.findByTitle<HTMLIFrameElement>("Message");
-    expect(frame.getAttribute("srcdoc")).toContain("padding:16px");
+    expect(frame.getAttribute("srcdoc")).toContain("padding:8px");
   });
 
   it("asks before loading images from elsewhere", async () => {
