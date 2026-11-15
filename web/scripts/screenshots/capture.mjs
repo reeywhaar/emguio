@@ -39,7 +39,15 @@ import { crc32, inflateSync } from "node:zlib";
 
 import { Browser, findChromium, waitFor } from "../cdp.mjs";
 import { fill, Imap } from "../mail.mjs";
-import { account, folders, mail, messages, now, opened } from "./seed.mjs";
+import {
+  account,
+  folders,
+  mail,
+  messages,
+  now,
+  opened,
+  others,
+} from "./seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..", "..");
@@ -410,6 +418,25 @@ await fill(imap, mail, {
   domain: "screenshots.example",
 }).catch((err) => die(err.message));
 imap.close();
+// One sign-in a connection.
+for (const other of others) {
+  const each = await Imap.open({
+    port: imapPort,
+    servername: "imap.example.com",
+    ca: readFileSync(join(certs, "ca.pem")),
+  }).catch(() => die("the mail server did not answer", logs()));
+  await fill(
+    each,
+    { email: other.email, name: mail.name, password: mail.password },
+    {
+      folders: [],
+      messages: other.messages,
+      now: moment,
+      domain: "screenshots.example",
+    },
+  ).catch((err) => die(err.message));
+  each.close();
+}
 
 /** A port nothing on this machine is listening on, a moment ago. */
 function free() {
@@ -459,17 +486,24 @@ const agent = (await browser.eval("navigator.userAgent")).replace(
 await browser.send("Emulation.setUserAgentOverride", { userAgent: agent });
 
 /** One call as the signed-in user. Any failure ends the run. */
-async function api(path) {
+/** What the API answers the browser's user: a GET, or a POST of body. */
+async function api(path, body) {
   const { cookies } = await browser.send("Network.getCookies", {
     urls: [BASE],
   });
   const cookie = cookies.find((c) => c.name === "emguio_auth")?.value;
   if (!cookie) die("not signed in");
+  const method = body === undefined ? "GET" : "POST";
   const res = await fetch(BASE + path, {
-    headers: { Cookie: `emguio_auth=${cookie}` },
+    method,
+    headers: {
+      Cookie: `emguio_auth=${cookie}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
-  if (!res.ok) die(`GET ${path} answered ${res.status}`, text);
+  if (!res.ok) die(`${method} ${path} answered ${res.status}`, text);
   return JSON.parse(text);
 }
 
@@ -484,10 +518,16 @@ function until(what, f) {
   return waitFor(f, TIMEOUT * 4);
 }
 
-/** Everything drawn: fonts in, pictures decoded, and the dialog's entrance over. */
+/**
+ * Everything drawn: fonts in, pictures decoded, nothing still loading, and the dialog's entrance
+ * over.
+ */
 async function settled() {
   await until("the fonts", () =>
     browser.eval("document.fonts.ready.then(() => true)"),
+  );
+  await until("what is loading", () =>
+    browser.eval(`document.querySelector(".dummy") === null`),
   );
   await until("the pictures to decode", () =>
     browser.eval(
@@ -665,6 +705,25 @@ const shots = [
       await until("the account to be saved", () =>
         browser.eval(`!document.querySelector("dialog[open]")`),
       );
+      const server = (email, host, port) => ({
+        host,
+        port,
+        tls: "implicit",
+        username: email,
+        password: mail.password,
+      });
+      for (const other of others) {
+        await api("/api/email-configs", {
+          name: other.name,
+          email: other.email,
+          sender_name: mail.name,
+          incoming: {
+            protocol: "imap",
+            ...server(other.email, "imap.example.com", 993),
+          },
+          outgoing: server(other.email, "smtp.example.com", 465),
+        });
+      }
     },
   },
   {
@@ -675,6 +734,12 @@ const shots = [
       const config = await until(
         "the account",
         async () => (await api("/api/email-configs")).email_configs[0],
+      );
+      // The header counts each one's unread, once it has had its first look.
+      await until("every account's first look", async () =>
+        (await api("/api/email-configs")).email_configs.every(
+          (c) => c.synced_at !== null,
+        ),
       );
       const inbox = await until("the first look at the mailbox", async () =>
         (await api(`/api/email-configs/${config.id}/mailboxes`)).mailboxes.find(

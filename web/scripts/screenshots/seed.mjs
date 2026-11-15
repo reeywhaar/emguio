@@ -1,4 +1,5 @@
-// What the screenshots show: one user, one mail account, and the mail in it.
+// What the screenshots show: one user, the mail account added in Settings and the mail in it, and
+// a few more accounts beside it, which the header lists.
 //
 // Invented, all of it, for people out of Dan Brown's novels. Adding a message or a folder is an
 // entry here and nothing else: capture.mjs makes the folders and appends every message to the
@@ -28,6 +29,50 @@ export const mail = {
   name: "Robert Langdon",
   password: "another password nobody types",
 };
+
+// Added beside it once it is saved, on the same servers and with the same password, and filled
+// like it: `messages` as below.
+export const others = [
+  {
+    name: "Personal",
+    email: "robert@langdon.example",
+    messages: [
+      {
+        key: "personal1",
+        folder: "INBOX",
+        from: "Sophie Neveu <sophie@neveu.example>",
+        subject: "Paris in October?",
+        ago: "40m",
+        unread: true,
+        body: "Robert,\n\nThe Louvre asks whether you would give a talk in October. Say yes, and I will show you the café I mentioned.\n\nSophie",
+      },
+      {
+        key: "personal2",
+        folder: "INBOX",
+        from: "Harvard Swim Club <pool@harvard.example>",
+        subject: "Lane times for the autumn term",
+        ago: "5h",
+        unread: true,
+        body: "The early lanes open at 06:00 from September. Fifty laps, as ever.",
+      },
+    ],
+  },
+  {
+    name: "Faculty",
+    email: "r.langdon@harvard.example",
+    messages: [
+      {
+        key: "faculty1",
+        folder: "INBOX",
+        from: "Department Office <office@harvard.example>",
+        subject: "Room change for Symbology 101",
+        ago: "1d",
+        body: "From next week the lecture is in Room 214.",
+      },
+    ],
+  },
+  { name: "Lecture tour", email: "tour@langdon.example", messages: [] },
+];
 
 const langdon = `${mail.name} <${mail.email}>`;
 const faukman = "Jonas Faukman <jonas@faukman.example>";
