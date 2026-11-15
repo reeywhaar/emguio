@@ -1,0 +1,85 @@
+# emguio with a mail server of its own and five accounts of invented mail, all of it made fresh
+# on every start and gone when it stops. See README.md.
+#
+#   docker compose up --build
+#
+# then http://localhost:8080, signing in as demo / demodemo.
+name: emguio-demo
+
+services:
+  # IMAP, SMTP and the settings lookup for any address on example.com's servers, in memory. It
+  # makes its own certificate authority on start and leaves it in the certs volume.
+  mail:
+    build:
+      context: ..
+      dockerfile: demo/mailserver/Dockerfile
+    environment:
+      MAIL_PASSWORD: demodemo
+    volumes:
+      - certs:/certs
+    healthcheck:
+      test: ["CMD", "mailserver", "ready"]
+      interval: 1s
+      retries: 60
+    networks:
+      demo:
+        aliases: [imap.example.com, smtp.example.com, autoconfig.example.com]
+
+  emguio:
+    build:
+      context: ..
+    depends_on:
+      mail:
+        condition: service_healthy
+    # A key made for this start, and an invitation the seed signs up with, before serving. The
+    # data directory is in memory, so a start begins with nobody.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        export EMGUIO_SECRET_KEY="$$(head -c 32 /dev/urandom | base64)"
+        emguio invite > /handoff/invite
+        exec emguio serve
+    environment:
+      EMGUIO_PUBLIC_URL: http://localhost:${DEMO_PORT:-8080}
+      # The mail server is on this private network, which emguio otherwise refuses to reach.
+      EMGUIO_ALLOW_NETWORKS: 172.30.99.0/24
+      # Trusts the mail server's certificate authority, made a moment before.
+      SSL_CERT_FILE: /certs/ca.pem
+    tmpfs:
+      - /data
+    volumes:
+      - certs:/certs:ro
+      - handoff:/handoff
+    ports:
+      - "${DEMO_PORT:-8080}:80"
+    networks: [demo]
+
+  # Puts the mail in, signs up the demo user and adds the five accounts, then stops.
+  seed:
+    image: node:26-alpine
+    depends_on:
+      mail:
+        condition: service_healthy
+      emguio:
+        condition: service_started
+    working_dir: /src/demo
+    command: ["node", "seed.mjs"]
+    volumes:
+      - certs:/certs:ro
+      - handoff:/handoff:ro
+      - ./accounts.mjs:/src/demo/accounts.mjs:ro
+      - ./seed.mjs:/src/demo/seed.mjs:ro
+      - ../web/scripts/mail.mjs:/src/web/scripts/mail.mjs:ro
+      - ../web/scripts/screenshots/seed.mjs:/src/web/scripts/screenshots/seed.mjs:ro
+    networks: [demo]
+
+networks:
+  demo:
+    ipam:
+      config:
+        - subnet: 172.30.99.0/24
+
+volumes:
+  certs:
+  handoff:

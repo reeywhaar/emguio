@@ -33,6 +33,9 @@ redraws the edges of letters all over a picture, and that alone is not a new pic
 | `NOTES=0` | without the notes |
 | `TIMEOUT=30` | seconds a shot may take; one that runs over says what it was waiting for |
 
+The demo in [demo/](../../demo/) shows the same mail as its Personal account, put on its mail server
+by the same [`web/scripts/mail.mjs`](../../web/scripts/mail.mjs).
+
 **The data** is `seed.mjs`: the user, the mail account, the folders, and the messages, each with
 the folder it is in, how long ago it came, its flags, the one it answers, its attachments, and,
 for a newsletter, the address it says to unsubscribe at. Each is dated how long ago it came,

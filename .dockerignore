@@ -1,0 +1,8 @@
+# What no image is built from: an image copies the paths it names, and this keeps the rest from
+# being sent to the builder at all.
+.git
+private
+data
+**/node_modules
+web/dist
+.patched

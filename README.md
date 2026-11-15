@@ -136,6 +136,11 @@ Invented mail, captured from the real thing by `npm --prefix web run screenshots
 
 More users with `docker compose exec emguio emguio invite`.
 
+## Try it
+
+`./run_demo.sh` runs emguio in Docker with a mail server of its own and five accounts of invented
+mail, fresh on every start; then sign in at <http://localhost:8080>. See [demo/](demo/).
+
 ## More
 
 - [docs/deploy.md](docs/deploy.md): the environment, the image, and running from a checkout.
