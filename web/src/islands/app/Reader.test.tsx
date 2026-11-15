@@ -309,11 +309,13 @@ describe("the reading pane", () => {
     );
   });
 
-  it("marks a message with no subject rather than standing words in for one", async () => {
+  // Nothing stands in for a missing subject on the screen; a screen reader is told.
+  it("leaves out a subject a message does not have", async () => {
     getMessage.mockResolvedValue(read({ subject: "Re: Re: Re: No Subject" }));
     open();
-    await screen.findByRole("heading", { name: "No subject" });
-    expect(screen.queryByText(/\(no subject\)/i)).toBeNull();
+    const heading = await screen.findByRole("heading", { name: "No subject" });
+    expect(heading.className).toContain("sr-only");
+    expect(screen.queryByText(/Re: Re/)).toBeNull();
   });
 
   // Wide, who sent it shares the buttons' row, the list being beside; on a phone that row is the

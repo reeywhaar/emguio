@@ -45,7 +45,7 @@ import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { paths } from "@app/islands/app/route";
 import { NewsletterTag, Unsubscribe } from "@app/islands/app/Unsubscribe";
 import { CopyAddress } from "@app/islands/app/Address";
-import { Subject } from "@app/islands/app/Subject";
+import { Subject, untitled } from "@app/islands/app/Subject";
 import { SIDE_BY_SIDE, useMatches } from "@app/media";
 
 /** One message, and what can be done to it. Opening it marks it read, here and on the server. */
@@ -149,12 +149,17 @@ export function Reader({
         {wide ? null : sender}
         {known ? (
           <>
-            <h2
-              className={`-mt-1 font-semibold break-words ${subjectLook(known.subject)}`}
-              title={known.subject}
-            >
-              <Subject subject={known.subject} />
-            </h2>
+            {/* None, or only a placeholder: nothing to read, though a screen reader is told. */}
+            {untitled(known.subject) ? (
+              <h2 className="sr-only">No subject</h2>
+            ) : (
+              <h2
+                className={`-mt-1 font-semibold break-words ${subjectLook(known.subject)}`}
+                title={known.subject}
+              >
+                <Subject subject={known.subject} />
+              </h2>
+            )}
             {known.to.length || m?.cc.length || m?.bcc.length ? (
               <div className="mt-1.5 flex flex-col gap-2">
                 <People label="To" people={known.to} />
