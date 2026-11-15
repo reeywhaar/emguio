@@ -17,6 +17,7 @@ import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
 import { Tag } from "@app/components/Tag";
+import { useConfirm } from "@app/components/Confirm";
 import { Dialog } from "@app/components/Dialog";
 import { ChevronMark, GripMark } from "@app/components/icons";
 import { useCarry } from "@app/islands/app/carry";
@@ -347,7 +348,7 @@ function Details({
   titled?: boolean;
 }) {
   const client = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
+  const confirm = useConfirm();
   const test = useMutation({
     mutationFn: () => postEmailConfigsByIdTest(config.id, draftOf(config)),
   });
@@ -356,6 +357,16 @@ function Details({
     onSuccess: () => client.invalidateQueries({ queryKey: qk.emailConfigs }),
   });
   const label = labelOf(config);
+  const drop = async () => {
+    const yes = await confirm({
+      title: `Delete ${label}?`,
+      message:
+        "emguio forgets the account and what it keeps of it, drafts included. Nothing on the mail server changes.",
+      confirm: "Delete",
+      danger: true,
+    });
+    if (yes) remove.mutate();
+  };
 
   const body = (
     <>
@@ -387,45 +398,29 @@ function Details({
       {remove.error ? (
         <p className="text-sm text-accent">{messageOf(remove.error)}</p>
       ) : null}
-      {confirming ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm">Delete {label}?</span>
-          <Button
-            size="bar"
-            variant="danger"
-            disabled={remove.isPending}
-            onClick={() => remove.mutate()}
-          >
-            Delete
-          </Button>
-          <Button size="bar" onClick={() => setConfirming(false)}>
-            Keep it
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={paths.editConfig(config.id)}
-            className={buttonLook("quiet", "bar")}
-          >
-            Edit
-          </Link>
-          <Button
-            size="bar"
-            disabled={test.isPending}
-            onClick={() => test.mutate()}
-          >
-            {test.isPending ? "Testing" : "Test connection"}
-          </Button>
-          <Button
-            size="bar"
-            variant="danger"
-            onClick={() => setConfirming(true)}
-          >
-            Delete…
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={paths.editConfig(config.id)}
+          className={buttonLook("quiet", "bar")}
+        >
+          Edit
+        </Link>
+        <Button
+          size="bar"
+          disabled={test.isPending}
+          onClick={() => test.mutate()}
+        >
+          {test.isPending ? "Testing" : "Test connection"}
+        </Button>
+        <Button
+          size="bar"
+          variant="danger"
+          disabled={remove.isPending}
+          onClick={drop}
+        >
+          Delete…
+        </Button>
+      </div>
     </>
   );
   if (!titled) {

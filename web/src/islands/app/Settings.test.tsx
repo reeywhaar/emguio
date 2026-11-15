@@ -355,9 +355,11 @@ describe("settings", () => {
     mount(<Settings editing={null} />);
     fireEvent.click(await screen.findByRole("button", { name: "Delete…" }));
     expect(deleteEmailConfigsById).not.toHaveBeenCalled();
-    screen.getByText("Delete Work?");
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Delete Work?" });
+    dialog.getByText(/Nothing on the mail server changes/);
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }));
     await waitFor(() =>
       expect(deleteEmailConfigsById).toHaveBeenCalledWith("ec_1"),
     );
