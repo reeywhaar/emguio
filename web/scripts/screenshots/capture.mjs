@@ -33,12 +33,12 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { connect } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { crc32, inflateSync } from "node:zlib";
 
 import { Browser, findChromium, waitFor } from "../cdp.mjs";
+import { fill, Imap } from "../mail.mjs";
 import { account, folders, mail, messages, now, opened } from "./seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -392,100 +392,23 @@ const invite = await waitFor(
 
 // --- the mail ---------------------------------------------------------------------------------
 
-/** A connection to the mail server, one command at a time, for filling it. */
-class Imap {
-  #socket;
-  #lines = [];
-  #waiting = null;
-  #buffer = "";
-  #next = 1;
-
-  static open(port, ca) {
-    return new Promise((done, fail) => {
-      const imap = new Imap();
-      imap.#socket = connect({
-        host: "127.0.0.1",
-        port,
-        servername: "imap.example.com",
-        ca,
-      });
-      imap.#socket.setEncoding("utf8");
-      imap.#socket.on("data", (chunk) => imap.#read(chunk));
-      imap.#socket.once("error", fail);
-      imap
-        .#line()
-        .then((greeting) =>
-          greeting.startsWith("* OK") ? done(imap) : fail(new Error(greeting)),
-        );
-    });
-  }
-
-  #read(chunk) {
-    this.#buffer += chunk;
-    for (let at; (at = this.#buffer.indexOf("\r\n")) >= 0;) {
-      this.#lines.push(this.#buffer.slice(0, at));
-      this.#buffer = this.#buffer.slice(at + 2);
-    }
-    if (this.#waiting && this.#lines.length) {
-      const waiting = this.#waiting;
-      this.#waiting = null;
-      waiting(this.#lines.shift());
-    }
-  }
-
-  #line() {
-    if (this.#lines.length) return Promise.resolve(this.#lines.shift());
-    return new Promise((done) => (this.#waiting = done));
-  }
-
-  /** Sends a command and waits for its answer; literal is sent once the server asks for it. */
-  async command(text, { literal, already = false } = {}) {
-    const tag = `t${this.#next++}`;
-    this.#socket.write(`${tag} ${text}\r\n`);
-    for (;;) {
-      const line = await this.#line();
-      if (line.startsWith("+") && literal) {
-        this.#socket.write(Buffer.concat([literal, Buffer.from("\r\n")]));
-        continue;
-      }
-      if (!line.startsWith(`${tag} `)) continue;
-      if (line.startsWith(`${tag} OK`)) return;
-      if (already && line.includes("ALREADYEXISTS")) return;
-      die(`the mail server refused ${text.split(" ")[0]}`, line);
-    }
-  }
-
-  close() {
-    this.#socket.end();
-  }
-}
-
 step("filling the mailbox");
 const imapPort = Number(docker("port", mailserver, "993").split(":").pop());
 const imap = await waitFor(() =>
-  Imap.open(imapPort, readFileSync(join(certs, "ca.pem"))),
+  Imap.open({
+    port: imapPort,
+    servername: "imap.example.com",
+    ca: readFileSync(join(certs, "ca.pem")),
+  }),
 ).catch(() => die("the mail server did not answer", logs()));
-await imap.command(`LOGIN ${quote(mail.email)} ${quote(mail.password)}`);
-for (const folder of folders)
-  await imap.command(`CREATE ${quote(folder)}`, { already: true });
-
 const moment = Date.parse(now);
-const at = (ago) => new Date(moment - seconds(ago) * 1000);
 const keyed = Object.fromEntries(messages.map((m) => [m.key, m]));
-// Oldest first, as real mail comes: a list is in the order of the dates APPEND gives.
-const arrival = messages.toSorted((a, b) => seconds(b.ago) - seconds(a.ago));
-for (const m of arrival) {
-  const flags = [
-    ...(m.unread ? [] : ["\\Seen"]),
-    ...(m.flagged ? ["\\Flagged"] : []),
-    ...(m.folder === "Drafts" ? ["\\Draft"] : []),
-  ];
-  const raw = Buffer.from(message(m), "utf8");
-  await imap.command(
-    `APPEND ${quote(m.folder)} (${flags.join(" ")}) ${quote(internalDate(at(m.ago)))} {${raw.length}}`,
-    { literal: raw },
-  );
-}
+await fill(imap, mail, {
+  folders,
+  messages,
+  now: moment,
+  domain: "screenshots.example",
+}).catch((err) => die(err.message));
 imap.close();
 
 /** A port nothing on this machine is listening on, a moment ago. */
@@ -496,96 +419,6 @@ function free() {
       probe.close(() => done(port));
     });
   });
-}
-
-function seconds(span) {
-  const [, n, unit] =
-    /^(\d+)([mhdw])$/.exec(span) ?? die(`not a span: ${span}`);
-  return Number(n) * { m: 60, h: 3600, d: 86400, w: 604800 }[unit];
-}
-
-/** The message as the server stores it: headers, then its text, and its parts if it has any. */
-function message(m) {
-  const id = (key) => `<${key}@screenshots.example>`;
-  const thread = [];
-  for (let up = m.replyTo; up; up = keyed[up]?.replyTo) thread.unshift(id(up));
-  const head = [
-    `From: ${m.from}`,
-    `To: ${m.to ?? `${mail.name} <${mail.email}>`}`,
-    `Subject: ${m.subject}`,
-    `Date: ${at(m.ago).toUTCString()}`,
-    `Message-ID: ${id(m.key)}`,
-    ...(thread.length
-      ? [`In-Reply-To: ${thread.at(-1)}`, `References: ${thread.join(" ")}`]
-      : []),
-    ...(m.unsubscribe
-      ? [
-          `List-Unsubscribe: <${m.unsubscribe}>`,
-          "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
-        ]
-      : []),
-    "MIME-Version: 1.0",
-  ];
-  const text = [
-    "Content-Type: text/plain; charset=utf-8",
-    "Content-Transfer-Encoding: 8bit",
-    "",
-    m.body,
-  ].join("\r\n");
-  let body = text;
-  if (m.html) {
-    body = multipart("alternative", [
-      text,
-      [
-        "Content-Type: text/html; charset=utf-8",
-        "Content-Transfer-Encoding: 8bit",
-        "",
-        `<!doctype html><html><body>${m.html}</body></html>`,
-      ].join("\r\n"),
-    ]);
-  }
-  if (m.attachments?.length) {
-    body = multipart("mixed", [
-      body,
-      ...m.attachments.map((a) =>
-        [
-          `Content-Type: ${a.type}; name="${a.name}"`,
-          `Content-Disposition: attachment; filename="${a.name}"`,
-          "Content-Transfer-Encoding: base64",
-          "",
-          filler(a.size).toString("base64").replace(/.{76}/g, "$&\r\n"),
-        ].join("\r\n"),
-      ),
-    ]);
-  }
-  return [...head, body].join("\r\n").replace(/\r?\n/g, "\r\n");
-}
-
-function multipart(kind, parts) {
-  const boundary = `=_${kind}_${randomBytes(6).toString("hex")}`;
-  return [
-    `Content-Type: multipart/${kind}; boundary="${boundary}"`,
-    "",
-    ...parts.flatMap((part) => [`--${boundary}`, part]),
-    `--${boundary}--`,
-    "",
-  ].join("\r\n");
-}
-
-/** Bytes standing in for a file of that size. Nobody opens them. */
-function filler(size) {
-  return Buffer.alloc(size, "emguio screenshots ");
-}
-
-/** A time as APPEND takes it: 17-Jun-2026 10:05:00 +0000. */
-function internalDate(d) {
-  const months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
-  const two = (n) => String(n).padStart(2, "0");
-  return `${two(d.getUTCDate())}-${months[d.getUTCMonth()]}-${d.getUTCFullYear()} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())} +0000`;
-}
-
-function quote(s) {
-  return `"${s.replace(/[\\"]/g, "\\$&")}"`;
 }
 
 // --- the browser -----------------------------------------------------------------------------
