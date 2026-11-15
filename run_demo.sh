@@ -1,8 +1,10 @@
 #!/bin/sh
-# Runs the demo: emguio with a mail server of its own and five accounts of invented mail, made
-# fresh. Ctrl-C stops it and throws all of it away. See demo/README.md.
+# Runs the demo: emguio with a mail server of its own and five accounts of invented mail. The
+# mail is made fresh on every run; emguio's user, its sign-in and its accounts are kept, so a
+# browser signed in stays signed in. Ctrl-C stops it. See demo/README.md.
 #
 #   ./run_demo.sh              on http://localhost:8080
+#   ./run_demo.sh --fresh      without what earlier runs kept: signed out, accounts added anew
 #   DEMO_PORT=9090 ./run_demo.sh
 set -eu
 
@@ -15,12 +17,16 @@ stop() {
   [ -n "$logs" ] && kill "$logs" 2>/dev/null
   echo
   echo "Stopping the demo…"
-  docker compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+  docker compose down --remove-orphans >/dev/null 2>&1 || true
 }
 trap stop EXIT INT TERM
 
-# Anything left from a run that was not stopped goes first, so this one starts empty.
-docker compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+# Anything left from a run that was not stopped goes first, and with --fresh what runs kept too.
+if [ "${1:-}" = "--fresh" ]; then
+  docker compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+else
+  docker compose down --remove-orphans >/dev/null 2>&1 || true
+fi
 docker compose up --build --detach
 
 echo "Filling the accounts…"
@@ -32,7 +38,7 @@ fi
 
 echo
 echo "Ready: http://localhost:$port"
-echo "Sign in as demo, password demodemo. Ctrl-C stops the demo and throws it away."
+echo "Sign in as demo, password demodemo. Ctrl-C stops the demo."
 echo
 # In the background and waited for, so a signal ends the wait at once and the demo goes down.
 docker compose logs --follow --no-log-prefix emguio &

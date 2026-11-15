@@ -1,7 +1,8 @@
 # Demo
 
 emguio with a mail server of its own and five mail accounts full of invented mail, in Docker.
-Everything is made fresh on every start and is gone when it stops.
+The mail is made fresh on every start. emguio's user, its sign-in and its accounts are kept from
+one run to the next, so a browser signed in stays signed in.
 
 ```sh
 ./run_demo.sh
@@ -9,11 +10,11 @@ Everything is made fresh on every start and is gone when it stops.
 
 from the top of the checkout. It builds and starts everything, says when the accounts are filled,
 and follows emguio's log; then open <http://localhost:8080> and sign in as **demo**, password
-**demodemo**. Ctrl-C stops it and throws all of it away. To serve on another port, set
-`DEMO_PORT=9090`.
+**demodemo**. Ctrl-C stops it. `./run_demo.sh --fresh` starts without what earlier runs kept,
+signed out. To serve on another port, set `DEMO_PORT=9090`.
 
-Without the script: `docker compose up --build` here, and `docker compose down --volumes` to stop.
-`docker compose logs seed` says when the accounts are filled.
+Without the script: `docker compose up --build` here, and `docker compose down` to stop, with
+`--volumes` to forget what runs kept. `docker compose logs seed` says when the accounts are filled.
 
 ## What is in it
 
@@ -40,9 +41,11 @@ The mail of Robert Langdon, who has five accounts:
 
 - `mail`, a small mail server in [mailserver/](mailserver/): IMAP and SMTP over TLS, and the
   settings a provider publishes, for any address with the password `demodemo`, held in memory.
-  It makes a certificate authority on start, which emguio is told to trust.
-- `emguio`, built from this checkout, its data in memory.
+  It makes a certificate authority on start, which emguio is told to trust, and numbers its
+  mailboxes afresh, so emguio reads them again rather than taking them for the last run's.
+- `emguio`, built from this checkout, its data in the `data` volume.
 - `seed`, which fills the accounts from [accounts.mjs](accounts.mjs), signs up the demo user
-  through the invitation emguio prints on start, adds the five accounts, and stops.
+  through the invitation emguio prints on its first start, adds the five accounts or has emguio
+  read the ones it kept again, and stops.
 
 The mail server knows no other server: nothing is sent out, and sending later is not offered.

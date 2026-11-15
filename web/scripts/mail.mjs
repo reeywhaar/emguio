@@ -56,23 +56,34 @@ export class Imap {
   }
 
   /**
-   * Sends a command and waits for its answer; literal is sent once the server asks for it. A
-   * refusal throws, saying the server's line, unless already allows a folder made before.
+   * Sends a command and waits for its answer, saying what the server said before it; literal is
+   * sent once the server asks for it. A refusal throws, saying the server's line, unless already
+   * allows a folder made before.
    */
   async command(text, { literal, already = false } = {}) {
     const tag = `t${this.#next++}`;
     this.#socket.write(`${tag} ${text}\r\n`);
+    const said = [];
     for (;;) {
       const line = await this.#line();
       if (line.startsWith("+") && literal) {
         this.#socket.write(Buffer.concat([literal, Buffer.from("\r\n")]));
         continue;
       }
-      if (!line.startsWith(`${tag} `)) continue;
-      if (line.startsWith(`${tag} OK`)) return;
-      if (already && line.includes("ALREADYEXISTS")) return;
+      if (!line.startsWith(`${tag} `)) {
+        said.push(line);
+        continue;
+      }
+      if (line.startsWith(`${tag} OK`)) return said;
+      if (already && line.includes("ALREADYEXISTS")) return said;
       throw new Error(`the mail server refused ${text.split(" ")[0]}: ${line}`);
     }
+  }
+
+  /** How many messages folder holds. */
+  async count(folder) {
+    const said = await this.command(`STATUS ${quote(folder)} (MESSAGES)`);
+    return Number(/MESSAGES (\d+)/.exec(said.join(" "))?.[1] ?? 0);
   }
 
   /** Appends raw to folder with flags, dated at. */

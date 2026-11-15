@@ -139,7 +139,7 @@ More users with `docker compose exec emguio emguio invite`.
 ## Try it
 
 `./run_demo.sh` runs emguio in Docker with a mail server of its own and five accounts of invented
-mail, fresh on every start; then sign in at <http://localhost:8080>. See [demo/](demo/).
+mail, the mail fresh on every start; then sign in at <http://localhost:8080>. See [demo/](demo/).
 
 ## More
 

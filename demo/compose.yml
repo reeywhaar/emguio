@@ -1,5 +1,5 @@
-# emguio with a mail server of its own and five accounts of invented mail, all of it made fresh
-# on every start and gone when it stops. See README.md.
+# emguio with a mail server of its own and five accounts of invented mail. The mail is made fresh
+# on every start; emguio's user, and its sign-in, are kept in the data volume. See README.md.
 #
 #   docker compose up --build
 #
@@ -31,13 +31,14 @@ services:
     depends_on:
       mail:
         condition: service_healthy
-    # A key made for this start, and an invitation the seed signs up with, before serving. The
-    # data directory is in memory, so a start begins with nobody.
+    # A key made once and kept with the data, and an invitation the seed signs up with on a first
+    # start, before serving.
     entrypoint:
       - /bin/sh
       - -c
       - |
-        export EMGUIO_SECRET_KEY="$$(head -c 32 /dev/urandom | base64)"
+        [ -s /data/demo-key ] || head -c 32 /dev/urandom | base64 > /data/demo-key
+        export EMGUIO_SECRET_KEY="$$(cat /data/demo-key)"
         emguio invite > /handoff/invite
         exec emguio serve
     environment:
@@ -46,9 +47,8 @@ services:
       EMGUIO_ALLOW_NETWORKS: 172.30.99.0/24
       # Trusts the mail server's certificate authority, made a moment before.
       SSL_CERT_FILE: /certs/ca.pem
-    tmpfs:
-      - /data
     volumes:
+      - data:/data
       - certs:/certs:ro
       - handoff:/handoff
     ports:
@@ -81,5 +81,6 @@ networks:
         - subnet: 172.30.99.0/24
 
 volumes:
+  data:
   certs:
   handoff:

@@ -57,7 +57,11 @@ func main() {
 		log.Fatalf("making the certificates: %v", err)
 	}
 	keys := &tls.Config{Certificates: []tls.Certificate{cert}}
-	m := &mail{password: password, users: map[string]*imapmemserver.User{}}
+	skip, err := rand.Int(rand.Reader, big.NewInt(5000))
+	if err != nil {
+		log.Fatalf("choosing where UIDVALIDITY starts: %v", err)
+	}
+	m := &mail{password: password, users: map[string]*imapmemserver.User{}, skip: int(skip.Int64()) + 1}
 
 	go serveIMAP(m, keys)
 	go serveSMTP(m, keys)
@@ -76,8 +80,12 @@ func env(name, fallback string) string {
 // mail is every mailbox, made the first time its address signs in or is written to by the demo.
 type mail struct {
 	password string
-	mu       sync.Mutex
-	users    map[string]*imapmemserver.User
+	// skip is how many UIDVALIDITYs a new mailbox passes over first, chosen for this start: emguio
+	// keeps what it read of the last start, and a mailbox numbered as the last one's would be
+	// taken for it, its new mail under the old mail's numbers.
+	skip  int
+	mu    sync.Mutex
+	users map[string]*imapmemserver.User
 }
 
 // user is the mailbox of address, made on its first sign-in with the password.
@@ -92,6 +100,16 @@ func (m *mail) user(address, password string) (*imapmemserver.User, error) {
 		return u, nil
 	}
 	u := imapmemserver.NewUser(address, password)
+	// Each mailbox made takes the next UIDVALIDITY, and there is no other way to say where they
+	// start.
+	for range m.skip {
+		if err := u.Create(".skip", nil); err != nil {
+			return nil, err
+		}
+		if err := u.Delete(".skip"); err != nil {
+			return nil, err
+		}
+	}
 	for _, name := range append([]string{"INBOX"}, folders...) {
 		if err := u.Create(name, nil); err != nil {
 			return nil, err
