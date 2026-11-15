@@ -7,6 +7,8 @@ export const qk = {
   me: ["me"] as const,
   /** The user's jobs, across every config: what is drawn as still to be done. */
   jobs: ["jobs"] as const,
+  /** The user's moves of messages to another of their accounts. */
+  transfers: ["transfers"] as const,
   emailConfigs: ["email-configs"] as const,
   /** The browsers that show the user's notifications. */
   devices: ["devices"] as const,

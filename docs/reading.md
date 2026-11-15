@@ -157,6 +157,32 @@ Star and read follow the selection: a single unstarred or unread message makes t
 or mark read, and only the messages that need it are asked about. Deleting from Trash, or on a
 server with none, asks first how many go for good.
 
+## A message moves to another account as a transfer
+
+The move picker lists the folders of the user's other accounts under each one's name. Each
+server holds only its own mail, so a move there is emguio carrying it: a `transfer` job per
+message, which reads the whole message from this server, appends it to the other with its flags
+and the date it arrived, and then deletes it from this one for good, the copy having arrived.
+Before appending, it looks there for the message's `Message-ID`: a try that stopped after the
+copy finds it and only deletes it here. So a stop at any point leaves a message in one place or
+both, never neither.
+
+The messages asked together from one folder to one other are one transfer, and go one at a time,
+each its own try: a large one is read and written once, and the most memory a transfer takes is
+its largest message. A message gone from here meanwhile is passed over. A refusal — a day's
+uploads used up, a mailbox full, a server without UIDPLUS, which cannot delete one message alone
+— stops the transfer, since the next message would be refused the same; a lost connection is
+tried again, as any job is. Like any job it is done whether or not the page is open, and across
+a restart.
+
+Its messages leave the list as soon as it is asked, as a move's do. A card in the bottom-right
+corner says where they are going and how far it has got, and cancels it: what has moved stays
+moved, the message under way finishes, and the rest stay. The waiting jobs of a cancelled or
+stopped transfer end with that as their error, so they stop being drawn as done and those
+messages are back in the list, in every tab. It then says how it ended: done, cancelled, or
+stopped with the server's sentence, which waits to be read. One of fewer than ten messages that
+finishes within two seconds has no card: the list shows they went.
+
 ## A message is named by what the server calls it
 
 Most messages have no row here to name them by, so a message's id is the server's own:

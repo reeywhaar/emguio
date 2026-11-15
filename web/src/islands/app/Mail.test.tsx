@@ -93,6 +93,7 @@ let taken = 0;
 const take = async (body: JobDraft): Promise<Job> => ({
   ...body,
   id: `j_${++taken}`,
+  transfer: "",
   error: "",
   created_at: 0,
 });

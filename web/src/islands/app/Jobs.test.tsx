@@ -16,6 +16,7 @@ vi.mock("@app/api/actions/jobs", () => ({
 
 const waiting = (id: string): Job => ({
   id,
+  transfer: "",
   email_config: "ec_1",
   mailbox: "mb_inbox",
   message: "1-1",

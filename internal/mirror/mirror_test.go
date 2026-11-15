@@ -39,6 +39,8 @@ type world struct {
 	server *imapclient.Client
 	// said is everything the IMAP server was told and answered.
 	said *transcript
+	// cert is what the servers of the world are trusted by.
+	cert *connecttest.Cert
 }
 
 // transcript is an IMAP server's conversation, written to by each connection.
@@ -129,6 +131,7 @@ func newWorldAt(t *testing.T, password string, cert *connecttest.Cert, port int,
 		target: store.SyncTarget{ID: cfg.ID, UserID: u.ID, UpdatedAt: cfg.UpdatedAt},
 		server: connecttest.Admin(t, cert, port, "misha", "hunter2"),
 		said:   said,
+		cert:   cert,
 	}
 }
 

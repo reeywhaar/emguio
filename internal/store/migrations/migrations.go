@@ -32,6 +32,7 @@ var all = []Migration{
 	push,
 	emailConfigPosition,
 	newsletter,
+	transfers,
 }
 
 // exec runs a statement block as one migration.

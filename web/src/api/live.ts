@@ -22,6 +22,7 @@ export function useLive() {
     // again, so the counts it moved are not moved twice in between.
     const refresh = async () => {
       await client.invalidateQueries({ queryKey: qk.jobs });
+      client.invalidateQueries({ queryKey: qk.transfers });
       client.invalidateQueries({ queryKey: qk.emailConfigs });
       const before = counts(client);
       await client.invalidateQueries({

@@ -170,6 +170,9 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("GET /api/jobs", s.requireSession(s.listJobs))
 	s.handle("POST /api/jobs", s.requireSession(s.postJobs))
 	s.handle("DELETE /api/jobs/{job}", s.requireSession(s.dismissJob))
+	s.handle("GET /api/transfers", s.requireSession(s.listTransfers))
+	s.handle("POST /api/transfers/{transfer}/cancel", s.requireSession(s.cancelTransfer))
+	s.handle("DELETE /api/transfers/{transfer}", s.requireSession(s.dismissTransfer))
 
 	s.handle("GET /api/push/key", s.requireSession(s.pushKey))
 	s.handle("GET /api/devices", s.requireSession(s.listDevices))

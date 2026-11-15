@@ -579,9 +579,9 @@ refuses the request, with `400` or `404`, and nothing is queued.
 | `email_config` | The message's email config. One request may hold jobs for several. |
 | `mailbox` | The message's folder. |
 | `message` | The message's id in that folder. |
-| `kind` | `seen`, `flagged`, `move` or `delete`. |
+| `kind` | `seen`, `flagged`, `move`, `delete` or `transfer`. |
 | `value` | For `seen`, `true` marks it read and `false` unread. For `flagged`, `true` stars it and `false` takes the star off. Not used otherwise; leave it `false`. |
-| `target` | For `move`: the folder it goes to, of the same email config, selectable, and not the one it is in. Not used otherwise. |
+| `target` | For `move`: the folder it goes to, of the same email config, selectable, and not the one it is in. For `transfer`: a folder of another of the user's email configs, selectable and not Scheduled. Not used otherwise. |
 | `seen` | Whether the message was read when asked, as the caller last saw it. It is kept with the job and given back, for whoever draws the folders' counts while the job waits; the job itself goes by what the server says. Send the message's `seen`, or leave it out. |
 
 Archiving, Trash and spam are moves: to the folder whose `special_use` is `archive` — `all` on
@@ -595,12 +595,15 @@ curl -b jar -c jar -H 'Content-Type: application/json' --data @- \
 EOF
 ```
 
+A `transfer` moves a message to another of the user's accounts: see
+[Moving to another account](#moving-to-another-account).
+
 The answer is `202` with the jobs queued, in order:
 
 ```json
 {"jobs": [{"id": "j_01k6r2s4t6v8w0x2y4z6a8b0c2", "email_config": "ec_…", "mailbox": "mb_…",
-  "message": "1700000000-4521", "kind": "seen", "value": true, "target": "", "seen": false,
-  "error": "", "created_at": 1790000000}]}
+  "message": "1700000000-4521", "kind": "seen", "value": true, "target": "", "transfer": "",
+  "seen": false, "error": "", "created_at": 1790000000}]}
 ```
 
 How they are done:
@@ -631,6 +634,52 @@ DELETE /api/jobs/{job}
 
 Dismisses a failed job. `204`. A job still waiting cannot be taken back, since it may already be
 on the server: it answers `404 not_found`, as does one that is not there.
+
+### Moving to another account
+
+A `transfer` job moves its message to a folder of another of the user's email configs. Each
+server holds only its own mail, so emguio carries it: it reads the whole message from the one,
+appends it to the other with its flags and the date it arrived — unless a message there has its
+`Message-ID` already — and then deletes it from the one for good. A stop between the two leaves
+it in both, and the next try finds it there and only deletes it.
+
+The `transfer` jobs of one request from one folder to one other are one transfer, named in each
+job's `transfer`. Its messages go one at a time, each its own try of up to two minutes. A message
+no longer there is passed over. A server that refuses — a day's uploads used up, a mailbox full,
+no UIDPLUS to delete one message alone — stops the transfer: the messages still waiting stay
+where they are, and their jobs end with the sentence as their `error`, as do a cancelled
+transfer's with `Cancelled.`. A job that ends so is not failed for its own sake: a page shows the
+transfer's outcome, not each job's.
+
+```
+GET /api/transfers
+```
+
+`{"transfers": [ … ]}`: the user's transfers, moving and finished, oldest first.
+
+```json
+{"transfers": [{"id": "tr_01k6r2s4t6v8w0x2y4z6a8b0c2", "email_config": "ec_…", "mailbox": "mb_…",
+  "target_config": "ec_…", "target": "mb_…", "total": 1000, "moved": 340, "state": "moving",
+  "error": "", "created_at": 1790000000}]}
+```
+
+`state` is `moving` while messages wait, then `done`, `cancelled`, or `stopped` with `error` the
+server's sentence. `moved` counts those moved; one passed over is not counted. A finished transfer
+stays listed until it is dismissed, or for a day.
+
+```
+POST /api/transfers/{transfer}/cancel
+```
+
+Leaves where they are the messages still waiting. What has moved stays moved, and the message
+under way finishes. `200` with the transfer; one already finished is given back as it ended.
+
+```
+DELETE /api/transfers/{transfer}
+```
+
+Dismisses a finished transfer, and the jobs it ended. `204`. One still moving answers
+`400 invalid`: cancel it first.
 
 ## Sending
 

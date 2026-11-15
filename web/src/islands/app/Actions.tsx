@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  useQueries,
   useQuery,
   useQueryClient,
   type InfiniteData,
@@ -16,6 +17,7 @@ import {
   getEmailConfigsByIdMailboxes,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
+import { labelOf } from "@app/islands/app/emailConfig";
 import type { JobDraft, Mailbox, Message, MessagePage } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
@@ -131,7 +133,7 @@ export function Actions({
   // On the press: the pending layer takes the message out of the list. Beside the list, the pane
   // goes on to the one below it as drawn, or else the one above, or else the folder; in the
   // list's place, back to the list.
-  const moveTo = (dest: Mailbox | null) => {
+  const moveTo = (dest: Mailbox | null, elsewhere = false) => {
     const beside = window.matchMedia(SIDE_BY_SIDE).matches;
     const drawn = listWithPending(
       client
@@ -143,7 +145,11 @@ export function Actions({
     const at = drawn.findIndex((x) => x.id === message);
     const neighbor =
       beside && at >= 0 ? (drawn[at + 1] ?? drawn[at - 1]) : undefined;
-    ask(dest ? { kind: "move", target: dest.id } : { kind: "delete" });
+    ask(
+      dest
+        ? { kind: elsewhere ? "transfer" : "move", target: dest.id }
+        : { kind: "delete" },
+    );
     go(paths.mail(config, mailbox.id, neighbor?.id, q));
   };
 
@@ -314,6 +320,7 @@ export function Actions({
             current={mailbox}
             disabled={busy}
             onMove={moveTo}
+            onTransfer={(dest) => moveTo(dest, true)}
           />
         </div>
       </div>
@@ -359,10 +366,22 @@ export function Action({
 /** The picker's choice that makes a folder to move to. */
 const NEW = "new";
 
+/** A folder each, indented by its depth. */
+const options = (list: Mailbox[]) =>
+  list.map((mb) => (
+    <option key={mb.id} value={mb.id}>
+      {" ".repeat(depthOf(mb))}
+      {labelOfMailbox(mb)}
+    </option>
+  ));
+
+/** Where mail can be put: selectable, and not Scheduled, which the server refuses mail in. */
+const takes = (mb: Mailbox) => mb.selectable && mb.special_use !== "scheduled";
+
 /**
- * Every other folder a message can be moved to, or a new one: the platform's own list, laid over
- * a button that looks like the others, so on a phone it is the system's picker and in a row of
- * actions it is one more icon.
+ * Every other folder a message can be moved to, or a new one, and the folders of the user's other
+ * accounts: the platform's own list, laid over a button that looks like the others, so on a phone
+ * it is the system's picker and in a row of actions it is one more icon.
  */
 export function MovePicker({
   config,
@@ -370,20 +389,41 @@ export function MovePicker({
   current,
   disabled,
   onMove,
+  onTransfer,
 }: {
   config: string;
   boxes: Mailbox[];
   current: Mailbox;
   disabled: boolean;
   onMove: (to: Mailbox) => void;
+  /** Moving to another account's folder. */
+  onTransfer: (to: Mailbox) => void;
 }) {
   const [making, setMaking] = useState(false);
   // Each opening starts the form afresh.
   const [opened, setOpened] = useState(0);
-  // The server refuses mail put in Scheduled.
-  const others = boxes.filter(
-    (mb) =>
-      mb.selectable && mb.id !== current.id && mb.special_use !== "scheduled",
+  const others = boxes.filter((mb) => takes(mb) && mb.id !== current.id);
+  const configs = useQuery({
+    queryKey: qk.emailConfigs,
+    queryFn: getEmailConfigs,
+  });
+  const accounts = (configs.data ?? []).filter((c) => c.id !== config);
+  const here = configs.data?.find((c) => c.id === config);
+  const theirs = useQueries({
+    queries: accounts.map((c) => ({
+      queryKey: qk.mailboxes(c.id),
+      queryFn: () => getEmailConfigsByIdMailboxes(c.id),
+    })),
+  });
+  const elsewhere = accounts.map((c, i) => ({
+    account: c,
+    boxes: (theirs[i]?.data ?? []).filter(takes),
+  }));
+  const own = (
+    <>
+      {options(others)}
+      <option value={NEW}>New folder…</option>
+    </>
   );
   return (
     <>
@@ -404,17 +444,29 @@ export function MovePicker({
               return;
             }
             const dest = others.find((mb) => mb.id === e.target.value);
-            if (dest) onMove(dest);
+            if (dest) return onMove(dest);
+            const away = elsewhere
+              .flatMap((a) => a.boxes)
+              .find((mb) => mb.id === e.target.value);
+            if (away) onTransfer(away);
           }}
         >
           <option value="">Move to…</option>
-          {others.map((mb) => (
-            <option key={mb.id} value={mb.id}>
-              {" ".repeat(depthOf(mb))}
-              {labelOfMailbox(mb)}
-            </option>
-          ))}
-          <option value={NEW}>New folder…</option>
+          {/* Grouped by account only when there is another to tell it from. */}
+          {accounts.length === 0 ? (
+            own
+          ) : (
+            <optgroup label={here ? labelOf(here) : "This account"}>
+              {own}
+            </optgroup>
+          )}
+          {elsewhere.map((a) =>
+            a.boxes.length > 0 ? (
+              <optgroup key={a.account.id} label={labelOf(a.account)}>
+                {options(a.boxes)}
+              </optgroup>
+            ) : null,
+          )}
         </select>
       </label>
       {/* Beside the picker rather than in it: a click inside the dialog would be the label's. */}

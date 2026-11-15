@@ -33,6 +33,7 @@ const (
 	Draft       = "d_"
 	DraftPart   = "dp_"
 	Device      = "dv_"
+	Transfer    = "tr_"
 )
 
 const (

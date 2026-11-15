@@ -10,6 +10,7 @@ import { Mail } from "@app/islands/app/Mail";
 import { Notice } from "@app/islands/app/Notice";
 import { paths, useRoute, type Route } from "@app/islands/app/route";
 import { Settings } from "@app/islands/app/Settings";
+import { Transfers } from "@app/islands/app/Transfers";
 
 export function App() {
   const route = useRoute();
@@ -26,6 +27,7 @@ export function App() {
       </Boundary>
       <Compose />
       <Jobs />
+      <Transfers />
       <Notice />
     </div>
   );

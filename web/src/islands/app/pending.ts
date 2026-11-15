@@ -88,7 +88,8 @@ export function withPending<T extends Pick<Message, "id" | "seen" | "flagged">>(
   return out;
 }
 
-const removes = (p: JobDraft) => p.kind === "move" || p.kind === "delete";
+const removes = (p: JobDraft) =>
+  p.kind === "move" || p.kind === "delete" || p.kind === "transfer";
 
 /** A mailbox's list as it is once its pending jobs are done: moved ones gone, flags changed. */
 export function listWithPending(
@@ -163,7 +164,18 @@ export function commit(client: QueryClient, j: JobDraft) {
     );
   if (removes(j)) {
     rows((msgs) => msgs.filter((x) => x.id !== j.message));
-    if (j.target) {
+    if (j.kind === "transfer") {
+      // Another account's: its list and its counts, by the folder alone.
+      client.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "mail" &&
+          ((q.queryKey[2] === "messages" && q.queryKey[3] === j.target) ||
+            (q.queryKey[2] === "mailboxes" &&
+              (q.state.data as Mailbox[] | undefined)?.some(
+                (mb) => mb.id === j.target,
+              ) === true)),
+      });
+    } else if (j.target) {
       client.invalidateQueries({
         queryKey: qk.folder(j.email_config, j.target),
       });
@@ -217,6 +229,7 @@ export function failure(
     flagged: j.value ? "starred" : "unstarred",
     move: "moved",
     delete: "deleted",
+    transfer: "moved",
   }[j.kind];
   const what = many
     ? `${jobs.length} messages`

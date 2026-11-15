@@ -53,6 +53,8 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 	var (
 		done  string
 		moved bool
+		// The other configs messages were transferred to, whose windows have them to take in.
+		into = map[string]bool{}
 	)
 	for {
 		batch, err := m.store.NextJobs(ctx, configID, batchMax)
@@ -69,7 +71,15 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 		default:
 			m.do(ctx, batch)
 			done = batch[0].UserID
-			moved = moved || batch[0].Kind == store.JobMove || batch[0].Kind == store.JobDelete
+			switch batch[0].Kind {
+			case store.JobMove, store.JobDelete:
+				moved = true
+			case store.JobTransfer:
+				moved = true
+				if to, err := m.store.MirrorMailbox(ctx, batch[0].Target); err == nil {
+					into[to.EmailConfigID] = true
+				}
+			}
 			continue
 		}
 		if done != "" {
@@ -77,8 +87,11 @@ func (m *Mirror) runJobs(configID string, wake chan struct{}) {
 				// The window has places to fill, and the counts are the server's to confirm.
 				m.Refresh(configID)
 			}
+			for id := range into {
+				m.Refresh(id)
+			}
 			m.store.Notify(done)
-			done, moved = "", false
+			done, moved, into = "", false, map[string]bool{}
 		}
 		select {
 		case <-ctx.Done():
@@ -105,7 +118,11 @@ func (m *Mirror) do(ctx context.Context, batch []*store.Job) {
 		}
 	} else {
 		try, cancel := context.WithTimeout(ctx, JobTimeout)
-		outcome = m.attempt(try, t, batch)
+		if batch[0].Kind == store.JobTransfer {
+			outcome[0] = m.transfer(try, t, batch[0])
+		} else {
+			outcome = m.attempt(try, t, batch)
+		}
 		cancel()
 		if ctx.Err() != nil {
 			return
@@ -242,6 +259,10 @@ func (m *Mirror) attempt(ctx context.Context, t store.SyncTarget, batch []*store
 // settle ends a try: done, failed with a sentence for its user, or put off until the server
 // can be reached.
 func (m *Mirror) settle(ctx context.Context, j *store.Job, err error) {
+	if j.Kind == store.JobTransfer {
+		m.settleTransfer(ctx, j, err)
+		return
+	}
 	var (
 		f       *connect.Failure
 		outcome error
@@ -267,9 +288,43 @@ func (m *Mirror) settle(ctx context.Context, j *store.Job, err error) {
 	}
 }
 
+// settleTransfer ends a try of one message of a transfer: moved, not there to move, or put
+// off until the servers can be reached. A refusal stops the whole transfer: what one server
+// will not take — its day's uploads, its space — it will not take for the next message either.
+func (m *Mirror) settleTransfer(ctx context.Context, j *store.Job, err error) {
+	var (
+		f       *connect.Failure
+		outcome error
+	)
+	switch {
+	case err == nil:
+		if outcome = m.store.FinishJob(ctx, j.ID); outcome == nil {
+			outcome = m.store.TransferMoved(ctx, j.Transfer)
+		}
+	case errors.Is(err, ErrGone):
+		outcome = m.store.FinishJob(ctx, j.ID)
+	case errors.Is(err, ErrUnsupported):
+		outcome = m.store.StopTransfer(ctx, j.Transfer, unsupported(j.Kind))
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrInvalid):
+		outcome = m.store.StopTransfer(ctx, j.Transfer, err.Error())
+	case errors.As(err, &f) && f.Class == "refused", j.Attempts >= len(jobBackoff):
+		sentence, _ := explain(err)
+		outcome = m.store.StopTransfer(ctx, j.Transfer, sentence)
+	default:
+		outcome = m.store.RetryJob(ctx, j.ID, time.Now().Add(jobBackoff[j.Attempts]))
+	}
+	if outcome != nil && ctx.Err() == nil {
+		m.log.Error("a transfer's outcome could not be recorded", "user", j.UserID, "email_config", j.EmailConfigID,
+			"job", j.ID, "transfer", j.Transfer, "error", outcome.Error())
+	}
+}
+
 func unsupported(kind string) string {
-	if kind == store.JobDelete {
+	switch kind {
+	case store.JobDelete:
 		return "This mail server cannot delete one message for good without touching others: it has no UIDPLUS."
+	case store.JobTransfer:
+		return "This mail server cannot delete one message for good without touching others, so nothing is moved from it: it has no UIDPLUS."
 	}
 	return "This mail server cannot move one message without touching others: it has neither MOVE nor UIDPLUS."
 }

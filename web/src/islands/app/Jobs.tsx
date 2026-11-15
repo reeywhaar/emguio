@@ -40,9 +40,13 @@ export function Jobs() {
       for (const j of before) {
         if (!j.error && !still.has(j.id)) commit(client, j);
       }
-      // Newly failed: said once, by what it is called or by how many, and let go.
+      // Newly failed: said once, by what it is called or by how many, and let go. A transfer's
+      // ended jobs are its own to say, in one card, and go when it is dismissed.
       const failed = now.filter(
-        (j) => j.error && !before.some((b) => b.id === j.id && b.error),
+        (j) =>
+          j.error &&
+          j.kind !== "transfer" &&
+          !before.some((b) => b.id === j.id && b.error),
       );
       if (failed.length > 0) {
         say(failure(failed, labels.get(failed[0]!.id), failed[0]!.error));
@@ -61,7 +65,9 @@ export function Jobs() {
   })
     .flat()
     .filter((ref) => !(ref && accepted.has(ref))).length;
-  const waiting = (jobs.data ?? []).filter((j) => !j.error).length + sending;
+  const waiting =
+    (jobs.data ?? []).filter((j) => !j.error && j.kind !== "transfer").length +
+    sending;
 
   // Only what has not reached the server is lost with the tab; what has is done regardless.
   useEffect(() => {

@@ -18,6 +18,7 @@ import { later } from "@app/test/later";
 
 const getMessage = vi.fn();
 const getMailboxes = vi.fn();
+const getConfigs = vi.fn();
 const postJob = vi.fn();
 
 const postSend = vi.fn();
@@ -34,35 +35,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     message: string,
   ) => getMessage(id, mailbox, message),
   getEmailConfigsByIdMailboxes: (id: string) => getMailboxes(id),
-  getEmailConfigs: async () => [
-    {
-      id: "ec_1",
-      name: "Work",
-      email: "misha@example.com",
-      sender_name: "Misha",
-      incoming: {
-        protocol: "imap",
-        host: "imap.example.com",
-        port: 993,
-        tls: "implicit",
-        username: "misha",
-      },
-      outgoing: {
-        host: "smtp.example.com",
-        port: 465,
-        tls: "implicit",
-        username: "",
-      },
-      created_at: 0,
-      updated_at: 0,
-      synced_at: null,
-      sync_error: "",
-      unseen: 0,
-      archive_mailbox: null,
-      notify: "now",
-      digest_every: 60,
-    },
-  ],
+  getEmailConfigs: () => getConfigs(),
   postEmailConfigsByIdSend: (id: string, body: unknown) => postSend(id, body),
   getEmailConfigsByIdHold: (id: string) => getHold(id),
   getEmailConfigsByIdMailboxesByMailboxMessagesByMessageConversation: (
@@ -93,6 +66,35 @@ vi.mock("@app/api/actions/jobs", () => ({
   getJobs: async () => [],
   deleteJobsById: async () => undefined,
 }));
+
+/** The account the message is in. */
+const workConfig = {
+  id: "ec_1",
+  name: "Work",
+  email: "misha@example.com",
+  sender_name: "Misha",
+  incoming: {
+    protocol: "imap",
+    host: "imap.example.com",
+    port: 993,
+    tls: "implicit",
+    username: "misha",
+  },
+  outgoing: {
+    host: "smtp.example.com",
+    port: 465,
+    tls: "implicit",
+    username: "",
+  },
+  created_at: 0,
+  updated_at: 0,
+  synced_at: null,
+  sync_error: "",
+  unseen: 0,
+  archive_mailbox: null,
+  notify: "now",
+  digest_every: 60,
+};
 
 const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({
   id,
@@ -176,6 +178,7 @@ let taken = 0;
 beforeEach(() => {
   window.history.pushState({}, "", "/c/ec_1/mb_inbox/m_1");
   getMailboxes.mockResolvedValue([inbox, archive, trash, junk, work]);
+  getConfigs.mockResolvedValue([workConfig]);
   getMessage.mockResolvedValue(read());
   getHold.mockResolvedValue({ latest: null });
   getConversation.mockResolvedValue({ messages: [], earlier: 0 });
@@ -547,6 +550,37 @@ describe("the reading pane", () => {
     await waitFor(() =>
       expect(asked()).toContainEqual(
         expect.objectContaining({ kind: "move", target: "mb_work" }),
+      ),
+    );
+  });
+
+  // Another account's folders are offered under its name, and a move there is a transfer.
+  it("moves it to another account's folder", async () => {
+    getConfigs.mockResolvedValue([
+      workConfig,
+      { ...workConfig, id: "ec_2", name: "Personal" },
+    ]);
+    getMailboxes.mockImplementation(async (id: string) =>
+      id === "ec_2"
+        ? [box("mb_their_inbox", "inbox"), box("mb_their_archive", "archive")]
+        : [inbox, archive, trash, junk, work],
+    );
+    open();
+    await ready("Archive");
+    const select = screen.getByLabelText<HTMLSelectElement>("Move to folder");
+    await waitFor(() =>
+      expect(
+        [...select.querySelectorAll("optgroup")].map((g) => g.label),
+      ).toEqual(["Work", "Personal"]),
+    );
+    fireEvent.change(select, { target: { value: "mb_their_archive" } });
+    await waitFor(() =>
+      expect(asked()).toContainEqual(
+        expect.objectContaining({
+          kind: "transfer",
+          mailbox: "mb_inbox",
+          target: "mb_their_archive",
+        }),
       ),
     );
   });

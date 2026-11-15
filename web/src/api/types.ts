@@ -191,10 +191,10 @@ export type JobDraft = {
   email_config: string;
   mailbox: string;
   message: string;
-  kind: "seen" | "flagged" | "move" | "delete";
+  kind: "seen" | "flagged" | "move" | "delete" | "transfer";
   /** Set or cleared, for seen and flagged. */
   value: boolean;
-  /** The mailbox a move goes to; empty otherwise. */
+  /** The mailbox a move goes to, of another account for a transfer; empty otherwise. */
   target: string;
   /** Whether the message was read when asked, as drawn then: what its folders' counts move by. */
   seen: boolean;
@@ -203,7 +203,25 @@ export type JobDraft = {
 /** A job the server has taken: waiting to be done, or failed with the sentence that says why. */
 export type Job = JobDraft & {
   id: string;
+  /** The transfer a transfer job is one message of. */
+  transfer: string;
   /** Empty while it waits. */
+  error: string;
+  created_at: number;
+};
+
+/** A move of messages to another of the user's accounts, and how far it has got. */
+export type Transfer = {
+  id: string;
+  email_config: string;
+  mailbox: string;
+  /** The account and folder the messages go to. */
+  target_config: string;
+  target: string;
+  total: number;
+  moved: number;
+  state: "moving" | "done" | "cancelled" | "stopped";
+  /** The sentence a server stopped it with. */
   error: string;
   created_at: number;
 };

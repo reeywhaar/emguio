@@ -78,10 +78,15 @@ export function Selection({
   });
   // The rows moved away had focus.
   const allBox = useRef<HTMLInputElement | null>(null);
-  const moveAll = (dest: Mailbox | null) => {
+  const moveAll = (dest: Mailbox | null, elsewhere = false) => {
     ask(
       chosen.map((m) =>
-        job(m, dest ? { kind: "move", target: dest.id } : { kind: "delete" }),
+        job(
+          m,
+          dest
+            ? { kind: elsewhere ? "transfer" : "move", target: dest.id }
+            : { kind: "delete" },
+        ),
       ),
     );
     change(new Set());
@@ -239,6 +244,7 @@ export function Selection({
         current={mailbox}
         disabled={none}
         onMove={moveAll}
+        onTransfer={(dest) => moveAll(dest, true)}
       />
     </div>
   );

@@ -17,6 +17,9 @@ const (
 	JobFlagged = "flagged"
 	JobMove    = "move"
 	JobDelete  = "delete"
+	// JobTransfer moves a message to a mailbox of another of the user's email configs: copied
+	// there, then deleted here. One per message, each of one Transfer.
+	JobTransfer = "transfer"
 )
 
 // Job is something a user asked to be done to a message, waiting to be done on the server or
@@ -31,8 +34,10 @@ type Job struct {
 	Kind    string
 	// Value is set or cleared, for seen and flagged.
 	Value bool
-	// Target is the mailbox it is moved to.
+	// Target is the mailbox it is moved to, of another email config for a transfer.
 	Target string
+	// Transfer is the transfer a transfer job is one message of.
+	Transfer string
 	// Seen is whether it was read when asked, as the asker drew it.
 	Seen     bool
 	Attempts int
@@ -42,8 +47,8 @@ type Job struct {
 	CreatedAt time.Time
 }
 
-const jobColumns = `id, user_id, email_config_id, mailbox_id, message, kind, value, target, seen,
-  attempts, next_at, error, created_at`
+const jobColumns = `id, user_id, email_config_id, mailbox_id, message, kind, value, target, transfer,
+  seen, attempts, next_at, error, created_at`
 
 func scanJob(sc interface{ Scan(...any) error }) (*Job, error) {
 	var (
@@ -51,14 +56,15 @@ func scanJob(sc interface{ Scan(...any) error }) (*Job, error) {
 		next, created int64
 	)
 	if err := sc.Scan(&j.ID, &j.UserID, &j.EmailConfigID, &j.MailboxID, &j.Message, &j.Kind, &j.Value,
-		&j.Target, &j.Seen, &j.Attempts, &next, &j.Error, &created); err != nil {
+		&j.Target, &j.Transfer, &j.Seen, &j.Attempts, &next, &j.Error, &created); err != nil {
 		return nil, err
 	}
 	j.NextAt, j.CreatedAt = fromUnix(next), fromUnix(created)
 	return &j, nil
 }
 
-// AddJobs queues jobs, named and stamped here, all or none, in the order given.
+// AddJobs queues jobs, named and stamped here, all or none, in the order given. Transfer jobs
+// asked together from one mailbox to one other are one Transfer, made here.
 func (s *Store) AddJobs(ctx context.Context, jobs []Job) ([]*Job, error) {
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
@@ -66,6 +72,9 @@ func (s *Store) AddJobs(ctx context.Context, jobs []Job) ([]*Job, error) {
 	}
 	defer tx.Rollback()
 	now := s.Now()
+	if err := s.addTransfers(ctx, tx, jobs, now); err != nil {
+		return nil, err
+	}
 	out := make([]*Job, 0, len(jobs))
 	for _, j := range jobs {
 		j.ID, j.CreatedAt, j.NextAt = ids.New(ids.Job, now.UnixMilli()), now, now
@@ -78,8 +87,8 @@ func (s *Store) AddJobs(ctx context.Context, jobs []Job) ([]*Job, error) {
 			}
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?)`,
-			j.ID, j.UserID, j.EmailConfigID, j.MailboxID, j.Message, j.Kind, j.Value, j.Target, j.Seen,
+			`INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?)`,
+			j.ID, j.UserID, j.EmailConfigID, j.MailboxID, j.Message, j.Kind, j.Value, j.Target, j.Transfer, j.Seen,
 			unix(j.NextAt), unix(j.CreatedAt)); err != nil {
 			return nil, fmt.Errorf("add jobs: %w", err)
 		}
@@ -143,8 +152,11 @@ func (s *Store) NextJobs(ctx context.Context, configID string, max int) ([]*Job,
 }
 
 // together is whether two jobs are one command: the same done to messages the same mailbox
-// names by the same UIDVALIDITY.
+// names by the same UIDVALIDITY. A transfer is one message at a time: each is copied whole.
 func together(a, b *Job) bool {
+	if a.Kind == JobTransfer {
+		return false
+	}
 	av, _, _ := strings.Cut(a.Message, "-")
 	bv, _, _ := strings.Cut(b.Message, "-")
 	return a.MailboxID == b.MailboxID && a.Kind == b.Kind && a.Value == b.Value && a.Target == b.Target && av == bv

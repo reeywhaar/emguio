@@ -132,34 +132,7 @@ func (m *Mirror) Sent(t store.SyncTarget, s Sending) {
 // already.
 func (m *Mirror) file(ctx context.Context, t store.SyncTarget, mailbox, id string, raw []byte, at time.Time) error {
 	return m.change(ctx, t, func(f *fetcher) error {
-		if _, _, err := f.open(mailbox, false, true); err != nil {
-			return err
-		}
-		found, err := f.session.client.UIDSearch(&imap.SearchCriteria{
-			Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: id}},
-		}, nil).Wait()
-		if err != nil {
-			return refused(err)
-		}
-		if len(found.AllUIDs()) > 0 {
-			return nil
-		}
-		if at.IsZero() {
-			at = time.Now()
-		}
-		cmd := f.session.client.Append(mailbox, int64(len(raw)), &imap.AppendOptions{
-			Flags: []imap.Flag{imap.FlagSeen},
-			Time:  at,
-		})
-		if _, err := cmd.Write(raw); err != nil {
-			cmd.Close()
-			return err
-		}
-		if err := cmd.Close(); err != nil {
-			return refused(err)
-		}
-		_, err = cmd.Wait()
-		return refused(err)
+		return appendOnce(f, mailbox, id, raw, []imap.Flag{imap.FlagSeen}, at)
 	})
 }
 

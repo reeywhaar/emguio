@@ -33,6 +33,10 @@ export function useAsk(config: string) {
         if (p?.ref) accepted.set(p.ref, job.id);
       });
       client.setQueryData<Job[]>(qk.jobs, (old) => [...(old ?? []), ...jobs]);
+      // A move to another account is a transfer the corner shows from now.
+      if (jobs.some((j) => j.transfer)) {
+        void client.invalidateQueries({ queryKey: qk.transfers });
+      }
     },
     onError: (err, asked) =>
       say(failure(asked, asked[0]?.label, messageOf(err))),

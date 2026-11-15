@@ -13,12 +13,14 @@ type jobJSON struct {
 	EmailConfig string `json:"email_config"`
 	Mailbox     string `json:"mailbox"`
 	Message     string `json:"message"`
-	// Kind is seen, flagged, move or delete.
+	// Kind is seen, flagged, move, delete or transfer.
 	Kind string `json:"kind"`
 	// Value is set or cleared, for seen and flagged.
 	Value bool `json:"value"`
-	// Target is the mailbox a move goes to.
+	// Target is the mailbox a move goes to, of another email config for a transfer.
 	Target string `json:"target"`
+	// Transfer is the transfer a transfer job is one message of.
+	Transfer string `json:"transfer"`
 	// Seen is whether the message was read when asked, as the asker drew it.
 	Seen bool `json:"seen"`
 	// Error is the sentence a failed job ends with; empty while it waits.
@@ -29,7 +31,8 @@ type jobJSON struct {
 func jobOut(j *store.Job) jobJSON {
 	return jobJSON{
 		ID: j.ID, EmailConfig: j.EmailConfigID, Mailbox: j.MailboxID, Message: j.Message, Kind: j.Kind,
-		Value: j.Value, Target: j.Target, Seen: j.Seen, Error: j.Error, CreatedAt: j.CreatedAt.Unix(),
+		Value: j.Value, Target: j.Target, Transfer: j.Transfer, Seen: j.Seen, Error: j.Error,
+		CreatedAt: j.CreatedAt.Unix(),
 	}
 }
 
@@ -51,7 +54,8 @@ type jobsBody struct {
 }
 
 // postJobs takes what is to be done to messages — read or unread, starred or not, moved,
-// deleted for good — and answers as soon as it is queued. The mirror does each on the server in
+// deleted for good, moved to another of the user's accounts — and answers as soon as it is
+// queued. The mirror does each on the server in
 // the order asked, whether or not the page that asked is still open; see docs/reading.md.
 //
 // A list, so a selection acted on is one request. All of it is queued or none: one job that
@@ -81,9 +85,9 @@ func (s *Server) postJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, b := range body.Jobs {
 		switch b.Kind {
-		case store.JobSeen, store.JobFlagged, store.JobMove, store.JobDelete:
+		case store.JobSeen, store.JobFlagged, store.JobMove, store.JobDelete, store.JobTransfer:
 		default:
-			refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to do: seen, flagged, move or delete.")
+			refuse(w, http.StatusBadRequest, CodeInvalid, "Say what to do: seen, flagged, move, delete or transfer.")
 			return
 		}
 		if _, _, ok := ids.ParseMessage(b.Message); !ok {
@@ -115,6 +119,22 @@ func (s *Server) postJobs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if to.ID == mb.ID || !to.Selectable {
+				refuse(w, http.StatusBadRequest, CodeInvalid, "Choose another folder to move it to.")
+				return
+			}
+			j.Target = to.ID
+		}
+		if b.Kind == store.JobTransfer {
+			to, err := s.store.MailboxOf(r.Context(), u.ID, b.Target)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			switch {
+			case to.EmailConfigID == c.ID:
+				refuse(w, http.StatusBadRequest, CodeInvalid, "That folder is in the same account: move it there instead.")
+				return
+			case !to.Selectable || to.SpecialUse == store.UseScheduled:
 				refuse(w, http.StatusBadRequest, CodeInvalid, "Choose another folder to move it to.")
 				return
 			}
