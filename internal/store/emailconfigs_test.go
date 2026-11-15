@@ -282,3 +282,34 @@ func TestDeletingAUserTakesTheirEmailConfigs(t *testing.T) {
 		t.Errorf("%d email configs outlived their user", n)
 	}
 }
+
+// A turned-off account is not read: the mirror's list leaves it out until it is turned on.
+func TestATurnedOffAccountIsNotSynced(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	u := newUser(t, st, "misha")
+	cfg, err := st.CreateEmailConfig(ctx, u.ID, draft())
+	if err != nil {
+		t.Fatal(err)
+	}
+	synced := func() int {
+		targets, err := st.SyncTargets(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(targets)
+	}
+	if err := st.SetEmailConfigOff(ctx, u.ID, cfg.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.EmailConfig(ctx, u.ID, cfg.ID); !got.Off || synced() != 0 {
+		t.Errorf("off = %v, synced %d", got.Off, synced())
+	}
+	st.SetEmailConfigOff(ctx, u.ID, cfg.ID, false)
+	if synced() != 1 {
+		t.Errorf("turned on, synced %d", synced())
+	}
+	if err := st.SetEmailConfigOff(ctx, u.ID, "ec_nope", true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("another's = %v", err)
+	}
+}

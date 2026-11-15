@@ -44,6 +44,8 @@ type emailConfigJSON struct {
 	// gathers DigestEvery minutes.
 	Notify      string `json:"notify"`
 	DigestEvery int    `json:"digest_every"`
+	// Off is its being turned off: kept, but neither read nor told about.
+	Off bool `json:"off"`
 }
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
@@ -60,6 +62,7 @@ func toJSON(c *store.EmailConfig) emailConfigJSON {
 		Unseen:      c.Unseen,
 		Notify:      c.Notify,
 		DigestEvery: c.DigestEvery,
+		Off:         c.Off,
 	}
 	if c.ArchiveMailbox != "" {
 		out.ArchiveMailbox = &c.ArchiveMailbox
@@ -274,6 +277,54 @@ type archiveBody struct {
 
 // putArchive chooses the folder an email config archives to, for a server that names none, or
 // names one other than the one wanted. See docs/reading.md.
+type offBody struct {
+	Off bool `json:"off"`
+}
+
+// putOff turns an email config off, or on again: off, nothing reaches its mail server and its
+// new mail is not told about, and everything else of it is kept. See docs/email-configs.md.
+func (s *Server) putOff(w http.ResponseWriter, r *http.Request) {
+	var body offBody
+	if !decode(w, r, &body) {
+		return
+	}
+	u := userOf(r)
+	if err := s.store.SetEmailConfigOff(r.Context(), u.ID, r.PathValue("id"), body.Off); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	c, err := s.store.EmailConfig(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("mail account turned "+map[bool]string{true: "off", false: "on"}[c.Off], "user", u.ID, "email_config", c.ID)
+	if s.mirror != nil {
+		s.mirror.Reconcile()
+	}
+	s.store.Notify(u.ID)
+	writeJSON(w, http.StatusOK, toJSON(c))
+}
+
+// offSentence is what a request that would reach a turned-off account's mail server is told.
+const offSentence = "This mail account is turned off. Turn it on in Settings first."
+
+// awake refuses a request that would reach the mail server of a turned-off email config.
+func (s *Server) awake(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := s.store.EmailConfig(r.Context(), userOf(r).ID, r.PathValue("id"))
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if c.Off {
+			refuse(w, http.StatusConflict, CodeConflict, offSentence)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func (s *Server) putArchive(w http.ResponseWriter, r *http.Request) {
 	var body archiveBody
 	if !decode(w, r, &body) {

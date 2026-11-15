@@ -101,6 +101,10 @@ func (s *Server) postJobs(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, r, err)
 				return
 			}
+			if c.Off {
+				refuse(w, http.StatusConflict, CodeConflict, offSentence)
+				return
+			}
 			configs[c.ID] = c
 		}
 		mb, err := mailbox(c, b.Mailbox)
@@ -130,7 +134,15 @@ func (s *Server) postJobs(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, r, err)
 				return
 			}
+			there, err := s.store.EmailConfig(r.Context(), u.ID, to.EmailConfigID)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
 			switch {
+			case there.Off:
+				refuse(w, http.StatusConflict, CodeConflict, "The account it would go to is turned off. Turn it on in Settings first.")
+				return
 			case to.EmailConfigID == c.ID:
 				refuse(w, http.StatusBadRequest, CodeInvalid, "That folder is in the same account: move it there instead.")
 				return

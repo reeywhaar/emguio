@@ -41,6 +41,10 @@ export function rememberConfig(id: string) {
   }
 }
 
+/** The configs that are turned on: all that is read, shown and told about. */
+export const turnedOn = (configs: EmailConfig[]) =>
+  configs.filter((c) => !c.off);
+
 /** Which config a view is about: the one named, else the last looked at, else the first. */
 export function pick(
   configs: EmailConfig[],

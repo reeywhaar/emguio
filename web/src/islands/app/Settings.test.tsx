@@ -19,6 +19,7 @@ const postEmailConfigsByIdTest = vi.fn();
 const putArchive = vi.fn();
 const putNotifications = vi.fn();
 const putOrder = vi.fn();
+const putOff = vi.fn();
 const getMailboxes = vi.fn();
 const getDevices = vi.fn();
 const deleteDevicesById = vi.fn();
@@ -47,6 +48,7 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   putEmailConfigsByIdNotifications: (id: string, body: unknown) =>
     putNotifications(id, body),
   putEmailConfigsOrder: (ids: string[]) => putOrder(ids),
+  putEmailConfigsByIdOff: (id: string, off: boolean) => putOff(id, off),
 }));
 
 const boxes = [
@@ -106,6 +108,7 @@ const work: EmailConfig = {
   archive_mailbox: null,
   notify: "now",
   digest_every: 60,
+  off: false,
 };
 
 /** The accounts' names in the list, top to bottom. */
@@ -330,6 +333,30 @@ describe("settings", () => {
       refused.refuse(new Error("no"));
       await waitFor(() => expect(names()).toEqual(["Work", "Home", "Shop"]));
     });
+  });
+
+  // Off, an account is kept and says so, and its switch turns it on again.
+  it("turns an account off and on", async () => {
+    putOff.mockImplementation(async (_id: string, off: boolean) => ({
+      ...work,
+      off,
+    }));
+    mount(<Settings editing={null} />);
+    const open = within(await screen.findByRole("article"));
+    const power = open.getByRole("switch", { name: "Turned on" });
+    expect(power.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(power);
+    await waitFor(() => expect(putOff).toHaveBeenCalledWith("ec_1", true));
+    await open.findByText(/Turned off: emguio does not read this account/);
+    within(row("Work")).getByText("Off");
+    expect(power.getAttribute("aria-checked")).toBe("false");
+
+    await waitFor(() => expect(power.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(power);
+    await waitFor(() => expect(putOff).toHaveBeenLastCalledWith("ec_1", false));
+    await waitFor(() =>
+      expect(within(row("Work")).queryByText("Off")).toBeNull(),
+    );
   });
 
   it("says who is signed in and offers a way out", async () => {

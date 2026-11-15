@@ -17,6 +17,15 @@ on the grip carries the row at once; elsewhere on the row it rests first, as on 
 wide screen the account picked is shown beside the list. On a phone it takes the screen, with a
 close.
 
+## An account can be turned off, and is kept
+
+Turned off, an account is left alone: emguio stops reading it, tells nothing of its mail, and
+nothing reaches its mail servers for it — a request that would answers that it is turned off. It
+leaves the header and the move picker, and its unread mail no longer marks the tab. Everything
+else of it is kept, its passwords, folders and choices, and Settings shows it dimmed and marked
+Off, where it is turned on again and read from the start. For an account not wanted for a while,
+rather than deleted and added again.
+
 ## An incoming server names its protocol, and IMAP is the one there is
 
 `incoming_protocol` is a column and `protocol` a field of the API and the form, with `imap` its

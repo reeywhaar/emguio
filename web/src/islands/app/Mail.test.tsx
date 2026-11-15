@@ -119,6 +119,7 @@ const work: EmailConfig = {
   archive_mailbox: null,
   notify: "now",
   digest_every: 60,
+  off: false,
 };
 
 const box = (
@@ -297,6 +298,17 @@ const names = (nav: ReturnType<typeof within>) =>
     .map((l: HTMLElement) => l.textContent?.split(",")[0]);
 
 describe("the mail view", () => {
+  // A turned-off account's address says so, and points where it is turned on again.
+  it("says an account is turned off rather than opening it", async () => {
+    getEmailConfigs.mockResolvedValue([
+      { ...work, off: true },
+      { ...work, id: "ec_2", name: "Home" },
+    ]);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
+    await screen.findByText("Work is turned off.");
+    screen.getByRole("link", { name: "Turn it on in Settings" });
+  });
+
   it("opens on the inbox and lists its messages", async () => {
     mount(<Mail named="ec_1" mailbox={null} message={null} />);
     const list = await screen.findByRole("list", { name: "Messages" });

@@ -42,6 +42,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 - Any number of mail accounts, added in Settings, where the address is often enough to find the
   servers. They are dragged into the order the user wants.
 - The header shows which accounts have unread mail, and the tab's icon gets a dot.
+- An account can be turned off without deleting it: it is not read or notified from until it is
+  turned on again.
 
 **Web app and notifications**
 

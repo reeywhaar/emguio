@@ -94,6 +94,7 @@ const workConfig = {
   archive_mailbox: null,
   notify: "now",
   digest_every: 60,
+  off: false,
 };
 
 const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({

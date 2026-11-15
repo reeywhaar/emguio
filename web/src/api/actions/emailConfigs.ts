@@ -101,6 +101,13 @@ export const putEmailConfigsByIdArchive = (id: string, mailbox: string) =>
     body: { mailbox },
   });
 
+/** Turns a config off, or on again: off, nothing reaches its mail server. */
+export const putEmailConfigsByIdOff = (id: string, off: boolean) =>
+  request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}/off`, {
+    method: "PUT",
+    body: { off },
+  });
+
 /** Chooses how a config's new mail is told, and turns folders' notifications on or off. */
 export const putEmailConfigsByIdNotifications = (
   id: string,

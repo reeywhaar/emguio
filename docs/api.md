@@ -149,6 +149,7 @@ An email config:
 | `archive_mailbox` | The folder chosen to archive to; `null` for the one the server names. See below. |
 | `notify` | How its new mail is told to the user's devices: `now`, each message as it arrives; `digest`, gathered; or `off`. `now` for a new one. See below. |
 | `digest_every` | How many minutes a digest gathers: 30, 60, 120 or 240. 60 for a new one. |
+| `off` | Whether it is turned off: kept, but neither read nor told about. `false` for a new one. See below. |
 
 No answer ever carries a password.
 
@@ -208,6 +209,17 @@ DELETE /api/email-configs/{id}
 
 Removes the email config and everything emguio keeps of it: folders, jobs, drafts. Nothing on
 the mail server changes. `204`.
+
+```
+PUT /api/email-configs/{id}/off
+```
+
+Turns the email config off, `{"off": true}`, or on again, `{"off": false}`. Off, emguio stops
+reading it, tells nothing of its mail, and keeps everything else of it: its passwords, folders,
+choices and place in the order. Every request that would reach its mail server — a folder's
+messages, a message, a search, sending, drafts, jobs, making or emptying a folder, a fetch, and a
+transfer to it — answers `409 conflict`, saying it is turned off. Its settings can still be
+changed. On again, it is read from the start. Answers `200` with the email config.
 
 ```
 PUT /api/email-configs/{id}/archive

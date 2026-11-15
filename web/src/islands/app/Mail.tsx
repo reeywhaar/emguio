@@ -41,7 +41,12 @@ import { PickerButton } from "@app/components/PickerButton";
 import { ago } from "@app/format";
 import { useCarry } from "@app/islands/app/carry";
 import { blank, write } from "@app/islands/app/drafts";
-import { labelOf, pick, rememberConfig } from "@app/islands/app/emailConfig";
+import {
+  labelOf,
+  pick,
+  rememberConfig,
+  turnedOn,
+} from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { EmptyFolder, emptied } from "@app/islands/app/EmptyFolder";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
@@ -88,7 +93,8 @@ export function Mail({
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
   });
-  const config = configs.data ? pick(configs.data, named) : undefined;
+  const config = configs.data ? pick(turnedOn(configs.data), named) : undefined;
+  const asleep = configs.data?.find((c) => c.id === named && c.off);
 
   useEffect(() => {
     if (config) rememberConfig(config.id);
@@ -108,6 +114,20 @@ export function Mail({
         <p className="text-sm text-muted">No mail accounts yet.</p>
         <Link href={paths.newConfig} className={buttonLook("solid")}>
           Add a mail account
+        </Link>
+      </Centered>
+    );
+  }
+  if (!config && (asleep || turnedOn(configs.data).length === 0)) {
+    return (
+      <Centered>
+        <p className="text-sm text-muted">
+          {asleep
+            ? `${labelOf(asleep)} is turned off.`
+            : "Every mail account is turned off."}
+        </p>
+        <Link href={paths.settings} className={buttonLook("solid")}>
+          Turn it on in Settings
         </Link>
       </Centered>
     );

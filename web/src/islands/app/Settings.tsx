@@ -8,6 +8,7 @@ import {
   getEmailConfigsByIdMailboxes,
   postEmailConfigsByIdTest,
   putEmailConfigsByIdArchive,
+  putEmailConfigsByIdOff,
   putEmailConfigsOrder,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
@@ -16,6 +17,7 @@ import type { EmailConfig, Mailbox, Server } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
+import { Switch } from "@app/components/Switch";
 import { Tag } from "@app/components/Tag";
 import { useConfirm } from "@app/components/Confirm";
 import { Dialog } from "@app/components/Dialog";
@@ -229,6 +231,7 @@ function Accounts({
           open={open && chosen !== undefined}
           onClose={() => setOpen(false)}
           title={chosen ? labelOf(chosen) : ""}
+          actions={chosen ? <Power config={chosen} /> : undefined}
         >
           {chosen ? <Details key={chosen.id} config={chosen} /> : null}
         </Dialog>
@@ -308,10 +311,11 @@ function Entry({
           <GripMark />
         </span>
       ) : null}
-      <span className="min-w-0 flex-1">
+      <span className={`min-w-0 flex-1 ${config.off ? "opacity-60" : ""}`}>
         <span className="flex items-center gap-1.5">
           <span className="truncate">{labelOf(config)}</span>
-          {config.sync_error ? (
+          {config.off ? <Tag>Off</Tag> : null}
+          {config.sync_error && !config.off ? (
             <span className="shrink-0 text-warn" title={config.sync_error}>
               <WarnMark />
               <span className="sr-only">, its mail cannot be read</span>
@@ -324,7 +328,8 @@ function Entry({
           </span>
         ) : null}
         <span className="block text-[0.625rem] leading-4 font-normal text-faint">
-          {serversOf(config)} · {notifiesOf(config, boxes.data)}
+          {serversOf(config)} ·{" "}
+          {config.off ? "Turned off" : notifiesOf(config, boxes.data)}
         </span>
       </span>
       {beside ? null : (
@@ -333,6 +338,29 @@ function Entry({
         </span>
       )}
     </button>
+  );
+}
+
+/** The switch that turns an account on, or off: kept, but neither read nor told about. */
+function Power({ config }: { config: EmailConfig }) {
+  const client = useQueryClient();
+  const turn = useMutation({
+    mutationFn: (off: boolean) => putEmailConfigsByIdOff(config.id, off),
+    onSuccess: (saved) =>
+      client.setQueryData<EmailConfig[]>(qk.emailConfigs, (old) =>
+        old?.map((c) => (c.id === saved.id ? saved : c)),
+      ),
+    onError: (err) => say(messageOf(err)),
+  });
+  // Drawn as asked while the server takes it.
+  const off = turn.isPending ? turn.variables : config.off;
+  return (
+    <Switch
+      on={!off}
+      label="Turned on"
+      disabled={turn.isPending}
+      onChange={(on) => turn.mutate(!on)}
+    />
   );
 }
 
@@ -367,7 +395,13 @@ function Details({
 
   const body = (
     <>
-      {config.sync_error ? (
+      {config.off ? (
+        <p className="text-sm text-muted">
+          Turned off: emguio does not read this account or tell you about its
+          mail. Everything else is kept.
+        </p>
+      ) : null}
+      {config.sync_error && !config.off ? (
         <p className="flex items-start gap-2 text-sm text-warn">
           <span className="mt-0.5 shrink-0">
             <WarnMark />
@@ -442,11 +476,14 @@ function Details({
   }
   return (
     <article className="flex flex-col gap-4 rounded-lg border border-line bg-bg p-4">
-      <div className="min-w-0">
-        <h3 className="font-medium wrap-anywhere">{label}</h3>
-        {config.name ? (
-          <p className="text-sm text-muted wrap-anywhere">{config.email}</p>
-        ) : null}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-medium wrap-anywhere">{label}</h3>
+          {config.name ? (
+            <p className="text-sm text-muted wrap-anywhere">{config.email}</p>
+          ) : null}
+        </div>
+        <Power config={config} />
       </div>
       {body}
     </article>

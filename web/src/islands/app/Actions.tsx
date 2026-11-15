@@ -17,7 +17,7 @@ import {
   getEmailConfigsByIdMailboxes,
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
-import { labelOf } from "@app/islands/app/emailConfig";
+import { labelOf, turnedOn } from "@app/islands/app/emailConfig";
 import type {
   EmailConfig,
   JobDraft,
@@ -408,7 +408,7 @@ export function MovePicker({
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
   });
-  const accounts = (configs.data ?? []).filter((c) => c.id !== config);
+  const accounts = turnedOn(configs.data ?? []).filter((c) => c.id !== config);
   return (
     <>
       <label

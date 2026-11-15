@@ -9,7 +9,7 @@ import { Dummy } from "@app/components/Dummy";
 import { ProfileMark } from "@app/components/icons";
 import { Menu } from "@app/components/Menu";
 import { Wordmark } from "@app/components/Wordmark";
-import { labelOf, pick } from "@app/islands/app/emailConfig";
+import { labelOf, pick, turnedOn } from "@app/islands/app/emailConfig";
 import { markUnread } from "@app/islands/app/favicon";
 import { Link } from "@app/islands/app/Link";
 import { paths, type Route } from "@app/islands/app/route";
@@ -26,10 +26,11 @@ export function Header({ route }: { route: Route }) {
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
   });
-  const current = configs.data
-    ? pick(configs.data, route.page === "mail" ? route.config : null)
+  const on = configs.data && turnedOn(configs.data);
+  const current = on
+    ? pick(on, route.page === "mail" ? route.config : null)
     : undefined;
-  const unread = configs.data?.some((c) => c.unseen > 0) ?? false;
+  const unread = on?.some((c) => c.unseen > 0) ?? false;
   useEffect(() => markUnread(unread), [unread]);
 
   return (
@@ -37,8 +38,8 @@ export function Header({ route }: { route: Route }) {
       <Link href={paths.mail()} className="font-semibold">
         <Wordmark />
       </Link>
-      {configs.data && configs.data.length > 0 ? (
-        <Accounts configs={configs.data} current={current} />
+      {on && on.length > 0 ? (
+        <Accounts configs={on} current={current} />
       ) : (
         <span className="flex-1" />
       )}

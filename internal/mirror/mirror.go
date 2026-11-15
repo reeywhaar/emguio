@@ -181,7 +181,7 @@ func (m *Mirror) reconcile(ctx context.Context) {
 		t, ok := want[id]
 		switch {
 		case !ok:
-			m.log.Info("mail sync stopped: the account was removed", who(w.target)...)
+			m.log.Info("mail sync stopped: the account was removed or turned off", who(w.target)...)
 		case !t.UpdatedAt.Equal(w.target.UpdatedAt):
 			m.log.Info("mail sync restarting: the account's settings changed", who(w.target)...)
 		default:

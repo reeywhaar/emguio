@@ -51,6 +51,7 @@ const config = (id: string, name: string): EmailConfig => ({
   archive_mailbox: null,
   notify: "now",
   digest_every: 60,
+  off: false,
 });
 
 beforeEach(() => {

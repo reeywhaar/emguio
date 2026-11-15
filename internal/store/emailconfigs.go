@@ -59,6 +59,8 @@ type EmailConfig struct {
 	// NotifyOff. DigestEvery is how many minutes a digest gathers.
 	Notify      string
 	DigestEvery int
+	// Off is its being turned off: kept, but neither read nor told about until turned on.
+	Off bool
 }
 
 // How an email config tells its user's devices about new mail — see docs/push.md.
@@ -114,7 +116,7 @@ const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error,
   (SELECT COALESCE(SUM(unseen), 0) FROM mailboxes
     WHERE mailboxes.email_config_id = email_configs.id
       AND (notify = 1 OR (notify IS NULL AND special_use IN ('inbox', '')))),
-  COALESCE(archive_mailbox, ''), notify, digest_every`
+  COALESCE(archive_mailbox, ''), notify, digest_every, off`
 
 func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error) {
 	var (
@@ -127,7 +129,7 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email, &r.SenderName,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
-		&created, &updated, &synced, &r.SyncError, &r.Unseen, &r.ArchiveMailbox, &r.Notify, &r.DigestEvery)
+		&created, &updated, &synced, &r.SyncError, &r.Unseen, &r.ArchiveMailbox, &r.Notify, &r.DigestEvery, &r.Off)
 	if err != nil {
 		return nil, err
 	}
@@ -567,6 +569,20 @@ func (s *Store) SetArchiveMailbox(ctx context.Context, userID, configID, mailbox
 	if _, err := s.writer.ExecContext(ctx,
 		`UPDATE email_configs SET archive_mailbox = ? WHERE id = ? AND user_id = ?`, chosen, configID, userID); err != nil {
 		return fmt.Errorf("set archive mailbox: %w", err)
+	}
+	return nil
+}
+
+// SetEmailConfigOff turns one of a user's email configs off, or on again. Off, the mirror stops
+// reading it and nothing reaches its mail server for it; everything else of it is kept.
+func (s *Store) SetEmailConfigOff(ctx context.Context, userID, configID string, off bool) error {
+	res, err := s.writer.ExecContext(ctx,
+		`UPDATE email_configs SET off = ? WHERE id = ? AND user_id = ?`, off, configID, userID)
+	if err != nil {
+		return fmt.Errorf("set email config off: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return NotFound("There is no such mail account.")
 	}
 	return nil
 }

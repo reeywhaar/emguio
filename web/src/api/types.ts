@@ -42,6 +42,8 @@ export type EmailConfig = {
   notify: Notify;
   /** How many minutes a digest gathers. */
   digest_every: number;
+  /** Turned off: kept, but neither read nor told about. */
+  off: boolean;
 };
 
 /** Each message as it arrives, gathered into a digest, or not at all. */
