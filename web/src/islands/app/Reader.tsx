@@ -46,6 +46,7 @@ import { paths } from "@app/islands/app/route";
 import { NewsletterTag, Unsubscribe } from "@app/islands/app/Unsubscribe";
 import { CopyAddress } from "@app/islands/app/Address";
 import { Subject } from "@app/islands/app/Subject";
+import { SIDE_BY_SIDE, useMatches } from "@app/media";
 
 /** One message, and what can be done to it. Opening it marks it read, here and on the server. */
 export function Reader({
@@ -85,6 +86,37 @@ export function Reader({
     .find((x) => x.id === message);
   const known: Message | undefined =
     m ?? (row && withPending(row, mailbox.id, pending));
+  // Wide, who sent it shares the buttons' row; narrow, that row is the way back, and who sent it
+  // comes under it.
+  const wide = useMatches(SIDE_BY_SIDE);
+  const sender = known ? (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+        {known.from.name || !known.from.email ? (
+          <span className="font-medium">
+            {known.from.name || "(no sender)"}
+          </span>
+        ) : null}
+        {known.from.email ? <CopyAddress email={known.from.email} /> : null}
+        {known.newsletter || m?.unsubscribe ? <NewsletterTag /> : null}
+        {m?.unsubscribe ? (
+          <Unsubscribe
+            key={m.id}
+            config={config}
+            mailbox={mailbox.id}
+            message={m.id}
+            how={m.unsubscribe}
+          />
+        ) : null}
+      </div>
+      <time
+        dateTime={new Date(known.date * 1000).toISOString()}
+        className="text-xs text-muted"
+      >
+        {full(known.date)}
+      </time>
+    </div>
+  ) : null;
 
   return (
     <article
@@ -101,22 +133,35 @@ export function Reader({
           q={q}
           m={known}
           back={
-            <Link
-              href={paths.mail(config, mailbox.id, undefined, q)}
-              className="text-sm text-muted lg:hidden"
-            >
-              ← {labelOfMailbox(mailbox)}
-            </Link>
+            wide ? (
+              // In the buttons' row, where it takes what they leave, or goes under them.
+              <div className="min-w-0 flex-[1_1_16rem]">{sender}</div>
+            ) : (
+              <Link
+                href={paths.mail(config, mailbox.id, undefined, q)}
+                className="text-sm text-muted"
+              >
+                ← {labelOfMailbox(mailbox)}
+              </Link>
+            )
           }
         />
+        {wide ? null : sender}
         {known ? (
           <>
             <h2
-              className={`font-semibold break-words ${subjectLook(known.subject)}`}
+              className={`-mt-1 font-semibold break-words ${subjectLook(known.subject)}`}
               title={known.subject}
             >
               <Subject subject={known.subject} />
             </h2>
+            {known.to.length || m?.cc.length || m?.bcc.length ? (
+              <div className="mt-1.5 flex flex-col gap-2">
+                <People label="To" people={known.to} />
+                <People label="Cc" people={m?.cc ?? []} />
+                <People label="Bcc" people={m?.bcc ?? []} />
+              </div>
+            ) : null}
             {mailbox.special_use === "drafts" ||
             mailbox.special_use === "scheduled" ? null : (
               <Conversation
@@ -125,36 +170,6 @@ export function Reader({
                 message={message}
               />
             )}
-            <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-              {known.from.name || !known.from.email ? (
-                <span className="font-medium">
-                  {known.from.name || "(no sender)"}
-                </span>
-              ) : null}
-              {known.from.email ? (
-                <CopyAddress email={known.from.email} />
-              ) : null}
-              {known.newsletter || m?.unsubscribe ? <NewsletterTag /> : null}
-              {m?.unsubscribe ? (
-                <Unsubscribe
-                  key={m.id}
-                  config={config}
-                  mailbox={mailbox.id}
-                  message={m.id}
-                  how={m.unsubscribe}
-                />
-              ) : null}
-              <span className="flex-1" />
-              <time
-                dateTime={new Date(known.date * 1000).toISOString()}
-                className="text-xs text-muted"
-              >
-                {full(known.date)}
-              </time>
-            </div>
-            <People label="To" people={known.to} />
-            <People label="Cc" people={m?.cc ?? []} />
-            <People label="Bcc" people={m?.bcc ?? []} />
           </>
         ) : read.error ? null : (
           <div className="flex flex-col gap-2">

@@ -33,9 +33,7 @@ import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
-
-/** Wide enough for the list and an open message side by side, as Mail lays them out: lg. */
-const SIDE_BY_SIDE = "(min-width: 64rem)";
+import { SIDE_BY_SIDE } from "@app/media";
 
 /**
  * Where each action sends a message: the folders the server says are for archiving, for
@@ -240,10 +238,10 @@ export function Actions({
 
   if (scheduled) {
     return (
-      <div className="flex flex-wrap items-center gap-1">
+      <div className={row}>
         {back}
-        <span className="flex-1" />
         <Action
+          className="ml-auto"
           label="Cancel sending…"
           keyName="#"
           disabled={busy}
@@ -257,70 +255,77 @@ export function Actions({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1">
+      <div className={row}>
         {back}
-        <span className="flex-1" />
-        {act.archive ? (
+        <div className="ml-auto flex shrink-0 gap-1">
+          {act.archive ? (
+            <Action
+              label="Archive"
+              keyName="e"
+              disabled={busy}
+              onClick={act.archive}
+            >
+              <ArchiveMark />
+            </Action>
+          ) : null}
           <Action
-            label="Archive"
-            keyName="e"
+            label={forever ? "Delete forever…" : "Delete"}
+            keyName="#"
             disabled={busy}
-            onClick={act.archive}
+            onClick={act.remove}
           >
-            <ArchiveMark />
+            <TrashMark />
           </Action>
-        ) : null}
-        <Action
-          label={forever ? "Delete forever…" : "Delete"}
-          keyName="#"
-          disabled={busy}
-          onClick={act.remove}
-        >
-          <TrashMark />
-        </Action>
-        {act.spam ? (
-          <Action label="Spam" keyName="!" disabled={busy} onClick={act.spam}>
-            <SpamMark />
-          </Action>
-        ) : null}
-        {act.notSpam ? (
+          {act.spam ? (
+            <Action label="Spam" keyName="!" disabled={busy} onClick={act.spam}>
+              <SpamMark />
+            </Action>
+          ) : null}
+          {act.notSpam ? (
+            <Action
+              label="Not spam"
+              keyName="!"
+              disabled={busy}
+              onClick={act.notSpam}
+            >
+              <InboxMark />
+            </Action>
+          ) : null}
           <Action
-            label="Not spam"
-            keyName="!"
+            label="Star"
+            keyName="s"
             disabled={busy}
-            onClick={act.notSpam}
+            onClick={star}
+            pressed={starred}
           >
-            <InboxMark />
+            <StarMark filled={starred} />
           </Action>
-        ) : null}
-        <Action
-          label="Star"
-          keyName="s"
-          disabled={busy}
-          onClick={star}
-          pressed={starred}
-        >
-          <StarMark filled={starred} />
-        </Action>
-        <Action
-          label={seen ? "Mark as unread" : "Mark as read"}
-          keyName="u"
-          disabled={busy}
-          onClick={markSeen}
-        >
-          <MailMark open={seen} />
-        </Action>
-        <MovePicker
-          config={config}
-          boxes={boxes.data ?? []}
-          current={mailbox}
-          disabled={busy}
-          onMove={moveTo}
-        />
+          <Action
+            label={seen ? "Mark as unread" : "Mark as read"}
+            keyName="u"
+            disabled={busy}
+            onClick={markSeen}
+          >
+            <MailMark open={seen} />
+          </Action>
+          <MovePicker
+            config={config}
+            boxes={boxes.data ?? []}
+            current={mailbox}
+            disabled={busy}
+            onMove={moveTo}
+          />
+        </div>
       </div>
     </>
   );
 }
+
+/**
+ * What leads, then the buttons, pushed right as one group. Where both do not fit, the buttons go
+ * above rather than squeezing what leads: the lines wrap upward.
+ */
+const row = "flex flex-wrap-reverse items-center gap-2";
 
 /** A button that is an icon, named for what it does, with its key in the tooltip. */
 export function Action({
@@ -335,6 +340,7 @@ export function Action({
   pressed?: boolean;
   children: ReactNode;
   disabled?: boolean;
+  className?: string;
   onClick: () => void;
 }) {
   return (

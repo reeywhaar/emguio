@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAuthMe, postAuthLogout } from "@app/api/actions/auth";
@@ -34,6 +34,7 @@ import {
 import { Results } from "@app/islands/app/Results";
 import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
+import { useMatches } from "@app/media";
 import { forget } from "@app/push";
 
 export function Settings({
@@ -153,18 +154,6 @@ function Account() {
 
 /** Wide enough for the accounts and the one open side by side: md. */
 const BESIDE = "(min-width: 48rem)";
-
-/** Whether query matches, as the window changes. */
-function useMatches(query: string) {
-  return useSyncExternalStore(
-    (changed) => {
-      const list = window.matchMedia(query);
-      list.addEventListener("change", changed);
-      return () => list.removeEventListener("change", changed);
-    },
-    () => window.matchMedia(query).matches,
-  );
-}
 
 /**
  * The mail accounts, dragged into order by their grips. Wide, the one picked is beside them, the

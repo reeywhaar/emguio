@@ -316,6 +316,25 @@ describe("the reading pane", () => {
     expect(screen.queryByText(/\(no subject\)/i)).toBeNull();
   });
 
+  // Wide, who sent it shares the buttons' row, the list being beside; on a phone that row is the
+  // way back to the list, and who sent it comes under it.
+  it("puts who sent it beside the buttons, or on a phone the way back", async () => {
+    const { unmount } = open();
+    await screen.findByText("Alice");
+    expect(screen.queryByRole("link", { name: /^← / })).toBeNull();
+    unmount();
+
+    const wide = window.innerWidth;
+    window.innerWidth = 390;
+    try {
+      open();
+      await screen.findByText("Alice");
+      screen.getByRole("link", { name: "← Inbox" });
+    } finally {
+      window.innerWidth = wide;
+    }
+  });
+
   it("lists the attachments and not the images shown in place", async () => {
     open();
     const list = await screen.findByRole("list", { name: "Attachments" });
