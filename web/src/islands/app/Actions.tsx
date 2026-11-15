@@ -18,9 +18,17 @@ import {
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { labelOf } from "@app/islands/app/emailConfig";
-import type { JobDraft, Mailbox, Message, MessagePage } from "@app/api/types";
+import type {
+  EmailConfig,
+  JobDraft,
+  Mailbox,
+  Message,
+  MessagePage,
+} from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
+import { Dialog } from "@app/components/Dialog";
+import { Dummy } from "@app/components/Dummy";
 import {
   ArchiveMark,
   FolderMark,
@@ -363,25 +371,17 @@ export function Action({
   );
 }
 
-/** The picker's choice that makes a folder to move to. */
+/** The picker's choices that make a folder to move to, and that move to another account. */
 const NEW = "new";
-
-/** A folder each, indented by its depth. */
-const options = (list: Mailbox[]) =>
-  list.map((mb) => (
-    <option key={mb.id} value={mb.id}>
-      {" ".repeat(depthOf(mb))}
-      {labelOfMailbox(mb)}
-    </option>
-  ));
+const ELSEWHERE = "elsewhere";
 
 /** Where mail can be put: selectable, and not Scheduled, which the server refuses mail in. */
 const takes = (mb: Mailbox) => mb.selectable && mb.special_use !== "scheduled";
 
 /**
- * Every other folder a message can be moved to, or a new one, and the folders of the user's other
- * accounts: the platform's own list, laid over a button that looks like the others, so on a phone
- * it is the system's picker and in a row of actions it is one more icon.
+ * Every other folder a message can be moved to, or a new one, and, with another account to move
+ * it to, a dialog of theirs: the platform's own list, laid over a button that looks like the
+ * others, so on a phone it is the system's picker and in a row of actions it is one more icon.
  */
 export function MovePicker({
   config,
@@ -400,6 +400,7 @@ export function MovePicker({
   onTransfer: (to: Mailbox) => void;
 }) {
   const [making, setMaking] = useState(false);
+  const [away, setAway] = useState(false);
   // Each opening starts the form afresh.
   const [opened, setOpened] = useState(0);
   const others = boxes.filter((mb) => takes(mb) && mb.id !== current.id);
@@ -408,23 +409,6 @@ export function MovePicker({
     queryFn: getEmailConfigs,
   });
   const accounts = (configs.data ?? []).filter((c) => c.id !== config);
-  const here = configs.data?.find((c) => c.id === config);
-  const theirs = useQueries({
-    queries: accounts.map((c) => ({
-      queryKey: qk.mailboxes(c.id),
-      queryFn: () => getEmailConfigsByIdMailboxes(c.id),
-    })),
-  });
-  const elsewhere = accounts.map((c, i) => ({
-    account: c,
-    boxes: (theirs[i]?.data ?? []).filter(takes),
-  }));
-  const own = (
-    <>
-      {options(others)}
-      <option value={NEW}>New folder…</option>
-    </>
-  );
   return (
     <>
       <label
@@ -443,32 +427,33 @@ export function MovePicker({
               setMaking(true);
               return;
             }
+            if (e.target.value === ELSEWHERE) return setAway(true);
             const dest = others.find((mb) => mb.id === e.target.value);
-            if (dest) return onMove(dest);
-            const away = elsewhere
-              .flatMap((a) => a.boxes)
-              .find((mb) => mb.id === e.target.value);
-            if (away) onTransfer(away);
+            if (dest) onMove(dest);
           }}
         >
           <option value="">Move to…</option>
-          {/* Grouped by account only when there is another to tell it from. */}
-          {accounts.length === 0 ? (
-            own
-          ) : (
-            <optgroup label={here ? labelOf(here) : "This account"}>
-              {own}
-            </optgroup>
-          )}
-          {elsewhere.map((a) =>
-            a.boxes.length > 0 ? (
-              <optgroup key={a.account.id} label={labelOf(a.account)}>
-                {options(a.boxes)}
-              </optgroup>
-            ) : null,
-          )}
+          {others.map((mb) => (
+            <option key={mb.id} value={mb.id}>
+              {" ".repeat(depthOf(mb))}
+              {labelOfMailbox(mb)}
+            </option>
+          ))}
+          <option value={NEW}>New folder…</option>
+          {accounts.length > 0 ? (
+            <option value={ELSEWHERE}>Another account…</option>
+          ) : null}
         </select>
       </label>
+      <ElsewhereDialog
+        accounts={accounts}
+        open={away}
+        onClose={() => setAway(false)}
+        onPick={(to) => {
+          setAway(false);
+          onTransfer(to);
+        }}
+      />
       {/* Beside the picker rather than in it: a click inside the dialog would be the label's. */}
       <FolderDialog
         key={opened}
@@ -483,5 +468,72 @@ export function MovePicker({
         }}
       />
     </>
+  );
+}
+
+/** The user's other accounts and their folders, to move to one: each account's under its name. */
+function ElsewhereDialog({
+  accounts,
+  open,
+  onClose,
+  onPick,
+}: {
+  accounts: EmailConfig[];
+  open: boolean;
+  onClose: () => void;
+  onPick: (to: Mailbox) => void;
+}) {
+  const theirs = useQueries({
+    queries: accounts.map((c) => ({
+      queryKey: qk.mailboxes(c.id),
+      queryFn: () => getEmailConfigsByIdMailboxes(c.id),
+      enabled: open,
+    })),
+  });
+  return (
+    <Dialog open={open} onClose={onClose} title="Move to another account">
+      <div className="flex flex-col gap-4">
+        {accounts.map((c, i) => {
+          const boxes = theirs[i]?.data?.filter(takes);
+          return (
+            <section key={c.id} className="flex flex-col gap-1">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="caps shrink-0 text-sm text-muted">
+                  {labelOf(c)}
+                </h3>
+                {/* Its address, when it goes by a name. */}
+                {c.name ? (
+                  <span className="min-w-0 truncate text-xs text-faint">
+                    {c.email}
+                  </span>
+                ) : null}
+              </div>
+              {!boxes ? (
+                <Dummy className="h-8 w-2/3" />
+              ) : boxes.length === 0 ? (
+                <p className="text-sm text-muted">No folders.</p>
+              ) : (
+                <ul aria-label={labelOf(c)} className="flex flex-col">
+                  {boxes.map((mb) => (
+                    <li key={mb.id}>
+                      <button
+                        type="button"
+                        onClick={() => onPick(mb)}
+                        className="flex min-h-8 w-full items-center rounded-md px-2 text-left text-sm hover:bg-shade"
+                        style={{
+                          paddingLeft: `${0.5 + depthOf(mb) * 0.875}rem`,
+                        }}
+                      >
+                        {labelOfMailbox(mb)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </Dialog>
   );
 }

@@ -159,8 +159,10 @@ server with none, asks first how many go for good.
 
 ## A message moves to another account as a transfer
 
-The move picker lists the folders of the user's other accounts under each one's name. Each
-server holds only its own mail, so a move there is emguio carrying it: a `transfer` job per
+The move picker holds this account's folders; with another account to move to, it ends with
+"Another account…", a dialog of the user's other accounts, each with its folders under its name:
+a list of every folder of every account would bury the few of this one. Each server holds only
+its own mail, so a move there is emguio carrying it: a `transfer` job per
 message, which reads the whole message from this server, appends it to the other with its flags
 and the date it arrived, and then deletes it from this one for good, the copy having arrived.
 Before appending, it looks there for the message's `Message-ID`: a try that stopped after the

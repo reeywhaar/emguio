@@ -31,8 +31,8 @@ The mail of Robert Langdon, who has five accounts:
 
 - Write from one account to another: mail to any of the five addresses arrives in its Inbox.
   Mail to anybody else goes nowhere.
-- Move mail to another account: select some newsletters, then pick a folder of another account
-  under "Move to…". The card in the corner shows it going.
+- Move mail to another account: select some newsletters, choose "Another account…" under
+  "Move to…", and pick a folder there. The card in the corner shows it going.
 - Add a sixth account in Settings with any address on `example.com` and the password
   `demodemo`: the servers fill in on their own.
 

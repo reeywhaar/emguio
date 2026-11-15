@@ -554,7 +554,8 @@ describe("the reading pane", () => {
     );
   });
 
-  // Another account's folders are offered under its name, and a move there is a transfer.
+  // Another account's folders are in a dialog, each account's under its name, and a move there is
+  // a transfer. The picker itself holds this account's alone.
   it("moves it to another account's folder", async () => {
     getConfigs.mockResolvedValue([
       workConfig,
@@ -569,11 +570,18 @@ describe("the reading pane", () => {
     await ready("Archive");
     const select = screen.getByLabelText<HTMLSelectElement>("Move to folder");
     await waitFor(() =>
-      expect(
-        [...select.querySelectorAll("optgroup")].map((g) => g.label),
-      ).toEqual(["Work", "Personal"]),
+      expect([...select.options].map((o) => o.value)).toContain("elsewhere"),
     );
-    fireEvent.change(select, { target: { value: "mb_their_archive" } });
+    expect([...select.options].map((o) => o.value)).not.toContain(
+      "mb_their_archive",
+    );
+    fireEvent.change(select, { target: { value: "elsewhere" } });
+    const dialog = within(await screen.findByRole("dialog"));
+    dialog.getByRole("heading", { name: "Move to another account" });
+    const theirs = within(
+      await dialog.findByRole("list", { name: "Personal" }),
+    );
+    fireEvent.click(theirs.getByRole("button", { name: "mb_their_archive" }));
     await waitFor(() =>
       expect(asked()).toContainEqual(
         expect.objectContaining({
@@ -583,6 +591,14 @@ describe("the reading pane", () => {
         }),
       ),
     );
+  });
+
+  // With no other account, there is nowhere else to offer.
+  it("offers another account only when there is one", async () => {
+    open();
+    await ready("Archive");
+    const select = screen.getByLabelText<HTMLSelectElement>("Move to folder");
+    expect([...select.options].map((o) => o.value)).not.toContain("elsewhere");
   });
 
   // Gmail's keys, and not while a field has them.
