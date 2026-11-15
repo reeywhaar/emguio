@@ -41,6 +41,8 @@ export function Dialog({
   children,
   footer,
   wide = false,
+  tall = false,
+  compact = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -55,6 +57,10 @@ export function Dialog({
   footer?: ReactNode;
   /** For a form with fields side by side. */
   wide?: boolean;
+  /** As tall as there is room for, rather than as its content: for a body that fills it. */
+  tall?: boolean;
+  /** 8px around its parts, as the panes have, rather than a form's room. */
+  compact?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const parent = useContext(DialogContext);
@@ -128,7 +134,7 @@ export function Dialog({
       // The whole screen on a phone, where margins would only show the page nobody is reading.
       // Above it a card: m-auto undoes the preflight's margin: 0, which would leave it in the
       // corner, and h-fit stops the two insets of a modal stretching it to the full height.
-      className={`hidden h-dvh max-h-dvh w-dvw max-w-none flex-col overflow-hidden border-0 bg-bg p-0 text-fg backdrop:bg-black/40 focus:outline-none open:flex sm:m-auto sm:h-fit sm:max-h-[85dvh] sm:rounded-xl sm:border sm:border-line sm:shadow-xl ${
+      className={`hidden h-dvh max-h-dvh w-dvw max-w-none flex-col overflow-hidden border-0 bg-bg p-0 text-fg backdrop:bg-black/40 focus:outline-none open:flex sm:m-auto sm:max-h-[85dvh] sm:rounded-xl sm:border sm:border-line sm:shadow-xl ${tall ? "sm:h-[min(85dvh,50rem)]" : "sm:h-fit"} ${
         wide
           ? "sm:w-[min(42rem,calc(100vw-2rem))]"
           : "sm:w-[min(28rem,calc(100vw-2rem))]"
@@ -138,7 +144,9 @@ export function Dialog({
         <DialogContext.Provider value={ref}>
           {/* Outside the scroller, so what the dialog holds always has its name above it. A
               close always drawn, because a phone has no Escape and no backdrop to press. */}
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5 sm:px-5">
+          <div
+            className={`flex shrink-0 items-center justify-between gap-3 border-b border-line ${compact ? "p-2" : "px-4 py-2.5 sm:px-5"}`}
+          >
             <div className="flex min-w-0 items-center gap-2">
               {lead}
               <h2 className="truncate text-base font-semibold">{title}</h2>
@@ -162,7 +170,9 @@ export function Dialog({
               below the fold. flex-auto rather than flex-1: Safari sizes a flex-1 child of a
               fitted box at its basis of 0. overscroll-contain keeps a scroll that reached the
               end from carrying on into the page behind. */}
-          <div className="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto overscroll-contain px-4 pt-4 sm:px-5">
+          <div
+            className={`flex min-h-0 flex-auto flex-col overflow-y-auto overscroll-contain ${compact ? "px-2 pt-2" : "gap-4 px-4 pt-4 sm:px-5"}`}
+          >
             {/* Under the title bar, so a body that throws still leaves its close. */}
             <Boundary what="This">{children}</Boundary>
             {/* A box rather than padding: a flex scroll container drops its padding-bottom at
@@ -170,7 +180,9 @@ export function Dialog({
             <div aria-hidden="true" className="h-2 shrink-0" />
           </div>
           {footer ? (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line px-4 pt-4 pb-5 sm:px-5">
+            <div
+              className={`flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line ${compact ? "p-2" : "px-4 pt-4 pb-5 sm:px-5"}`}
+            >
               {footer}
             </div>
           ) : null}

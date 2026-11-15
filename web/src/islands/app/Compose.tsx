@@ -19,12 +19,7 @@ import {
 } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import { ApiError, messageOf } from "@app/api/transport";
-import type {
-  ClosedDraft,
-  EmailConfig,
-  KeptDraft,
-  Outgoing,
-} from "@app/api/types";
+import type { ClosedDraft, KeptDraft, Outgoing } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
 import { Dialog } from "@app/components/Dialog";
@@ -339,10 +334,43 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     <Dialog
       open={open}
       wide
+      tall
+      compact
       onClose={close}
       title={title}
+      aside={
+        config ? (
+          <span className="truncate text-sm text-muted">
+            from {typed({ name: config.sender_name, email: config.email })}
+          </span>
+        ) : undefined
+      }
       footer={
         <>
+          <Attached
+            draft={draft}
+            onForgetHeld={(id) =>
+              setDraft((d) => ({
+                ...d,
+                held: d.held.filter((h) => h.id !== id),
+              }))
+            }
+            onForgetPart={(section) =>
+              setDraft((d) => ({
+                ...d,
+                carry: d.carry && {
+                  ...d.carry,
+                  parts: d.carry.parts.filter((p) => p.section !== section),
+                },
+              }))
+            }
+            onForgetFile={(i) =>
+              setDraft((d) => ({
+                ...d,
+                files: d.files.filter((_, j) => j !== i),
+              }))
+            }
+          />
           {error ? (
             <p role="alert" className="w-full text-sm text-accent">
               {error}
@@ -418,13 +446,12 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
     >
       <form
         id={form}
-        className="flex flex-col gap-3"
+        className="flex flex-1 flex-col gap-2"
         onSubmit={submit}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
         }}
       >
-        {config ? <From config={config} /> : null}
         {draft.sendAt ? (
           <p className="-mt-1 text-sm text-brand">
             Scheduled for {full(draft.sendAt)}. Sending this, or scheduling it
@@ -446,7 +473,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
           )}
         </div>
         {copies ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <Field label="Cc">
               <TextField
                 autoComplete="off"
@@ -471,11 +498,11 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
             onChange={(e) => edit({ subject: e.target.value })}
           />
         </Field>
-        <label className="flex flex-col gap-1">
+        {/* The message takes what the fields leave of the window. */}
+        <label className="flex min-h-0 flex-1 flex-col gap-1">
           <span className="sr-only">Message</span>
           <textarea
             ref={text}
-            rows={14}
             value={draft.text}
             onChange={(e) => edit({ text: e.target.value })}
             onPaste={(e) => {
@@ -488,30 +515,9 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
               setDraft((d) => ({ ...d, files: [...d.files, ...pasted] }));
             }}
             data-autofocus={start.reply || start.draft ? true : undefined}
-            className={`${fieldLook} min-h-48 resize-y py-2 leading-relaxed`}
+            className={`${fieldLook} min-h-24 flex-1 resize-none py-2 leading-relaxed`}
           />
         </label>
-        <Attached
-          draft={draft}
-          onForgetHeld={(id) =>
-            setDraft((d) => ({ ...d, held: d.held.filter((h) => h.id !== id) }))
-          }
-          onForgetPart={(section) =>
-            setDraft((d) => ({
-              ...d,
-              carry: d.carry && {
-                ...d.carry,
-                parts: d.carry.parts.filter((p) => p.section !== section),
-              },
-            }))
-          }
-          onForgetFile={(i) =>
-            setDraft((d) => ({
-              ...d,
-              files: d.files.filter((_, j) => j !== i),
-            }))
-          }
-        />
       </form>
     </Dialog>
   );
@@ -524,15 +530,6 @@ function named(file: File): File {
   return new File([file], `image-${stamp(new Date())}${generic[1]}`, {
     type: file.type,
   });
-}
-
-/** Who it is from: the config's address, under the name it sends with. */
-function From({ config }: { config: EmailConfig }) {
-  return (
-    <p className="text-sm text-muted">
-      From {typed({ name: config.sender_name, email: config.email })}
-    </p>
-  );
 }
 
 /**
@@ -551,9 +548,24 @@ function Attached({
   onForgetFile: (index: number) => void;
 }) {
   const parts = draft.carry?.parts ?? [];
-  if (draft.held.length + parts.length + draft.files.length === 0) return null;
+  const count = draft.held.length + parts.length + draft.files.length;
+  // One added, a paste most of all, is brought into view at the row's end.
+  const row = useRef<HTMLUListElement>(null);
+  const was = useRef(count);
+  useEffect(() => {
+    if (count > was.current && row.current) {
+      row.current.scrollLeft = row.current.scrollWidth;
+    }
+    was.current = count;
+  }, [count]);
+  if (count === 0) return null;
   return (
-    <ul aria-label="Attachments" className="flex flex-wrap gap-2">
+    <ul
+      ref={row}
+      aria-label="Attachments"
+      // Edge to edge, with a line between it and the buttons.
+      className="scroll-thin -mx-2 flex w-[calc(100%+1rem)] gap-2 overflow-x-auto border-b border-line px-2 pb-2"
+    >
       {draft.held.map((h) => (
         <Chip
           key={`held ${h.id}`}
@@ -592,14 +604,14 @@ function Chip({
   onForget: () => void;
 }) {
   return (
-    <li className="flex max-w-full items-center gap-2 rounded-md border border-line py-1 pr-1 pl-2.5 text-sm">
+    <li className="flex max-w-64 shrink-0 items-center gap-2 rounded-md bg-control py-1 pr-1 pl-2.5 text-sm">
       <span className="min-w-0 truncate">{name}</span>
       <span className="shrink-0 text-xs text-muted">{size(bytes)}</span>
       <button
         type="button"
         aria-label={`Remove ${name}`}
         onClick={onForget}
-        className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-fill hover:text-fg"
+        className="flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-control-hover hover:text-fg"
       >
         <Cross />
       </button>
