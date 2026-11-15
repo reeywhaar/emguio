@@ -16,7 +16,8 @@ const HOLD = 400;
  * the capture still reports.
  *
  * A finger has to rest first: the rows sit in a list it scrolls, and a finger that moves at
- * once is scrolling it. Once it has rested, hold keeps the list still under it.
+ * once is scrolling it. Once it has rested, hold keeps the list still under it. On a grip, which
+ * does not scroll, it carries at once.
  *
  * Callers keep their own state for what is being carried and where it would land. This owns the
  * part that is fiddly and identical: when a press becomes a drag, what it is over, and whether
@@ -28,10 +29,13 @@ export function useCarry({
   onStart,
   onOver,
   onDrop,
+  grip,
   enabled = true,
 }: {
   /** What counts as somewhere to land: a selector its targets match. */
   find: string;
+  /** A selector for a handle a finger carries by at once; it should be touch-action: none. */
+  grip?: string;
   /** The press has travelled far enough, or rested long enough, to be a drag. */
   onStart?: () => void;
   /** What the pointer is over now, or nothing. */
@@ -43,6 +47,8 @@ export function useCarry({
 }) {
   const from = useRef<{ x: number; y: number } | null>(null);
   const moving = useRef(false);
+  /** This press waits to rest before it carries; moving sooner is a scroll. */
+  const rests = useRef(false);
   /** This press has already meant something, so the click after it means nothing. */
   const spent = useRef(false);
   const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -83,7 +89,10 @@ export function useCarry({
       if (!enabled || e.button !== 0) return;
       const at = { x: e.clientX, y: e.clientY };
       from.current = at;
-      if (e.pointerType === "touch") {
+      rests.current =
+        e.pointerType === "touch" &&
+        !(grip && e.target instanceof Element && e.target.closest(grip));
+      if (rests.current) {
         resting.current = setTimeout(() => {
           start();
           over(at.x, at.y);
@@ -98,7 +107,7 @@ export function useCarry({
       if (!moving.current) {
         if (Math.hypot(e.clientX - at.x, e.clientY - at.y) < SLOP) return;
         // Moved before it rested: a scroll, which is the list's.
-        if (e.pointerType === "touch") return end(false);
+        if (rests.current) return end(false);
         start();
       }
       over(e.clientX, e.clientY);

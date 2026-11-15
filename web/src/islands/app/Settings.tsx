@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAuthMe, postAuthLogout } from "@app/api/actions/auth";
@@ -16,13 +16,24 @@ import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
 import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
-import { DownMark, UpMark } from "@app/components/icons";
+import { Dialog } from "@app/components/Dialog";
+import { ChevronMark, GripMark } from "@app/components/icons";
+import { useCarry } from "@app/islands/app/carry";
 import { ConfigForm } from "@app/islands/app/ConfigForm";
-import { describe, draftOf, labelOf } from "@app/islands/app/emailConfig";
+import {
+  describe,
+  draftOf,
+  labelOf,
+  serversOf,
+} from "@app/islands/app/emailConfig";
 import { Link } from "@app/islands/app/Link";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import { say } from "@app/islands/app/notices";
-import { Delivery, Notifications } from "@app/islands/app/Notifications";
+import {
+  Delivery,
+  Notifications,
+  notifiesOf,
+} from "@app/islands/app/Notifications";
 import { Results } from "@app/islands/app/Results";
 import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
@@ -58,11 +69,6 @@ export function Settings({
     },
     onSuccess: (now) => client.setQueryData(qk.emailConfigs, now),
   });
-  const move = (list: EmailConfig[], at: number, by: number) => {
-    const ids = list.map((c) => c.id);
-    [ids[at], ids[at + by]] = [ids[at + by]!, ids[at]!];
-    arrange.mutate(ids);
-  };
   // The form last opened stays while it fades out; each opening is a new one.
   const [last, setLast] = useState({ editing, opened: 0 });
   if (editing && editing !== last.editing) {
@@ -70,7 +76,7 @@ export function Settings({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6">
       <h1 className="text-xl font-semibold">Settings</h1>
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
@@ -86,23 +92,10 @@ export function Settings({
             None yet. Add one to read its mail here.
           </p>
         ) : (
-          configs.data.map((c, i, list) => (
-            <Card
-              key={c.id}
-              config={c}
-              onMove={
-                list.length > 1
-                  ? {
-                      up: i > 0 ? () => move(list, i, -1) : undefined,
-                      down:
-                        i < list.length - 1
-                          ? () => move(list, i, 1)
-                          : undefined,
-                    }
-                  : undefined
-              }
-            />
-          ))
+          <Accounts
+            list={configs.data}
+            onArrange={(ids) => arrange.mutate(ids)}
+          />
         )}
       </section>
       <Notifications />
@@ -139,7 +132,7 @@ function Account() {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="caps text-muted">You</h2>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-bg p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-bg px-4 py-2">
         <span className="text-sm">
           Signed in as{" "}
           {me.data ? (
@@ -149,7 +142,8 @@ function Account() {
           )}
         </span>
         <Button
-          size="bar"
+          variant="link"
+          className="-mr-2 rounded-md px-2 py-1.5"
           disabled={signOut.isPending}
           onClick={() => signOut.mutate()}
         >
@@ -160,13 +154,201 @@ function Account() {
   );
 }
 
-function Card({
+/** Wide enough for the accounts and the one open side by side: md. */
+const BESIDE = "(min-width: 48rem)";
+
+/** Whether query matches, as the window changes. */
+function useMatches(query: string) {
+  return useSyncExternalStore(
+    (changed) => {
+      const list = window.matchMedia(query);
+      list.addEventListener("change", changed);
+      return () => list.removeEventListener("change", changed);
+    },
+    () => window.matchMedia(query).matches,
+  );
+}
+
+/**
+ * The mail accounts, dragged into order by their grips. Wide, the one picked is beside them, the
+ * first until one is; on a phone, the one picked takes the screen until closed.
+ */
+function Accounts({
+  list,
+  onArrange,
+}: {
+  list: EmailConfig[];
+  onArrange: (ids: string[]) => void;
+}) {
+  const beside = useMatches(BESIDE);
+  const [picked, setPicked] = useState<string | null>(null);
+  // On a phone the one picked stays while its dialog fades out.
+  const [open, setOpen] = useState(false);
+  const chosen = list.find((c) => c.id === picked);
+  const shown = beside ? (chosen ?? list[0]) : undefined;
+  // The account being carried, and the one it would go before or after.
+  const [carrying, setCarrying] = useState<string | null>(null);
+  const [onto, setOnto] = useState<string | null>(null);
+  const ids = list.map((c) => c.id);
+  const down =
+    carrying && onto ? ids.indexOf(carrying) < ids.indexOf(onto) : false;
+  const drop = () => {
+    setCarrying(null);
+    setOnto(null);
+    if (!carrying || !onto) return;
+    const next = ids.filter((id) => id !== carrying);
+    next.splice(ids.indexOf(onto), 0, carrying);
+    onArrange(next);
+  };
+
+  const rows = (
+    <ul
+      aria-label="Mail accounts"
+      className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border border-line bg-bg"
+    >
+      {list.map((c) => (
+        <li
+          key={c.id}
+          className={`relative ${c.id === carrying ? "opacity-40" : ""}`}
+        >
+          <Entry
+            config={c}
+            current={c.id === shown?.id}
+            beside={beside}
+            arrangeable={list.length > 1}
+            onPick={() => {
+              setPicked(c.id);
+              setOpen(true);
+            }}
+            onStart={() => setCarrying(c.id)}
+            onOver={(id) => setOnto(id === c.id ? null : id)}
+            onDrop={drop}
+          />
+          {/* Absolute, so it takes no room and the rows do not shift under the pointer. */}
+          {onto === c.id ? (
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute inset-x-0 h-0.5 bg-fg ${down ? "bottom-0" : "top-0"}`}
+            />
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+  if (!beside) {
+    return (
+      <>
+        {rows}
+        <Dialog
+          open={open && chosen !== undefined}
+          onClose={() => setOpen(false)}
+          title={chosen ? labelOf(chosen) : ""}
+        >
+          {chosen ? <Details key={chosen.id} config={chosen} /> : null}
+        </Dialog>
+      </>
+    );
+  }
+  return (
+    <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-start gap-3">
+      {rows}
+      {shown ? <Details key={shown.id} config={shown} titled /> : null}
+    </div>
+  );
+}
+
+/** An account in the list: picked by a press, carried into its place by its grip. */
+function Entry({
   config,
-  onMove,
+  current,
+  beside,
+  arrangeable,
+  onPick,
+  onStart,
+  onOver,
+  onDrop,
 }: {
   config: EmailConfig;
-  /** Moving it among the others, when there are others: up and down, each where it can go. */
-  onMove?: { up?: () => void; down?: () => void };
+  /** Shown beside the list. */
+  current: boolean;
+  beside: boolean;
+  /** There are others to put it among. */
+  arrangeable: boolean;
+  onPick: () => void;
+  onStart: () => void;
+  /** Carried over the account with this id, or over none. */
+  onOver: (id: string | null) => void;
+  onDrop: () => void;
+}) {
+  const boxes = useQuery({
+    queryKey: qk.mailboxes(config.id),
+    queryFn: () => getEmailConfigsByIdMailboxes(config.id),
+  });
+  const carry = useCarry({
+    find: "[data-account]",
+    grip: "[data-grip]",
+    enabled: arrangeable,
+    onStart,
+    onOver: (el) => onOver(el?.dataset.account ?? null),
+    onDrop,
+  });
+  // No selecting, and no long-press preview, of a row a finger may be picking up.
+  const still = arrangeable ? "select-none [-webkit-touch-callout:none]" : "";
+  const look = current ? "bg-shade" : "hover:bg-shade/50";
+  return (
+    <button
+      type="button"
+      data-account={config.id}
+      ref={carry.hold}
+      draggable={false}
+      onPointerDown={carry.press}
+      onPointerMove={carry.move}
+      onPointerUp={carry.release}
+      onPointerCancel={carry.cancel}
+      onContextMenu={carry.menu}
+      aria-current={current ? "true" : undefined}
+      aria-haspopup={beside ? undefined : "dialog"}
+      className={`flex w-full items-center gap-2 py-3 pr-4 text-left text-sm font-medium ${arrangeable ? "pl-2" : "pl-4"} ${still} ${look}`}
+      onClick={() => {
+        if (carry.spent.current) {
+          carry.spent.current = false;
+          return;
+        }
+        onPick();
+      }}
+    >
+      {arrangeable ? (
+        <span data-grip className="shrink-0 cursor-grab touch-none text-faint">
+          <GripMark />
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{labelOf(config)}</span>
+        {config.name ? (
+          <span className="block truncate text-xs font-normal text-muted">
+            {config.email}
+          </span>
+        ) : null}
+        <span className="block text-[0.625rem] leading-4 font-normal text-faint">
+          {serversOf(config)} · {notifiesOf(config, boxes.data)}
+        </span>
+      </span>
+      {beside ? null : (
+        <span className="shrink-0 -rotate-90 text-muted">
+          <ChevronMark />
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** An account's servers and choices, and what can be done to it; titled when not in a dialog. */
+function Details({
+  config,
+  titled = false,
+}: {
+  config: EmailConfig;
+  titled?: boolean;
 }) {
   const client = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -179,40 +361,8 @@ function Card({
   });
   const label = labelOf(config);
 
-  return (
-    <article className="flex flex-col gap-4 rounded-lg border border-line bg-bg p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="font-medium wrap-anywhere">{label}</h3>
-          {config.name ? (
-            <p className="text-sm text-muted wrap-anywhere">{config.email}</p>
-          ) : null}
-        </div>
-        {onMove ? (
-          <div className="-mt-1 -mr-1.5 flex shrink-0">
-            <Button
-              variant="link"
-              className="rounded-md p-1.5 pointer-coarse:p-2.5"
-              aria-label={`Move ${label} up`}
-              title="Move up"
-              disabled={!onMove.up}
-              onClick={onMove.up}
-            >
-              <UpMark />
-            </Button>
-            <Button
-              variant="link"
-              className="rounded-md p-1.5 pointer-coarse:p-2.5"
-              aria-label={`Move ${label} down`}
-              title="Move down"
-              disabled={!onMove.down}
-              onClick={onMove.down}
-            >
-              <DownMark />
-            </Button>
-          </div>
-        ) : null}
-      </div>
+  const body = (
+    <>
       <dl className="flex flex-col gap-4 text-sm">
         <Row label="Incoming">
           {describe(config.incoming, config.incoming.protocol.toUpperCase())}
@@ -273,6 +423,29 @@ function Card({
           </Button>
         </div>
       )}
+    </>
+  );
+  if (!titled) {
+    return (
+      <div className="flex flex-col gap-4">
+        {config.name ? (
+          <p className="-mt-2 text-sm text-muted wrap-anywhere">
+            {config.email}
+          </p>
+        ) : null}
+        {body}
+      </div>
+    );
+  }
+  return (
+    <article className="flex flex-col gap-4 rounded-lg border border-line bg-bg p-4">
+      <div className="min-w-0">
+        <h3 className="font-medium wrap-anywhere">{label}</h3>
+        {config.name ? (
+          <p className="text-sm text-muted wrap-anywhere">{config.email}</p>
+        ) : null}
+      </div>
+      {body}
     </article>
   );
 }

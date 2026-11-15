@@ -209,6 +209,17 @@ function foldersOf(boxes: Mailbox[]): string {
   return others === 0 ? "Inbox" : `Inbox and ${folders(others)}`;
 }
 
+/** How an account's new mail is told, as its row says it: how often, then from which folders. */
+export function notifiesOf(
+  config: EmailConfig,
+  boxes: Mailbox[] | undefined,
+): string {
+  if (config.notify === "off") return "No notifications";
+  const choice = choices.find((c) => c.value === choiceOf(config));
+  const how = `Notifies ${choice?.label.toLowerCase() ?? ""}`;
+  return boxes ? `${how}, from ${foldersOf(boxes)}` : how;
+}
+
 /** How one mail account's new mail is told, and the dialog that changes it. */
 export function Delivery({ config }: { config: EmailConfig }) {
   const [opened, setOpened] = useState(0);

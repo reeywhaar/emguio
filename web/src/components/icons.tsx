@@ -213,15 +213,13 @@ export const PencilMark = () => (
   </Mark>
 );
 
-export const UpMark = () => (
-  <Mark>
-    <path d="M8 13V3M4 7l4-4 4 4" />
-  </Mark>
-);
-
-export const DownMark = () => (
-  <Mark>
-    <path d="M8 3v10M4 9l4 4 4-4" />
+/** Two columns of dots: what a row is taken hold of by to carry it. */
+export const GripMark = () => (
+  <Mark filled>
+    <path
+      stroke="none"
+      d="M6 3.5a1 1 0 1 1 0 2 1 1 0 0 1 0-2m4 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2M6 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2m4 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2m-4 3.5a1 1 0 1 1 0 2 1 1 0 0 1 0-2m4 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2"
+    />
   </Mark>
 );
 

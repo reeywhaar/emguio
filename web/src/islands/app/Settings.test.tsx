@@ -1,4 +1,10 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmailConfig } from "@app/api/types";
@@ -98,9 +104,18 @@ const work: EmailConfig = {
   digest_every: 60,
 };
 
-/** The accounts' names, top to bottom. */
+/** The accounts' names in the list, top to bottom. */
 const names = () =>
-  screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+  within(screen.getByRole("list", { name: "Mail accounts" }))
+    .getAllByRole("button")
+    .map((row) => row.textContent!.split(work.email)[0]);
+
+/** A row of the list, by the account's name. */
+const row = (name: string) =>
+  within(screen.getByRole("list", { name: "Mail accounts" })).getByRole(
+    "button",
+    { name: new RegExp(`^${name}`) },
+  );
 
 beforeEach(() => {
   getEmailConfigs.mockResolvedValue([work]);
@@ -130,49 +145,186 @@ describe("settings", () => {
 
   it("lists each email config with its servers", async () => {
     mount(<Settings editing={null} />);
-    await screen.findByText("Work");
-    screen.getByText("misha@example.com");
-    screen.getByText("IMAP · imap.example.com:993 · TLS");
-    screen.getByText("None");
+    const open = within(await screen.findByRole("article"));
+    open.getByRole("heading", { name: "Work" });
+    open.getByText("misha@example.com");
+    open.getByText("IMAP · imap.example.com:993 · TLS");
+    open.getByText("None");
   });
 
-  it("moves a mail account up or down, in its new place at once", async () => {
+  it("says in each row what the account has", async () => {
+    getEmailConfigs.mockResolvedValue([
+      work,
+      {
+        ...work,
+        id: "ec_2",
+        name: "Home",
+        outgoing: { ...work.incoming, host: "smtp.example.com", port: 465 },
+        notify: "off",
+      },
+    ]);
+    mount(<Settings editing={null} />);
+    await screen.findByRole("list", { name: "Mail accounts" });
+    await within(row("Work")).findByText(
+      "IMAP · Notifies as mail arrives, from Inbox and 1 folder",
+    );
+    within(row("Home")).getByText("IMAP · SMTP · No notifications");
+  });
+
+  // Wide, the list and the account picked from it side by side; the first until one is picked.
+  it("shows the account picked from the list beside it", async () => {
+    getEmailConfigs.mockResolvedValue([
+      work,
+      { ...work, id: "ec_2", name: "Home" },
+    ]);
+    mount(<Settings editing={null} />);
+    await screen.findByRole("heading", { name: "Work" });
+    expect(row("Work").getAttribute("aria-current")).toBe("true");
+    fireEvent.click(row("Home"));
+    await screen.findByRole("heading", { name: "Home" });
+    expect(row("Home").getAttribute("aria-current")).toBe("true");
+    expect(screen.queryByRole("heading", { name: "Work" })).toBeNull();
+  });
+
+  // On a phone, an account picked takes the screen, with a close; none is open at first.
+  it("opens an account over the list on a phone", async () => {
+    const wide = window.innerWidth;
+    window.innerWidth = 390;
+    try {
+      getEmailConfigs.mockResolvedValue([
+        work,
+        { ...work, id: "ec_2", name: "Home" },
+      ]);
+      mount(<Settings editing={null} />);
+      await screen.findByRole("list", { name: "Mail accounts" });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        screen.queryByText("IMAP · imap.example.com:993 · TLS"),
+      ).toBeNull();
+
+      fireEvent.click(row("Home"));
+      const dialog = within(await screen.findByRole("dialog"));
+      dialog.getByRole("heading", { name: "Home" });
+      dialog.getByText("IMAP · imap.example.com:993 · TLS");
+
+      fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    } finally {
+      window.innerWidth = wide;
+    }
+  });
+
+  describe("dragging an account", () => {
+    // Every row is somewhere to land; which one is the test's to say.
+    let under: Element | null = null;
     const home = { ...work, id: "ec_2", name: "Home" };
     const shop = { ...work, id: "ec_3", name: "Shop" };
-    getEmailConfigs.mockResolvedValue([work, home, shop]);
-    const moved = later<EmailConfig[]>();
-    putOrder.mockReturnValue(moved.promise);
-    mount(<Settings editing={null} />);
-    await screen.findByText("Shop");
-    expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "Move Work up" })
-        .disabled,
-    ).toBe(true);
-    expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "Move Shop down" })
-        .disabled,
-    ).toBe(true);
+    beforeEach(() => {
+      document.elementFromPoint = () => under;
+      getEmailConfigs.mockResolvedValue([work, home, shop]);
+    });
+    const drag = (from: string, to: string, pointerType = "mouse") => {
+      const carried = row(from);
+      under = row(to);
+      fireEvent.pointerDown(carried, {
+        button: 0,
+        pointerId: 1,
+        pointerType,
+        clientX: 10,
+        clientY: 50,
+      });
+      fireEvent.pointerMove(carried, {
+        pointerId: 1,
+        pointerType,
+        clientX: 10,
+        clientY: 10,
+      });
+      fireEvent.pointerUp(carried, { pointerId: 1 });
+      return carried;
+    };
 
-    fireEvent.click(screen.getByRole("button", { name: "Move Shop up" }));
-    await waitFor(() =>
-      expect(putOrder).toHaveBeenCalledWith(["ec_1", "ec_3", "ec_2"]),
-    );
-    await waitFor(() => expect(names()).toEqual(["Work", "Shop", "Home"]));
-    moved.give([work, shop, home]);
+    it("puts it in its new place at once, and does not open it", async () => {
+      const moved = later<EmailConfig[]>();
+      putOrder.mockReturnValue(moved.promise);
+      mount(<Settings editing={null} />);
+      await screen.findByText("Shop");
+      fireEvent.click(drag("Shop", "Home"));
+      await waitFor(() =>
+        expect(putOrder).toHaveBeenCalledWith(["ec_1", "ec_3", "ec_2"]),
+      );
+      expect(names()).toEqual(["Work", "Shop", "Home"]);
+      screen.getByRole("heading", { name: "Work" });
+      moved.give([work, shop, home]);
 
-    // Refused, it goes back to where it was.
-    const refused = later<EmailConfig[]>();
-    putOrder.mockReturnValue(refused.promise);
-    fireEvent.click(screen.getByRole("button", { name: "Move Work down" }));
-    await waitFor(() => expect(names()).toEqual(["Shop", "Work", "Home"]));
-    refused.refuse(new Error("no"));
-    await waitFor(() => expect(names()).toEqual(["Work", "Shop", "Home"]));
-  });
+      // Down, it goes after the one it is let go on.
+      putOrder.mockResolvedValue([shop, home, work]);
+      drag("Work", "Home");
+      await waitFor(() =>
+        expect(putOrder).toHaveBeenLastCalledWith(["ec_3", "ec_2", "ec_1"]),
+      );
+    });
 
-  it("offers no moving for a single mail account", async () => {
-    mount(<Settings editing={null} />);
-    await screen.findByText("Work");
-    expect(screen.queryByRole("button", { name: /^Move / })).toBeNull();
+    it("by finger, once it has rested; one that moves at once is scrolling", async () => {
+      putOrder.mockResolvedValue([work, shop, home]);
+      mount(<Settings editing={null} />);
+      await screen.findByText("Shop");
+      drag("Shop", "Home", "touch");
+      await act(() => new Promise((done) => setTimeout(done, 20)));
+      expect(putOrder).not.toHaveBeenCalled();
+
+      const carried = row("Shop");
+      under = row("Home");
+      fireEvent.pointerDown(carried, {
+        button: 0,
+        pointerId: 1,
+        pointerType: "touch",
+        clientX: 10,
+        clientY: 50,
+      });
+      await act(() => new Promise((done) => setTimeout(done, 450)));
+      fireEvent.pointerUp(carried, { pointerId: 1 });
+      await waitFor(() =>
+        expect(putOrder).toHaveBeenCalledWith(["ec_1", "ec_3", "ec_2"]),
+      );
+    });
+
+    // A grip does not scroll, so a finger on it carries at once.
+    it("by finger on its grip, at once", async () => {
+      putOrder.mockResolvedValue([work, shop, home]);
+      mount(<Settings editing={null} />);
+      await screen.findByText("Shop");
+      const carried = row("Shop");
+      under = row("Home");
+      const grip = carried.querySelector("[data-grip]")!;
+      fireEvent.pointerDown(grip, {
+        button: 0,
+        pointerId: 1,
+        pointerType: "touch",
+        clientX: 10,
+        clientY: 50,
+      });
+      fireEvent.pointerMove(grip, {
+        pointerId: 1,
+        pointerType: "touch",
+        clientX: 10,
+        clientY: 10,
+      });
+      fireEvent.pointerUp(grip, { pointerId: 1 });
+      await waitFor(() =>
+        expect(putOrder).toHaveBeenCalledWith(["ec_1", "ec_3", "ec_2"]),
+      );
+    });
+
+    it("goes back where it was when the server refuses", async () => {
+      const refused = later<EmailConfig[]>();
+      putOrder.mockReturnValue(refused.promise);
+      mount(<Settings editing={null} />);
+      await screen.findByText("Shop");
+      drag("Work", "Home");
+      await waitFor(() => expect(names()).toEqual(["Home", "Work", "Shop"]));
+      refused.refuse(new Error("no"));
+      await waitFor(() => expect(names()).toEqual(["Work", "Home", "Shop"]));
+    });
   });
 
   it("says who is signed in and offers a way out", async () => {

@@ -11,6 +11,12 @@ export function describe(server: Server, speaks: string): string {
   return `${speaks} · ${server.host}:${server.port} · ${security}`;
 }
 
+/** What an account reads and sends with, a word each. */
+export function serversOf(config: EmailConfig): string {
+  const incoming = config.incoming.protocol.toUpperCase();
+  return config.outgoing ? `${incoming} · SMTP` : incoming;
+}
+
 /** A saved config as a draft, with its passwords left as the ones saved. */
 export function draftOf(config: EmailConfig): EmailConfigDraft {
   return {

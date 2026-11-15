@@ -38,7 +38,7 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 **Accounts**
 
 - Any number of mail accounts, added in Settings, where the address is often enough to find the
-  servers. They are listed in the order the user puts them.
+  servers. They are dragged into the order the user wants.
 - The header shows which accounts have unread mail, and the tab's icon gets a dot.
 
 **Web app and notifications**

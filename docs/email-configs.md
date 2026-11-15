@@ -12,6 +12,11 @@ Every query that touches one takes the user it belongs to, and another user's id
 The interface shows one at a time, chosen in the header, and nothing joins across them. A
 unified inbox is a different product.
 
+Settings lists them in the user's order, and a row is dragged by its grip to change it. A finger
+on the grip carries the row at once; elsewhere on the row it rests first, as on a folder. On a
+wide screen the account picked is shown beside the list. On a phone it takes the screen, with a
+close.
+
 ## An incoming server names its protocol, and IMAP is the one there is
 
 `incoming_protocol` is a column and `protocol` a field of the API and the form, with `imap` its
