@@ -327,7 +327,7 @@ function Attachments({
           <a
             href={partURL(config, mailbox, message, p.section)}
             download={p.name}
-            className="inline-flex items-center gap-1.5 rounded-md border border-line bg-bg px-2.5 py-1 text-sm hover:bg-fill"
+            className="inline-flex items-center gap-1.5 rounded-md bg-control px-2.5 py-1 text-sm hover:bg-control-hover"
           >
             <Paperclip className="shrink-0 text-muted" />
             <span className="max-w-56 truncate">{p.name}</span>

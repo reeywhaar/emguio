@@ -383,7 +383,7 @@ export function MovePicker({
     <>
       <label
         title="Move to folder"
-        className={`${buttonLook("quiet", "bar")} relative focus-within:border-brand ${disabled ? "opacity-50" : ""}`}
+        className={`${buttonLook("quiet", "bar")} relative focus-within:ring-2 focus-within:ring-brand ${disabled ? "opacity-50" : ""}`}
       >
         <FolderMark />
         <select

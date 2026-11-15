@@ -23,9 +23,9 @@ const shapes: Record<Size, string> = {
 
 const styles: Record<Variant, string> = {
   solid: "bg-brand text-brand-ink hover:opacity-90",
-  quiet: "border border-line bg-bg text-fg hover:bg-fill",
+  quiet: "bg-control text-fg hover:bg-control-hover",
   link: "text-muted underline-offset-2 hover:text-fg hover:underline",
-  danger: "border border-line bg-bg text-accent hover:bg-fill",
+  danger: "bg-control text-accent hover:bg-control-hover",
 };
 
 /** A button's look, for a link that moves somewhere to wear as well. */

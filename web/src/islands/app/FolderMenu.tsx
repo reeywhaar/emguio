@@ -68,7 +68,7 @@ export function FolderMenu({
     <>
       <label
         title="Folder"
-        className={`${buttonLook("quiet", "bar")} relative focus-within:border-brand`}
+        className={`${buttonLook("quiet", "bar")} relative focus-within:ring-2 focus-within:ring-brand`}
       >
         <MoreMark />
         <select

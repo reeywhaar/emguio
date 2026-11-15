@@ -2,7 +2,7 @@ import type { InputHTMLAttributes } from "react";
 
 /** The look every typed-into control shares, for a select to wear as well. */
 export const fieldLook =
-  "rounded-md border border-line bg-bg px-3 text-fg placeholder:text-faint focus:border-brand focus:outline-none disabled:opacity-50";
+  "rounded-md bg-control px-3 text-fg placeholder:text-faint focus:ring-2 focus:ring-brand focus:outline-none disabled:opacity-50";
 
 /**
  * How tall, the same question a button's size answers: field among fields, bar in a row of

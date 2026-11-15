@@ -25,6 +25,9 @@
   --color-fill: #f0f1f3;
   /* A darker patch of whatever it is on, so a current row takes its hue from the ground. */
   --color-shade: rgb(0 0 0 / 0.05);
+  /* What a button or a field is filled with, in place of a frame. */
+  --color-control: #f5f3ed;
+  --color-control-hover: #ebe8e0;
   --color-brand: #ef6500;
   --color-brand-ink: #ffffff;
   --color-accent: #b91c1c;
@@ -46,6 +49,8 @@
     --color-line: #31343a;
     --color-fill: #2a2c31;
     --color-shade: rgb(255 255 255 / 0.06);
+    --color-control: #2f2d2a;
+    --color-control-hover: #393632;
     --color-brand: #818cf8;
     --color-brand-ink: #111113;
     --color-accent: #f87171;

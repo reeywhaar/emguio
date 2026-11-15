@@ -362,7 +362,7 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
             />
             <span
               aria-hidden="true"
-              className="inline-flex min-h-10 cursor-pointer items-center rounded-md border border-line bg-bg px-3 py-1.5 text-sm hover:bg-fill peer-focus-visible:border-brand"
+              className="inline-flex min-h-10 cursor-pointer items-center rounded-md bg-control px-3 py-1.5 text-sm hover:bg-control-hover peer-focus-visible:ring-2 peer-focus-visible:ring-brand"
             >
               Attach files
             </span>

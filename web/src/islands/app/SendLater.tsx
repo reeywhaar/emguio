@@ -127,7 +127,7 @@ export function SendLater({
                 key={t.label}
                 size="bar"
                 aria-pressed={t.at === at}
-                className="aria-pressed:border-brand"
+                className="aria-pressed:ring-2 aria-pressed:ring-brand"
                 onClick={() => choose(t.at)}
               >
                 {t.label}
