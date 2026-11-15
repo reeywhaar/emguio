@@ -17,7 +17,7 @@ import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
 import { Dummy } from "@app/components/Dummy";
 import { Field, Select } from "@app/components/Field";
-import { PencilMark } from "@app/components/icons";
+import { PencilMark, WarnMark } from "@app/components/icons";
 import { labelOf } from "@app/islands/app/emailConfig";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import {
@@ -83,9 +83,12 @@ function Devices() {
 
   let sentence: string;
   let action = null;
+  // This device will not show them, whatever is chosen here.
+  let warn = false;
   switch (state) {
     case "unsupported":
       sentence = "This browser cannot show notifications.";
+      warn = true;
       break;
     case "needs-install":
       sentence =
@@ -94,6 +97,7 @@ function Devices() {
     case "denied":
       sentence =
         "Notifications are blocked for emguio here. Allow them in the browser's settings, then come back.";
+      warn = true;
       break;
     default:
       sentence = here
@@ -124,7 +128,16 @@ function Devices() {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-bg p-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 text-sm">{sentence}</p>
+        {warn ? (
+          <p className="flex min-w-0 items-start gap-2 text-sm text-warn">
+            <span className="mt-0.5 shrink-0">
+              <WarnMark />
+            </span>
+            {sentence}
+          </p>
+        ) : (
+          <p className="min-w-0 text-sm">{sentence}</p>
+        )}
         {action}
       </div>
       {on.error ? (

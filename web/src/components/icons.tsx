@@ -213,6 +213,13 @@ export const PencilMark = () => (
   </Mark>
 );
 
+/** A triangle with an exclamation mark: something here will not work. */
+export const WarnMark = () => (
+  <Mark>
+    <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.5 9.5a1 1 0 0 1-.87 1.5H2.5a1 1 0 0 1-.87-1.5zM8 6v3M8 11.25v.01" />
+  </Mark>
+);
+
 /** Two columns of dots: what a row is taken hold of by to carry it. */
 export const GripMark = () => (
   <Mark filled>
