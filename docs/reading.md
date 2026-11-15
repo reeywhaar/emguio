@@ -483,5 +483,7 @@ and at most ten a minute are sent for one.
 ## A part is served so that it cannot act as a page here
 
 An attachment is the sender's file. It is served with `nosniff` and a sandbox CSP, as a download
-unless it is a plain image — PNG, JPEG, GIF, WebP or AVIF — so an HTML or SVG attachment can
-never run as a page of this origin.
+unless it is a plain image — PNG, JPEG, GIF, WebP or AVIF — or a PDF, so an HTML or SVG
+attachment can never run as a page of this origin. Those open in a new tab: a browser draws an
+image and shows a PDF only in its own viewer, which reaches nothing of this origin, and Chromium's
+viewer shows one under the sandbox CSP as well.

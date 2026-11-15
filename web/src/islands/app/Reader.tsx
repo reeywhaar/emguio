@@ -304,6 +304,16 @@ function People({ label, people }: { label: string; people: Address[] }) {
   );
 }
 
+/** What opens in a tab rather than downloading: what the server serves inline, see internal/api/read.go. */
+const opens = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "application/pdf",
+]);
+
 function Attachments({
   config,
   mailbox,
@@ -326,7 +336,9 @@ function Attachments({
         <li key={p.section}>
           <a
             href={partURL(config, mailbox, message, p.section)}
-            download={p.name}
+            {...(opens.has(p.type)
+              ? { target: "_blank", rel: "noopener" }
+              : { download: p.name })}
             className="inline-flex items-center gap-1.5 rounded-md bg-control px-2.5 py-1 text-sm hover:bg-control-hover"
           >
             <Paperclip className="shrink-0 text-muted" />

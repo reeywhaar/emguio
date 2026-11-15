@@ -480,7 +480,7 @@ GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{sectio
 ```
 
 One part's bytes, decoded, fetched alone. `section` is a part's `section`, like `2` or `1.3`. A
-PNG, JPEG, GIF, WebP or AVIF image comes with its own `Content-Type` and
+PNG, JPEG, GIF, WebP or AVIF image, or a PDF, comes with its own `Content-Type` and
 `Content-Disposition: inline`; anything else as `application/octet-stream` and `attachment`.
 Either way the filename is in `Content-Disposition`. A part never changes, so it is served
 `immutable`. A `section` that is not one answers `400 invalid`, one the message does not have

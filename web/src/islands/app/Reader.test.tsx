@@ -324,6 +324,30 @@ describe("the reading pane", () => {
     expect(links[0]!.getAttribute("href")).toBe("/parts/ec_1/mb_inbox/m_1/2");
     within(links[0]!).getByText("q3.pdf");
     within(links[0]!).getByText("13 KB");
+    // A PDF opens in a tab; anything else downloads.
+    expect(links[0]!.getAttribute("target")).toBe("_blank");
+    expect(links[0]!.hasAttribute("download")).toBe(false);
+  });
+
+  it("downloads an attachment the browser would not just show", async () => {
+    getMessage.mockResolvedValue(
+      read({
+        parts: [
+          {
+            section: "2",
+            name: "page.html",
+            type: "text/html",
+            size: 25,
+            listed: true,
+          },
+        ],
+      }),
+    );
+    open();
+    const list = await screen.findByRole("list", { name: "Attachments" });
+    const link = within(list).getByRole("link");
+    expect(link.getAttribute("download")).toBe("page.html");
+    expect(link.hasAttribute("target")).toBe(false);
   });
 
   it("shows HTML in a frame that runs nothing and loads nothing from elsewhere", async () => {

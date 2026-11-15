@@ -207,9 +207,11 @@ func (s *Server) serverError(w http.ResponseWriter, r *http.Request, configID st
 }
 
 // inline are the types a part may be shown as rather than downloaded: images a browser draws and
-// cannot run.
+// cannot run, and PDF, which it opens only in its viewer. web/src/islands/app/Reader.tsx opens
+// the same ones.
 var inline = map[string]bool{
 	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true, "image/avif": true,
+	"application/pdf": true,
 }
 
 // sectionPattern is an IMAP section number: "2", "1.3", nested no deeper than any real message.
@@ -232,7 +234,7 @@ func sectionOf(at string) ([]int, bool) {
 // HTML shows.
 //
 // Whatever it is, it is served so that it cannot act as a page of this origin: nosniff, a
-// sandbox CSP, and anything that is not a plain image as a download. And as immutable: a UID
+// sandbox CSP, and anything that is not a plain image or a PDF as a download. And as immutable: a UID
 // under one UIDVALIDITY names one message for good, and a message never changes.
 func (s *Server) readPart(w http.ResponseWriter, r *http.Request) {
 	at := r.PathValue("section")

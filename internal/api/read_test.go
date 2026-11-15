@@ -30,6 +30,8 @@ var rich = message.Structure{
 			DispositionParams: map[string]string{"filename": "logo.gif"}, Encoding: "base64", Size: 78},
 		{Section: "2", Type: "text/html", Disposition: "attachment",
 			DispositionParams: map[string]string{"filename": "page.html"}, Size: 25},
+		{Section: "3", Type: "application/pdf", Disposition: "attachment",
+			DispositionParams: map[string]string{"filename": "q3.pdf"}, Size: 20},
 	},
 }
 
@@ -54,6 +56,7 @@ func reading(t *testing.T) (*Server, *client, *fakeMirror, string, string) {
 	fake := &fakeMirror{opened: rich, parts: map[string][2]string{
 		"1.2": {"Content-Type: image/gif\r\nContent-ID: <logo@x>\r\nContent-Disposition: inline; filename=logo.gif\r\nContent-Transfer-Encoding: base64\r\n\r\n", pixel},
 		"2":   {"Content-Type: text/html\r\nContent-Disposition: attachment; filename=\"page.html\"\r\n\r\n", "<script>alert(1)</script>"},
+		"3":   {"Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"q3.pdf\"\r\n\r\n", "%PDF-1.4\n%%EOF\n"},
 	}}
 	s.mirror = fake
 	page := c.json(c.do("GET", "/api/email-configs/"+cfg+"/mailboxes/"+inbox+"/messages", ""))
@@ -95,7 +98,7 @@ func TestAReadMessageIsSafeAndItsImagesPointHere(t *testing.T) {
 			listed = append(listed, p.Name+"@"+p.Section)
 		}
 	}
-	if strings.Join(listed, ",") != "page.html@2" {
+	if strings.Join(listed, ",") != "page.html@2,q3.pdf@3" {
 		t.Errorf("listed parts = %v", listed)
 	}
 }
@@ -144,6 +147,13 @@ func TestAPartCannotActAsAPageHere(t *testing.T) {
 	// A UID names one message for good, so its parts are the browser's to keep.
 	if !strings.Contains(logo.Header.Get("Cache-Control"), "immutable") {
 		t.Errorf("cache = %q", logo.Header.Get("Cache-Control"))
+	}
+
+	// A PDF opens in the browser's viewer, with the same guards.
+	pdf := c.do("GET", path+"/parts/3", "")
+	if pdf.Header.Get("Content-Type") != "application/pdf" || !strings.HasPrefix(pdf.Header.Get("Content-Disposition"), "inline") ||
+		pdf.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(pdf.Header.Get("Content-Security-Policy"), "sandbox") {
+		t.Errorf("a PDF was served as %v", pdf.Header)
 	}
 
 	if resp := c.do("GET", path+"/parts/9", ""); resp.StatusCode != http.StatusNotFound {
