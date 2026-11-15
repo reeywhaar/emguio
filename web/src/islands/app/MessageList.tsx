@@ -158,7 +158,9 @@ export function MessageList({
   if (!pages.data) {
     if (pages.error) {
       return (
-        <p className="p-4 text-sm text-accent">{messageOf(pages.error)}</p>
+        <p className="px-2 py-4 text-sm text-accent">
+          {messageOf(pages.error)}
+        </p>
       );
     }
     return <MessageDummies count={4} />;
@@ -215,7 +217,7 @@ export function MessageList({
           ))}
         </ul>
       ) : hasNextPage ? null : (
-        <p className="p-4 text-sm text-muted">
+        <p className="px-2 py-4 text-sm text-muted">
           {textOf(q)
             ? "Nothing here matches."
             : unreadOnly(q)
@@ -225,7 +227,7 @@ export function MessageList({
       )}
       <div ref={end}>
         {pages.error ? (
-          <div className="flex flex-col items-center gap-2 p-4 text-center">
+          <div className="flex flex-col items-center gap-2 px-2 py-4 text-center">
             <p className="text-sm text-accent">{messageOf(pages.error)}</p>
             <Button
               size="bar"
@@ -254,7 +256,7 @@ export function MessageDummies({ count }: { count: number }) {
       {Array.from({ length: count }, (_, i) => (
         <li
           key={i}
-          className="flex items-start gap-3 border-b border-line px-4 py-2.5"
+          className="flex items-start gap-3 border-b border-line px-2 py-2.5"
         >
           <div className="min-w-0 flex-1">
             <div className="flex h-5 items-center gap-2">
@@ -313,7 +315,7 @@ function Row({
   const unread = !m.seen;
   const who = counterpart(mailbox, m);
   const bare = untitled(m.subject) && m.preview !== "";
-  const look = `flex items-start gap-3 px-4 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"} ${arrived ? "arrived" : ""}`;
+  const look = `flex items-start gap-3 px-2 py-2.5 ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"} ${arrived ? "arrived" : ""}`;
   const body = (
     <div className="min-w-0 flex-1">
       <div className="flex items-baseline gap-2">

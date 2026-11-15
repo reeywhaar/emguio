@@ -37,7 +37,7 @@ export function EmptyFolder({
     onError: (err) => say(messageOf(err)),
   });
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-line bg-bg px-4 py-2">
+    <div className="flex items-center justify-between gap-3 border-b border-line bg-bg p-2">
       <span className="min-w-0 text-sm text-muted">{count}</span>
       <Button
         size="bar"

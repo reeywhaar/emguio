@@ -61,7 +61,7 @@ export function Search({
   return (
     <form
       role="search"
-      className="border-b border-line bg-bg px-4 py-2"
+      className="border-b border-line bg-bg p-2"
       onSubmit={(e) => {
         e.preventDefault();
         look(draft);

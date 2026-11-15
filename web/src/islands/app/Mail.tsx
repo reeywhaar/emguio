@@ -240,7 +240,7 @@ function Folders({
       <section
         className={`min-w-0 flex-col lg:flex lg:w-[26rem] lg:flex-none lg:border-r lg:border-line ${message ? "hidden" : "flex flex-1"}`}
       >
-        <div className="flex items-center gap-2 border-b border-line bg-bg px-4 py-2">
+        <div className="flex items-center gap-2 border-b border-line bg-bg p-2">
           {selected && current && boxes.data ? (
             <Selection
               config={config.id}
@@ -333,7 +333,7 @@ function Folders({
         {config.sync_error ? (
           <p
             role="alert"
-            className="border-b border-line bg-bg px-4 py-2 text-sm text-accent"
+            className="border-b border-line bg-bg p-2 text-sm text-accent"
           >
             {config.sync_error}{" "}
             <Link
