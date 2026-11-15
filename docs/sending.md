@@ -31,6 +31,11 @@ so files come as base64 in the body: up to 25 MB of them, which most mail server
 more than, in a request of up to 36 MB. A file goes with the first save of a draft, and emguio
 holds it from then on.
 
+An image pasted into the message, a screenshot most often, is attached: a message is written as
+plain text, which has nowhere to put one. A browser names every pasted image `image.png`, so it is
+named for when it was pasted, like `image-2026-11-15-143005.png`. Text pasted with it, as a web
+page copies, goes into the message as well.
+
 ## A reply is threaded, and its original marked answered
 
 A reply names the message it answers. The server reads that message's `Message-ID` and

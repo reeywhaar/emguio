@@ -738,6 +738,42 @@ describe("the reading pane", () => {
 
   // A forward carries the message's attachments; a refusal is said in the window, and what was
   // written stays to be sent again.
+  // A pasted screenshot is attached, named for when; text that comes with an image pastes too.
+  it("attaches an image pasted into the message", async () => {
+    getMessage.mockResolvedValue(read({ seen: true }));
+    open();
+    await screen.findByRole("button", { name: "Reply" });
+    fireEvent.keyDown(document.body, { key: "r" });
+    const dialog = within(await screen.findByRole("dialog"));
+    const body = dialog.getByRole("textbox", { name: "Message" });
+    const shot = new File(["png"], "image.png", { type: "image/png" });
+    expect(
+      fireEvent.paste(body, {
+        clipboardData: { files: [shot], types: ["Files"] },
+      }),
+    ).toBe(false);
+    within(dialog.getByRole("list", { name: "Attachments" })).getByText(
+      /^image-\d{4}-\d\d-\d\d-\d{6}\.png$/,
+    );
+
+    const page = new File(["gif"], "logo.gif", { type: "image/gif" });
+    expect(
+      fireEvent.paste(body, {
+        clipboardData: { files: [page], types: ["Files", "text/plain"] },
+      }),
+    ).toBe(true);
+    within(dialog.getByRole("list", { name: "Attachments" })).getByText(
+      "logo.gif",
+    );
+
+    fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+    const sure = await screen.findAllByRole("button", { name: "Discard" });
+    fireEvent.click(sure[sure.length - 1]!);
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull(),
+    );
+  });
+
   it("forwards with its attachments, and keeps the window when the server says no", async () => {
     getMessage.mockResolvedValue(read({ seen: true }));
     postSend.mockRejectedValue(

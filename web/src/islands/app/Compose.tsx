@@ -31,7 +31,7 @@ import { Dialog } from "@app/components/Dialog";
 import { Field } from "@app/components/Field";
 import { fieldLook, TextField } from "@app/components/TextField";
 import { Cross } from "@app/components/icons";
-import { full, size } from "@app/format";
+import { full, size, stamp } from "@app/format";
 import { useAsk } from "@app/islands/app/ask";
 import {
   differs,
@@ -478,6 +478,15 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
             rows={14}
             value={draft.text}
             onChange={(e) => edit({ text: e.target.value })}
+            onPaste={(e) => {
+              const pasted = [...e.clipboardData.files].map(named);
+              if (pasted.length === 0) return;
+              // Text that comes with it, as from a web page, goes in as well.
+              if (!e.clipboardData.types.includes("text/plain")) {
+                e.preventDefault();
+              }
+              setDraft((d) => ({ ...d, files: [...d.files, ...pasted] }));
+            }}
             data-autofocus={start.reply || start.draft ? true : undefined}
             className={`${fieldLook} min-h-48 resize-y py-2 leading-relaxed`}
           />
@@ -506,6 +515,15 @@ function Writer({ start, open }: { start: Draft; open: boolean }) {
       </form>
     </Dialog>
   );
+}
+
+/** A pasted image is "image.png", whatever it shows: it is named for when it was pasted instead. */
+function named(file: File): File {
+  const generic = /^image(\.\w+)$/.exec(file.name);
+  if (!generic) return file;
+  return new File([file], `image-${stamp(new Date())}${generic[1]}`, {
+    type: file.type,
+  });
 }
 
 /** Who it is from: the config's address, under the name it sends with. */

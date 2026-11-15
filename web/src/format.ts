@@ -23,6 +23,11 @@ export function clock(d: Date): string {
   return `${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
+/** A moment for a file's name, which a colon would break: 2026-03-04-090507. */
+export function stamp(d: Date): string {
+  return `${isoDay(d)}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+}
+
 /** A day of the week, short, in the reader's words: Wed. */
 export function weekday(d: Date): string {
   return d.toLocaleDateString(undefined, { weekday: "short" });
