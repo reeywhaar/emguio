@@ -36,23 +36,64 @@ export async function request<T>(
     init.body = JSON.stringify(body);
   }
 
-  const response = await fetch(path, init);
+  let response: Response;
+  try {
+    response = await fetch(path, init);
+  } catch (err) {
+    // An abort is the caller's own.
+    if (signal?.aborted) throw err;
+    throw new ApiError(
+      0,
+      "unreachable",
+      "The server could not be reached. Check your connection and try again.",
+    );
+  }
   if (response.status === 204) return undefined as T;
 
   const text = await response.text();
-  const parsed: unknown = text ? JSON.parse(text) : undefined;
-
   if (!response.ok) {
-    const refusal = parsed as { code?: string; message?: string } | undefined;
     // The server writes the sentence for whoever reads it; re-wording it here would mean
     // maintaining two vocabularies for one failure.
+    const refusal = refusalOf(text);
+    if (refusal) {
+      throw new ApiError(
+        response.status,
+        refusal.code ?? "invalid",
+        refusal.message ?? "Something went wrong here.",
+      );
+    }
+    // No sentence of emguio's: a proxy in front answered for it.
+    if (gateway.has(response.status)) {
+      throw new ApiError(
+        response.status,
+        "unreachable",
+        "The server is not answering. Try again in a moment.",
+      );
+    }
     throw new ApiError(
       response.status,
-      refusal?.code ?? "invalid",
-      refusal?.message ?? "Something went wrong here.",
+      "invalid",
+      "Something went wrong here.",
     );
   }
-  return parsed as T;
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** What a proxy answers with when what is behind it is down or slow. */
+const gateway = new Set([502, 503, 504]);
+
+/** emguio's own refusal, or nothing when the body is not one: a proxy's page, or empty. */
+function refusalOf(
+  text: string,
+): { code?: string; message?: string } | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as { code?: string; message?: string })
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The sentence to show for anything a request threw. */
