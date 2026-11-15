@@ -495,8 +495,9 @@ header is fetched with each message a list shows, in the same command as its env
 row and the reading pane both mark it. A `mailto:` address there is not used: unsubscribing is by
 web address alone.
 
-With `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and an https address,
-Unsubscribe does it here: emguio's server sends that POST, says it is working until the sender
+Unsubscribe is at the right of the reading pane's bottom bar, beside Reply and Forward. With
+`List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058) and an https address, it does it
+here: emguio's server sends that POST, says it is working until the sender
 answers, and then says it worked, or what the sender answered and a link to their page. Without
 it, Unsubscribe opens the sender's page in a new tab, where they ask what they ask. Gmail and
 Yahoo have required one click from bulk senders since 2024, so most newsletters offer it. Nothing

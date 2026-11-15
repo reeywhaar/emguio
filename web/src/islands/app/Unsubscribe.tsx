@@ -39,7 +39,7 @@ export function Unsubscribe({
       href={how.link}
       target="_blank"
       rel="noreferrer noopener"
-      className={buttonLook("link")}
+      className={buttonLook("quiet", "bar")}
     >
       {label}
     </a>
@@ -50,18 +50,19 @@ export function Unsubscribe({
   }
   return (
     <>
+      {stop.error ? (
+        <>
+          <span className="text-sm text-accent">{messageOf(stop.error)}</span>
+          {page("Open their page")}
+        </>
+      ) : null}
       <Button
-        variant="link"
+        size="bar"
         disabled={stop.isPending}
         onClick={() => stop.mutate()}
       >
         {stop.isPending ? "Unsubscribing" : "Unsubscribe"}
       </Button>
-      {stop.error ? (
-        <span className="text-sm text-accent">
-          {messageOf(stop.error)} {page("Open their page")}
-        </span>
-      ) : null}
     </>
   );
 }

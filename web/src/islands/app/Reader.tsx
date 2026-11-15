@@ -99,15 +99,6 @@ export function Reader({
         ) : null}
         {known.from.email ? <CopyAddress email={known.from.email} /> : null}
         {known.newsletter || m?.unsubscribe ? <NewsletterTag /> : null}
-        {m?.unsubscribe ? (
-          <Unsubscribe
-            key={m.id}
-            config={config}
-            mailbox={mailbox.id}
-            message={m.id}
-            how={m.unsubscribe}
-          />
-        ) : null}
       </div>
       <time
         dateTime={new Date(known.date * 1000).toISOString()}
@@ -238,7 +229,7 @@ export function Reader({
               </Button>
             </div>
           ) : (
-            <Replies config={config} m={m} />
+            <Replies config={config} mailbox={mailbox.id} m={m} />
           )}
         </>
       ) : null}
@@ -246,8 +237,19 @@ export function Reader({
   );
 }
 
-/** Reply, reply all and forward, with Gmail's keys r, a and f. */
-function Replies({ config, m }: { config: string; m: ReadMessage }) {
+/**
+ * Reply, reply all and forward, with Gmail's keys r, a and f; and on the right, for a newsletter,
+ * unsubscribing.
+ */
+function Replies({
+  config,
+  mailbox,
+  m,
+}: {
+  config: string;
+  mailbox: string;
+  m: ReadMessage;
+}) {
   const configs = useQuery({
     queryKey: qk.emailConfigs,
     queryFn: getEmailConfigs,
@@ -296,6 +298,17 @@ function Replies({ config, m }: { config: string; m: ReadMessage }) {
         <ForwardMark />
         Forward
       </Button>
+      {m.unsubscribe ? (
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <Unsubscribe
+            key={m.id}
+            config={config}
+            mailbox={mailbox}
+            message={m.id}
+            how={m.unsubscribe}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
