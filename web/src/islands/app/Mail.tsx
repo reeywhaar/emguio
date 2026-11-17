@@ -607,6 +607,7 @@ function FolderPicker({
         open={open}
         onClose={() => setOpen(false)}
         title="Folders"
+        compact
         footer={
           <div className="flex w-full flex-col gap-1">
             <SyncState config={config} />
