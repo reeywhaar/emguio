@@ -110,6 +110,14 @@ function measuring(room: number) {
 const row = () =>
   within(screen.getByRole("navigation", { name: "Mail accounts" }));
 
+/** What the header's row of mail accounts says, each link and button in turn. */
+const names = () =>
+  [
+    ...screen
+      .getByRole("navigation", { name: "Mail accounts" })
+      .querySelectorAll("a, button"),
+  ].map((el) => el.textContent!.replace(/\s+/g, " ").trim());
+
 describe("the application", () => {
   it("says who is signed in", async () => {
     mount(<App />);
@@ -138,6 +146,15 @@ describe("the application", () => {
     within(dialog).getByRole("heading", { name: "Add mail account" });
   });
 
+  // Where the accounts would be, while there are none.
+  it("offers to add a mail account in the header while there are none", async () => {
+    mount(<App />);
+    fireEvent.click(
+      await screen.findByRole("link", { name: "Add mail account" }),
+    );
+    expect(window.location.pathname).toBe("/settings/email-configs/new");
+  });
+
   // One config at a time, chosen in the header from a list that counts the unread in each, and the
   // address says which.
   it("switches mail account from the header", async () => {
@@ -154,7 +171,6 @@ describe("the application", () => {
     expect(menu.getAllByRole("menuitem").map((l) => l.textContent)).toEqual([
       "Workwork@example.com",
       "Homehome@example.com, unread: 2",
-      "Add mail account",
     ]);
     fireEvent.click(menu.getByRole("menuitem", { name: /^Home/ }));
     expect(window.location.pathname).toBe("/c/ec_2");
@@ -162,7 +178,7 @@ describe("the application", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  // Side by side where they fit.
+  // Side by side where they fit; the open one lists them all.
   it("puts the mail accounts side by side where they fit", async () => {
     getEmailConfigs.mockResolvedValue([
       config("ec_1", "Work"),
@@ -173,19 +189,22 @@ describe("the application", () => {
       mount(<App />);
       await screen.findByRole("heading", { name: "Inbox of ec_1" });
       await screen.findByRole("navigation", { name: "Mail accounts" });
+      expect(names()).toEqual(["Mail account: Work", "Home, unread: 2"]);
       expect(
-        row()
-          .getAllByRole("link")
-          .map((l) => [l.textContent, l.ariaCurrent]),
-      ).toEqual([
-        ["Work", "page"],
-        ["Home, unread: 2", null],
-      ]);
-      expect(
-        screen.queryByRole("button", { name: /^(Other )?[Mm]ail account/ }),
+        screen.queryByRole("button", { name: /^Other mail accounts/ }),
       ).toBeNull();
       fireEvent.click(row().getByRole("link", { name: /^Home/ }));
       await screen.findByRole("heading", { name: "Inbox of ec_2" });
+      expect(names()).toEqual(["Work", "Mail account: Home, unread: 2"]);
+
+      fireEvent.click(row().getByRole("button", { name: /^Mail account/ }));
+      const menu = within(await screen.findByRole("menu"));
+      expect(menu.getAllByRole("menuitem").map((l) => l.textContent)).toEqual([
+        "Workwork@example.com",
+        "Homehome@example.com, unread: 2",
+      ]);
+      fireEvent.click(menu.getByRole("menuitem", { name: /^Work/ }));
+      await screen.findByRole("heading", { name: "Inbox of ec_1" });
     } finally {
       restore();
     }
@@ -205,11 +224,11 @@ describe("the application", () => {
       mount(<App />);
       await screen.findByRole("heading", { name: "Inbox of ec_1" });
       await waitFor(() =>
-        expect(
-          row()
-            .getAllByRole("link")
-            .map((l) => l.textContent),
-        ).toEqual(["Work", "Home"]),
+        expect(names()).toEqual([
+          "Mail account: Work",
+          "Home",
+          "Other mail accounts: , unread in one",
+        ]),
       );
       fireEvent.click(
         row().getByRole("button", {
@@ -223,11 +242,11 @@ describe("the application", () => {
       ]);
       fireEvent.click(menu.getByRole("menuitem", { name: /^Shop/ }));
       await screen.findByRole("heading", { name: "Inbox of ec_3" });
-      expect(
-        row()
-          .getAllByRole("link")
-          .map((l) => l.textContent),
-      ).toEqual(["Work", "Shop, unread: 2"]);
+      expect(names()).toEqual([
+        "Work",
+        "Mail account: Shop, unread: 2",
+        "Other mail accounts:",
+      ]);
     } finally {
       restore();
     }

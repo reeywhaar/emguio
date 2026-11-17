@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Menu, MenuItem } from "@app/components/Menu";
 
-const menu = (onMove = vi.fn()) =>
+const menu = (onMove = vi.fn(), onElsewhere = vi.fn()) =>
   render(
     <div>
-      <p>elsewhere</p>
+      <p onClick={onElsewhere}>elsewhere</p>
       <Menu name="Folder" label="More">
         {(close) => (
           <MenuItem
@@ -33,8 +33,10 @@ describe("Menu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("closes on Escape and on a press anywhere else", () => {
-    menu();
+  // What a press outside lands on is the page's cover, not what is under it.
+  it("closes on Escape and on a press anywhere else, which reaches nothing", () => {
+    const onElsewhere = vi.fn();
+    menu(vi.fn(), onElsewhere);
     const button = screen.getByRole("button", { name: /More$/ });
     fireEvent.click(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
@@ -42,7 +44,11 @@ describe("Menu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
 
     fireEvent.click(button);
-    fireEvent.pointerDown(screen.getByText("elsewhere"));
+    const veil = document.querySelector("[data-veil]")!;
+    expect(veil.className).toContain("fixed inset-0");
+    fireEvent.click(veil);
     expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.querySelector("[data-veil]")).toBeNull();
+    expect(onElsewhere).not.toHaveBeenCalled();
   });
 });

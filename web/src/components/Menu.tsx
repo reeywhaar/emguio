@@ -13,7 +13,7 @@ const EDGE = 8;
 
 /**
  * A button that opens a short list beside it: below it, for a bar at the top of the screen. It
- * closes on a choice, on Escape, and on a press anywhere else.
+ * closes on a choice, on Escape, and on a press anywhere else, which does nothing else.
  */
 export function Menu({
   name,
@@ -42,7 +42,6 @@ export function Menu({
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
   // Moved back inside the window when its button is near an edge, as on a phone.
@@ -62,22 +61,15 @@ export function Menu({
 
   useEffect(() => {
     if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (!box.current?.contains(e.target as Node)) setOpen(false);
-    };
     const escape = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", escape);
-    };
+    return () => document.removeEventListener("keydown", escape);
   }, [open]);
 
   return (
-    <div ref={box} className="relative min-w-0">
+    <div className="relative min-w-0">
       <PickerButton
         name={name}
         plain={plain}
@@ -91,6 +83,15 @@ export function Menu({
       >
         {label}
       </PickerButton>
+      {open ? (
+        // Over the whole page, under the list: a press outside lands here and nowhere else.
+        <div
+          data-veil
+          aria-hidden="true"
+          className="fixed inset-0 z-30"
+          onClick={() => setOpen(false)}
+        />
+      ) : null}
       {open ? (
         <div
           ref={list}

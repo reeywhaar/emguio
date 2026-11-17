@@ -6,7 +6,8 @@ import { getEmailConfigs } from "@app/api/actions/emailConfigs";
 import { qk } from "@app/api/keys";
 import type { EmailConfig } from "@app/api/types";
 import { Dummy } from "@app/components/Dummy";
-import { OverflowMark, ProfileMark } from "@app/components/icons";
+import { OverflowMark, PlusMark, ProfileMark } from "@app/components/icons";
+import { pickerLook } from "@app/components/PickerButton";
 import { Menu } from "@app/components/Menu";
 import { Wordmark } from "@app/components/Wordmark";
 import { labelOf, pick, turnedOn } from "@app/islands/app/emailConfig";
@@ -42,7 +43,17 @@ export function Header({ route }: { route: Route }) {
       {on && on.length > 0 ? (
         <Accounts configs={on} current={current} />
       ) : (
-        <span className="flex-1" />
+        <span className="flex min-w-0 flex-1 items-center">
+          {configs.data?.length === 0 ? (
+            <Link
+              href={paths.newConfig}
+              className={`${tab} text-muted hover:bg-fill hover:text-fg`}
+            >
+              <PlusMark />
+              Add mail account
+            </Link>
+          ) : null}
+        </span>
       )}
       <Link
         href={paths.settings}
@@ -75,9 +86,9 @@ const tab =
   "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap pointer-coarse:min-h-10";
 
 /**
- * The mail accounts side by side, as many as fit, the open one always among them, and the rest
- * behind a button after them; where not even the open one fits beside it, the open one, which
- * opens the list of them. What fits is measured, since that depends on what they are called; a
+ * The mail accounts side by side, as many as fit, and the rest behind a button after them. The
+ * open one is always among them, and opens the list of them all; where not even it fits beside the
+ * button, it is all there is. What fits is measured, since that depends on what they are called; a
  * copy of the row is drawn unseen to measure it.
  */
 function Accounts({
@@ -110,7 +121,7 @@ function Accounts({
     watch.observe(area);
     watch.observe(all);
     return () => watch.disconnect();
-  }, []);
+  }, [current?.id]);
   const shown =
     sizes && configs.length > 1
       ? fit({
@@ -123,18 +134,29 @@ function Accounts({
   const rest = configs.filter((c) => !shown.includes(c.id));
   return (
     <div ref={room} className="relative flex min-w-0 flex-1 items-center">
-      {/* Each as wide as it can be, the open one's weight and the rest's dot included. */}
+      {/* Each as it is drawn in the row, and the button for the rest with its dot. */}
       <div
         ref={copy}
         aria-hidden="true"
         className="invisible absolute flex w-max items-center"
       >
-        {configs.map((c) => (
-          <span key={c.id} data-config={c.id} className={`${tab} font-medium`}>
-            {labelOf(c)}
-            <Unread config={c} />
-          </span>
-        ))}
+        {configs.map((c) =>
+          c.id === current?.id ? (
+            <span
+              key={c.id}
+              data-config={c.id}
+              className={`${pickerLook(true)} font-medium whitespace-nowrap`}
+            >
+              {labelOf(c)}
+              <Unread config={c} />
+            </span>
+          ) : (
+            <span key={c.id} data-config={c.id} className={tab}>
+              {labelOf(c)}
+              <Unread config={c} />
+            </span>
+          ),
+        )}
         <span data-rest className="flex h-8 items-center gap-1 px-2">
           <OverflowMark />
           <span className="size-2" />
@@ -144,17 +166,20 @@ function Accounts({
         <nav aria-label="Mail accounts" className="flex items-center gap-1">
           {configs
             .filter((c) => shown.includes(c.id))
-            .map((c) => (
-              <Link
-                key={c.id}
-                href={paths.mail(c.id)}
-                aria-current={c.id === current?.id ? "page" : undefined}
-                className={`${tab} ${c.id === current?.id ? "bg-shade font-medium" : "text-muted hover:bg-fill hover:text-fg"}`}
-              >
-                {labelOf(c)}
-                <Unread config={c} />
-              </Link>
-            ))}
+            .map((c) =>
+              c.id === current?.id ? (
+                <ConfigPicker key={c.id} configs={configs} current={c} inRow />
+              ) : (
+                <Link
+                  key={c.id}
+                  href={paths.mail(c.id)}
+                  className={`${tab} text-muted hover:bg-fill hover:text-fg`}
+                >
+                  {labelOf(c)}
+                  <Unread config={c} />
+                </Link>
+              ),
+            )}
           {rest.length > 0 ? <Rest configs={rest} /> : null}
         </nav>
       ) : (
@@ -207,53 +232,54 @@ function Unread({ config }: { config: EmailConfig }) {
 }
 
 /**
- * The mail account open, which opens the list of them beside it to choose another, and is marked
- * while another has unread mail.
+ * The mail account open, which opens the list of them beside it to choose another. On its own it
+ * is marked while another has unread mail; in the row, the others say so themselves.
  */
 function ConfigPicker({
   configs,
   current,
+  inRow = false,
 }: {
   configs: EmailConfig[];
   current: EmailConfig | undefined;
+  inRow?: boolean;
 }) {
   const elsewhere = configs.some((c) => c.id !== current?.id && c.unseen > 0);
   return (
     <Menu
       name="Mail account"
       plain
-      className="max-w-64 font-medium"
+      chevron={!inRow}
+      className={
+        inRow
+          ? "bg-shade font-medium whitespace-nowrap"
+          : "max-w-64 font-medium"
+      }
       label={
-        <>
-          <span className="min-w-0 flex-1 truncate">
-            {current ? labelOf(current) : "Choose one"}
-          </span>
-          {elsewhere ? (
-            <>
-              <span className="sr-only">, unread in another</span>
-              <span
-                aria-hidden="true"
-                className="size-2 shrink-0 rounded-full bg-brand"
-              />
-            </>
-          ) : null}
-        </>
+        inRow && current ? (
+          <>
+            {labelOf(current)}
+            <Unread config={current} />
+          </>
+        ) : (
+          <>
+            <span className="min-w-0 flex-1 truncate">
+              {current ? labelOf(current) : "Choose one"}
+            </span>
+            {elsewhere ? (
+              <>
+                <span className="sr-only">, unread in another</span>
+                <span
+                  aria-hidden="true"
+                  className="size-2 shrink-0 rounded-full bg-brand"
+                />
+              </>
+            ) : null}
+          </>
+        )
       }
     >
-      {(close) => (
-        <>
-          <Items configs={configs} current={current} close={close} />
-          <div role="separator" className="my-1 border-t border-line" />
-          <Link
-            role="menuitem"
-            href={paths.newConfig}
-            className={`${item} text-muted hover:bg-shade hover:text-fg`}
-            onClick={close}
-          >
-            Add mail account
-          </Link>
-        </>
-      )}
+      {(close) => <Items configs={configs} current={current} close={close} />}
     </Menu>
   );
 }
