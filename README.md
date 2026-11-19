@@ -60,6 +60,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
   once. Everything else is read from the mail server when asked for. Message bodies and attachments
   are not stored, except a draft's while it is being written.
 - Dates are ISO, like 2026-11-13, and times are on a 24-hour clock.
+- Backed up, where a backup agent is set: a snapshot of the database goes to it whenever something
+  was chosen in it. See [docs/deploy.md](docs/deploy.md#backups).
 
 ## Install
 

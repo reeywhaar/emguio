@@ -43,6 +43,7 @@ func (s *Store) CreateInvite(ctx context.Context) (*Invite, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("create invite: %w", err)
 	}
+	s.changed()
 	return inv, token, nil
 }
 
@@ -111,6 +112,7 @@ func (s *Store) AcceptInvite(ctx context.Context, token, username, password stri
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("accept invite: %w", err)
 	}
+	s.changed()
 	return u, nil
 }
 

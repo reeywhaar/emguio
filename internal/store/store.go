@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -21,8 +22,7 @@ import (
 	"emguio/internal/store/migrations"
 )
 
-// FileName is the one database. Message bodies and attachments live in it too, which is what
-// makes an archive the whole instance and a restore one file.
+// FileName is the one database, which is what makes a backup one file and a restore one too.
 const FileName = "emguio.db"
 
 // Store holds two pools over the same file.
@@ -49,6 +49,9 @@ type Store struct {
 
 	// arrived wakes whatever tells devices about new mail.
 	arrived chan struct{}
+
+	// changes counts what people wrote down, which a backup is taken for; see changed.
+	changes atomic.Uint64
 }
 
 const readers = 4

@@ -35,6 +35,10 @@ const (
 	// AllowNetworksEnv names private networks emguio may connect to anyway, for a mail server
 	// on the same LAN: addresses or CIDR ranges, separated by commas.
 	AllowNetworksEnv = "EMGUIO_ALLOW_NETWORKS"
+
+	// BackupURLEnv is a backup agent's POST endpoint, whole address rather than a host: the path
+	// is the agent's to name. Unset, nothing is backed up — see docs/deploy.md.
+	BackupURLEnv = "EMGUIO_BACKUP_URL"
 )
 
 // Defaults for everything that has one.
@@ -55,6 +59,9 @@ type Config struct {
 
 	// AllowNetworks are dialed although they are private.
 	AllowNetworks []netip.Prefix
+
+	// BackupURL is where an archive is posted, or empty for no backups at all.
+	BackupURL string
 }
 
 // Link builds an absolute URL into this instance.
@@ -89,6 +96,7 @@ func Load() (*Config, error) {
 	if cfg.SecretKey, err = parseSecretKey(os.Getenv(SecretKeyEnv)); err != nil {
 		return nil, err
 	}
+	cfg.BackupURL = strings.TrimSpace(os.Getenv(BackupURLEnv))
 	if cfg.AllowNetworks, err = parseNetworks(os.Getenv(AllowNetworksEnv)); err != nil {
 		return nil, err
 	}

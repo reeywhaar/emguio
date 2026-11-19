@@ -113,5 +113,6 @@ func (s *Store) SetPushSettings(ctx context.Context, userID string, p PushSettin
 		return NotFound("There is no such user.")
 	}
 	s.wake()
+	s.changed()
 	return nil
 }

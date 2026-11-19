@@ -792,5 +792,9 @@ func (s *Store) SetMailboxOrder(ctx context.Context, userID, configID string, or
 			return fmt.Errorf("mailbox order: %w", err)
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.changed()
+	return nil
 }

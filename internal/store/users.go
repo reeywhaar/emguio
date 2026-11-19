@@ -55,6 +55,7 @@ func (s *Store) CreateUser(ctx context.Context, username, password string) (*Use
 	if err := insertUser(ctx, s.writer, u, hash); err != nil {
 		return nil, err
 	}
+	s.changed()
 	return u, nil
 }
 

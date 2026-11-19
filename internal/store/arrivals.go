@@ -60,6 +60,7 @@ func (s *Store) SetNotifications(ctx context.Context, userID, configID, notify s
 	}
 	// What is waiting may be due now, or not at all.
 	s.wake()
+	s.changed()
 	return nil
 }
 

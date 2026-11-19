@@ -224,6 +224,7 @@ func (s *Store) CreateEmailConfig(ctx context.Context, userID string, in EmailCo
 	}
 	out := shown(id, userID, in, now, now)
 	out.Notify, out.DigestEvery = NotifyNow, 60
+	s.changed()
 	return out, nil
 }
 
@@ -286,6 +287,7 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 	if !moved {
 		out.SyncedAt, out.SyncError = r.SyncedAt, r.SyncError
 	}
+	s.changed()
 	return out, nil
 }
 
@@ -301,6 +303,7 @@ func (s *Store) DeleteEmailConfig(ctx context.Context, userID, id string) error 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return NotFound("There is no such mail account.")
 	}
+	s.changed()
 	return nil
 }
 
@@ -584,6 +587,7 @@ func (s *Store) SetArchiveMailbox(ctx context.Context, userID, configID, mailbox
 		`UPDATE email_configs SET archive_mailbox = ? WHERE id = ? AND user_id = ?`, chosen, configID, userID); err != nil {
 		return fmt.Errorf("set archive mailbox: %w", err)
 	}
+	s.changed()
 	return nil
 }
 
@@ -599,6 +603,7 @@ func (s *Store) SetEmailConfigReading(ctx context.Context, userID, configID stri
 	if n, _ := res.RowsAffected(); n == 0 {
 		return NotFound("There is no such mail account.")
 	}
+	s.changed()
 	return nil
 }
 
@@ -613,6 +618,7 @@ func (s *Store) SetEmailConfigOff(ctx context.Context, userID, configID string, 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return NotFound("There is no such mail account.")
 	}
+	s.changed()
 	return nil
 }
 
@@ -659,5 +665,9 @@ func (s *Store) SetEmailConfigOrder(ctx context.Context, userID string, order []
 			return fmt.Errorf("email config order: %w", err)
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.changed()
+	return nil
 }

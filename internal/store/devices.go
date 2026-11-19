@@ -54,6 +54,7 @@ func (s *Store) VAPIDKeys(ctx context.Context) (*ecdsa.PrivateKey, []byte, error
 		 ON CONFLICT (singleton) DO NOTHING`, der, point.Bytes(), unix(s.Now())); err != nil {
 		return nil, nil, fmt.Errorf("store vapid key: %w", err)
 	}
+	s.changed()
 	return s.VAPIDKeys(ctx)
 }
 
@@ -140,6 +141,7 @@ func (s *Store) RegisterDevice(ctx context.Context, userID string, in DeviceInpu
 		return nil, fmt.Errorf("register device: %w", err)
 	}
 	d.CreatedAt = fromUnix(created)
+	s.changed()
 	return d, nil
 }
 
@@ -185,6 +187,7 @@ func (s *Store) DeleteDevice(ctx context.Context, userID, id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return NotFound("There is no such device.")
 	}
+	s.changed()
 	return nil
 }
 

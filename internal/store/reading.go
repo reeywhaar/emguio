@@ -42,5 +42,6 @@ func (s *Store) SetReading(ctx context.Context, userID string, r Reading) error 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return NotFound("There is no such user.")
 	}
+	s.changed()
 	return nil
 }

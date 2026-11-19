@@ -17,6 +17,7 @@ import (
 
 	"emguio/internal/api"
 	"emguio/internal/app"
+	"emguio/internal/backup"
 	"emguio/internal/config"
 	"emguio/internal/connect"
 	"emguio/internal/mirror"
@@ -119,6 +120,7 @@ func serveCmd() *cobra.Command {
 			background.Go(func() { sweep.Run(ctx, st, log) })
 			background.Go(func() { reader.Run(ctx) })
 			background.Go(func() { pusher.Run(ctx) })
+			background.Go(func() { backup.Run(ctx, st, cfg.BackupURL, cfg.DataDir, log) })
 
 			errc := make(chan error, 1)
 			go func() {

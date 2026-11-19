@@ -14,6 +14,7 @@ ghcr.io/reeywhaar/emguio:latest
 | `EMGUIO_DATA_DIR` | `/data` | Where `emguio.db` lives. Fixed in the image; a variable for local runs |
 | `EMGUIO_SECRET_KEY` | *required* | 32 random bytes, base64. Seals the passwords of email configs |
 | `EMGUIO_ALLOW_NETWORKS` | — | Private addresses or ranges emguio may connect to, comma-separated |
+| `EMGUIO_BACKUP_URL` | — | A backup agent's `POST` address; see [Backups](#backups). Unset, nothing is backed up |
 | `EMGUIO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; see [Logs](#logs) |
 
 **There is no config file.** What an operator adjusts once the process is running belongs in
@@ -88,6 +89,70 @@ forgotten `-v` is a startup error naming the flag.
 
 **emguio never creates the directory.** Mounting it is the operator's statement about where the
 data lives, and inventing one would be emguio guessing at that.
+
+## Backups
+
+Set `EMGUIO_BACKUP_URL` to a backup agent and emguio posts it a gzipped `VACUUM INTO` snapshot
+of the database. Leave it unset and emguio takes no backups at all. The snapshot is written to a
+`backup-*` folder in the data directory and removed once sent; one left by a process killed
+mid-pass is removed on the next start.
+
+```
+emguio ──POST archive──▶ agent ──▶ wherever the agent was told
+       (no credential)    (holds the token, names the file, prunes old ones)
+```
+
+**emguio holds no credential, no provider, no bucket and no retention policy.** It decides when
+to back up and what goes in the archive; everything after that belongs to the agent. A
+compromised emguio cannot read, overwrite or delete a single existing backup: it has nothing to
+authenticate with and nothing to point at. It can only hand over one more archive.
+
+```yaml
+services:
+  emguio:
+    image: ghcr.io/reeywhaar/emguio:latest
+    environment:
+      EMGUIO_PUBLIC_URL: https://mail.example.com
+      EMGUIO_SECRET_KEY: ${EMGUIO_SECRET_KEY}
+      EMGUIO_BACKUP_URL: http://backup:8080/backup
+    volumes: [emguio-data:/data]
+    ports: ["8080:80"]
+
+  backup:
+    # The agent holds the token and decides where archives end up.
+    image: ghcr.io/reeywhaar/backio-agent:latest
+    environment:
+      # …destination and credential, which are the agent's business
+
+volumes:
+  emguio-data:
+```
+
+### A copy goes out when somebody chose something, and at no other time
+
+The loop looks every half hour and sends only when something a person chose was written since
+the last archive the agent took: a user or an invitation, a mail account or anything it is set
+to, a folder's notifications or order, a device, the instance's push keys, the notification and
+reading settings. A restart sends one, because a process that has just started may be on a
+volume nobody has a copy of yet.
+
+Most of what emguio writes does not count. The mail it keeps is a copy of the mail servers', read
+again after a restore; jobs are done and gone; a draft is on the server's Drafts within seconds;
+a sign-in is the process noticing somebody. Counting those would send an archive every half hour
+for as long as anybody's mail arrives.
+
+There is no heartbeat: an instance nobody has changed sends nothing, and whether it is running is
+`/healthz`'s to say.
+
+### Restoring
+
+Stop the container, extract the archive into the data directory, start it again with the same
+`EMGUIO_SECRET_KEY`. Everybody stays signed in, because sessions are in the same file, and the
+mail is read again from the servers. Without the key the accounts are kept and each asks for its
+passwords again.
+
+The archive holds every password hash and every device's subscription, and the mail passwords
+sealed: worth the same care as the directory itself, and kept apart from the key.
 
 ## Logs
 
