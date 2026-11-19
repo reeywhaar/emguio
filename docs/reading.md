@@ -46,6 +46,18 @@ server that names none, or names one other than the one wanted. Saved with
 `PUT /api/email-configs/{id}/archive` and nothing else about the account, so its sessions go on as
 they are; a folder the server later drops goes back to the server's.
 
+## Archiving or deleting can mark mail read first
+
+Unread mail put away stays unread on the server, and every other client counts it. So a user can
+choose to have it marked read as it goes: when it is archived, and when it is deleted to Trash,
+each on its own. The choice is the user's, in Settings under Reading, and each mail account can
+follow it or choose for itself on its card: a newsletter account read as it is thrown away, a work
+account left as it was.
+
+The page applies it, not the mirror: a `seen` job, then the move, in the one request of jobs, so
+the message is read on the server before it reaches the folder, and the folder counts it read from
+the start. Deleting for good, where there is no Trash, has nothing to mark.
+
 A folder is made from New, last in the folder list, which opens it once made, and from the folder
 picker's New folder…, which then moves to it: a name, and where it goes — at the top of the user's
 own folders, under the server's personal namespace (`INBOX.` on servers that keep everything under

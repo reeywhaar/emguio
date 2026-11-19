@@ -24,6 +24,9 @@ const getMailboxes = vi.fn();
 const getDevices = vi.fn();
 const deleteDevicesById = vi.fn();
 const postDevicesTest = vi.fn();
+const getReading = vi.fn();
+const putReading = vi.fn();
+const putConfigReading = vi.fn();
 const getPushSettings = vi.fn();
 const putPushSettings = vi.fn();
 
@@ -41,7 +44,13 @@ vi.mock("@app/api/actions/push", () => ({
   getPushKey: vi.fn(),
   postDevices: vi.fn(),
 }));
+vi.mock("@app/api/actions/reading", () => ({
+  getReading: () => getReading(),
+  putReading: (body: unknown) => putReading(body),
+}));
 vi.mock("@app/api/actions/emailConfigs", () => ({
+  putEmailConfigsByIdReading: (id: string, body: unknown) =>
+    putConfigReading(id, body),
   getEmailConfigs: () => getEmailConfigs(),
   deleteEmailConfigsById: (id: string) => deleteEmailConfigsById(id),
   postEmailConfigsByIdTest: (id: string, body: unknown) =>
@@ -113,7 +122,15 @@ const work: EmailConfig = {
   notify: "now",
   digest_every: 60,
   off: false,
+  read_on_archive: null,
+  read_on_trash: null,
 };
+
+/** The Change of the Settings section headed so. */
+const changeIn = (heading: string) =>
+  within(
+    screen.getByRole("heading", { name: heading }).closest("section")!,
+  ).getByRole("button", { name: "Change" });
 
 /** A paragraph whose whole text is this, however it is split into parts. */
 const line = (text: string) =>
@@ -137,6 +154,11 @@ beforeEach(() => {
   getMailboxes.mockResolvedValue(boxes);
   getDevices.mockResolvedValue([]);
   getPushSettings.mockResolvedValue({ silent: false, quiet: null });
+  getReading.mockResolvedValue({
+    read_on_archive: false,
+    read_on_trash: false,
+  });
+  putReading.mockImplementation(async (body: unknown) => body);
   putPushSettings.mockImplementation(async (body: unknown) => body);
 });
 afterEach(() => vi.clearAllMocks());
@@ -524,12 +546,63 @@ describe("settings", () => {
     expect(open.queryByText(/^from/)).toBeNull();
   });
 
+  it("chooses for every account whether archived and deleted mail is marked read", async () => {
+    mount(<Settings editing={null} />);
+    const section = within(
+      (await screen.findByRole("heading", { name: "Reading" })).closest(
+        "section",
+      )!,
+    );
+    await section.findByText("Archiving and deleting leave mail as it is");
+    fireEvent.click(section.getByRole("button", { name: "Change" }));
+    const dialog = within(await screen.findByRole("form", { name: "Reading" }));
+    fireEvent.click(
+      dialog.getByRole("switch", { name: "Mark read when deleting" }),
+    );
+    expect(putReading).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(putReading).toHaveBeenCalledWith({
+        read_on_archive: false,
+        read_on_trash: true,
+      }),
+    );
+    await section.findByText("Deleted mail is marked read");
+  });
+
+  // Its own choice, or as set for all, which the choice says.
+  it("lets an account choose otherwise", async () => {
+    putConfigReading.mockImplementation(async (_id: string, body: object) => ({
+      ...work,
+      ...body,
+    }));
+    mount(<Settings editing={null} />);
+    const open = within(await screen.findByRole("article"));
+    const archived = open.getByRole<HTMLSelectElement>("combobox", {
+      name: "When archived",
+    });
+    await waitFor(() =>
+      expect(archived.options[0]!.textContent).toBe(
+        "As set for all: leave as it is",
+      ),
+    );
+    expect(archived.value).toBe("");
+    fireEvent.change(archived, { target: { value: "read" } });
+    await waitFor(() =>
+      expect(putConfigReading).toHaveBeenCalledWith("ec_1", {
+        read_on_archive: true,
+        read_on_trash: null,
+      }),
+    );
+    await waitFor(() => expect(archived.value).toBe("read"));
+  });
+
   // In a line on the page, changed in a dialog and saved together.
   it("chooses no sound and quiet hours for every notification", async () => {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     mount(<Settings editing={null} />);
     await line("With sound · No quiet hours");
-    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.click(changeIn("Notifications"));
     const dialog = within(
       await screen.findByRole("form", { name: "Sound and quiet hours" }),
     );
@@ -562,7 +635,7 @@ describe("settings", () => {
     });
     mount(<Settings editing={null} />);
     await line("With sound · Quiet hours 22:30–06:10 in Pacific/Chatham");
-    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.click(changeIn("Notifications"));
     const dialog = within(
       await screen.findByRole("form", { name: "Sound and quiet hours" }),
     );

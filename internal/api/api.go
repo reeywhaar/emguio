@@ -147,6 +147,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("PUT /api/email-configs/{id}/archive", s.requireSession(s.putArchive))
 	s.handle("PUT /api/email-configs/{id}/notifications", s.requireSession(s.putNotifications))
 	s.handle("PUT /api/email-configs/{id}/off", s.requireSession(s.putOff))
+	s.handle("PUT /api/email-configs/{id}/reading", s.requireSession(s.putConfigReading))
 	s.handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
 	s.handle("POST /api/email-configs/{id}/sync", s.requireSession(s.awake(s.syncEmailConfig)))
 	s.handle("POST /api/email-configs/{id}/send", s.requireSession(s.awake(s.sendMessage)))
@@ -174,6 +175,9 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("GET /api/transfers", s.requireSession(s.listTransfers))
 	s.handle("POST /api/transfers/{transfer}/cancel", s.requireSession(s.cancelTransfer))
 	s.handle("DELETE /api/transfers/{transfer}", s.requireSession(s.dismissTransfer))
+
+	s.handle("GET /api/reading", s.requireSession(s.reading))
+	s.handle("PUT /api/reading", s.requireSession(s.putReading))
 
 	s.handle("GET /api/push/key", s.requireSession(s.pushKey))
 	s.handle("GET /api/push/settings", s.requireSession(s.pushSettings))

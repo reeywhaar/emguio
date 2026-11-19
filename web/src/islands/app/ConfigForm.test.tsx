@@ -52,6 +52,8 @@ const saved: EmailConfig = {
   notify: "now",
   digest_every: 60,
   off: false,
+  read_on_archive: null,
+  read_on_trash: null,
 };
 
 beforeEach(() => {

@@ -79,6 +79,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
   partURL: (id: string, mailbox: string, message: string, section: string) =>
     `/parts/${id}/${mailbox}/${message}/${section}`,
 }));
+const getReading = vi.fn();
+vi.mock("@app/api/actions/reading", () => ({ getReading: () => getReading() }));
 vi.mock("@app/api/actions/jobs", () => ({
   postJobs: (jobs: JobDraft[]) => {
     postJobsRequest(jobs);
@@ -120,6 +122,8 @@ const work: EmailConfig = {
   notify: "now",
   digest_every: 60,
   off: false,
+  read_on_archive: null,
+  read_on_trash: null,
 };
 
 const box = (
@@ -171,6 +175,10 @@ beforeEach(() => {
   window.history.pushState({}, "", "/c/ec_1");
   getEmailConfigs.mockResolvedValue([work]);
   getEmailConfigsByIdMailboxes.mockResolvedValue(boxes);
+  getReading.mockResolvedValue({
+    read_on_archive: false,
+    read_on_trash: false,
+  });
   getMessages.mockResolvedValue({
     messages: [
       message("m_1", "Quarterly numbers", {
@@ -1138,6 +1146,49 @@ describe("the mail view", () => {
       await waitFor(() => expect(postJobsRequest).toHaveBeenCalledTimes(1));
       expect(postJobsRequest.mock.calls[0]![0]).toEqual([
         expect.objectContaining({ message: "m_1", kind: "seen", value: true }),
+      ]);
+    });
+
+    // As set for all accounts: the unread are asked read, then all of them moved.
+    it("marks a selection read before archiving it, where that is chosen", async () => {
+      getReading.mockResolvedValue({
+        read_on_archive: true,
+        read_on_trash: false,
+      });
+      getEmailConfigsByIdMailboxes.mockResolvedValue([
+        ...boxes,
+        box("mb_archive", ["Archive"], "archive"),
+      ]);
+      getMessages.mockResolvedValue({
+        messages: [
+          message("m_1", "First", { seen: false }),
+          message("m_2", "Second"),
+        ],
+      });
+      postJob.mockImplementation(take);
+      await start();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+      await waitFor(() =>
+        expect(
+          screen
+            .getByRole("button", { name: "Archive" })
+            .hasAttribute("disabled"),
+        ).toBe(false),
+      );
+      // The setting is read before the press.
+      await waitFor(() => expect(getReading).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+      await waitFor(() => expect(postJobsRequest).toHaveBeenCalledTimes(1));
+      expect(
+        (postJobsRequest.mock.calls[0]![0] as JobDraft[]).map((j) => [
+          j.message,
+          j.kind,
+          j.kind === "seen" ? j.value : j.seen,
+        ]),
+      ).toEqual([
+        ["m_1", "seen", true],
+        ["m_1", "move", true],
+        ["m_2", "move", true],
       ]);
     });
 

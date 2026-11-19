@@ -150,6 +150,7 @@ An email config:
 | `notify` | How its new mail is told to the user's devices: `now`, each message as it arrives; `digest`, gathered; or `off`. `now` for a new one. See below. |
 | `digest_every` | How many minutes a digest gathers: 30, 60, 120 or 240. 60 for a new one. |
 | `off` | Whether it is turned off: kept, but neither read nor told about. `false` for a new one. See below. |
+| `read_on_archive`, `read_on_trash` | Whether its mail is marked read before it is archived, and before it is deleted; `null`, as for a new one, follows the user's reading settings. See below. |
 
 No answer ever carries a password.
 
@@ -231,6 +232,26 @@ Gmail's All Mail. Only this changes: the config's connections go on as they are.
 server later drops goes back to the server's. Answers `200` with the email config. A folder that
 is not the config's answers `404 not_found`, a malformed id or one that only holds folders
 `400 invalid`.
+
+```
+PUT /api/email-configs/{id}/reading
+```
+
+Chooses whether the email config's mail is marked read before it is archived, and before it is
+deleted: `{"read_on_archive": true, "read_on_trash": null}`, each `true`, `false`, or `null` to
+follow the user's, below. Both are set at once, and one left out is `null`. Answers `200` with the
+email config.
+
+```
+GET /api/reading
+PUT /api/reading
+```
+
+The user's reading settings, for every email config that does not choose for itself:
+`{"read_on_archive": false, "read_on_trash": false}`, both `false` for a new user. `PUT` takes
+the same and answers with it. emguio's own pages apply them: an unread message archived or deleted
+is asked read and then moved, in one request of jobs. A program moving mail asks for what it wants
+itself.
 
 ```
 PUT /api/email-configs/{id}/notifications

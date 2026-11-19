@@ -20,6 +20,7 @@ import {
   MovePicker,
   targets,
   useArchiveTo,
+  useReadOn,
 } from "@app/islands/app/Actions";
 import { useAsk } from "@app/islands/app/ask";
 import { listWithPending, usePending } from "@app/islands/app/pending";
@@ -61,6 +62,7 @@ export function Selection({
   const chosen = rows.filter((m) => selected.has(m.id));
   const all = rows.length > 0 && chosen.length === rows.length;
   const to = targets(boxes, mailbox, useArchiveTo(config));
+  const readOn = useReadOn(config);
   const none = chosen.length === 0;
 
   const job = (
@@ -78,22 +80,29 @@ export function Selection({
   });
   // The rows moved away had focus.
   const allBox = useRef<HTMLInputElement | null>(null);
-  const moveAll = (dest: Mailbox | null, elsewhere = false) => {
-    ask(
-      chosen.map((m) =>
+  const moveAll = (dest: Mailbox | null, elsewhere = false, read = false) => {
+    // The unread read on the server first, all of them, then every move: so each arrives read.
+    const unread = read ? chosen.filter((m) => !m.seen) : [];
+    ask([
+      ...unread.map((m) => job(m, { kind: "seen", value: true, seen: false })),
+      ...chosen.map((m) =>
         job(
           m,
           dest
-            ? { kind: elsewhere ? "transfer" : "move", target: dest.id }
+            ? {
+                kind: elsewhere ? "transfer" : "move",
+                target: dest.id,
+                ...(read ? { seen: true } : {}),
+              }
             : { kind: "delete" },
         ),
       ),
-    );
+    ]);
     change(new Set());
     allBox.current?.focus();
   };
   const remove = async () => {
-    if (to.trash) return moveAll(to.trash);
+    if (to.trash) return moveAll(to.trash, false, readOn.trash);
     const n = chosen.length;
     const yes = await confirm({
       title:
@@ -114,7 +123,9 @@ export function Selection({
   const unread = chosen.some((m) => !m.seen);
   const unstarred = chosen.some((m) => !m.flagged);
   const act = {
-    archive: to.archive ? () => moveAll(to.archive!) : undefined,
+    archive: to.archive
+      ? () => moveAll(to.archive!, false, readOn.archive)
+      : undefined,
     remove,
     spam: to.spam ? () => moveAll(to.spam!) : undefined,
     notSpam: to.notSpam ? () => moveAll(to.notSpam!) : undefined,

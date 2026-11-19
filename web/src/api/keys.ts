@@ -12,6 +12,8 @@ export const qk = {
   emailConfigs: ["email-configs"] as const,
   /** The browsers that show the user's notifications. */
   devices: ["devices"] as const,
+  /** Whether mail is marked read as it is archived or deleted, for every config. */
+  reading: ["reading"] as const,
   /** Whether notifications come with a sound, and the hours they do not come. */
   pushSettings: ["push-settings"] as const,
   /** Until when a config's outgoing server holds mail to send later. */

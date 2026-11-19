@@ -95,6 +95,8 @@ const workConfig = {
   notify: "now",
   digest_every: 60,
   off: false,
+  read_on_archive: null,
+  read_on_trash: null,
 };
 
 const box = (id: string, special_use: Mailbox["special_use"]): Mailbox => ({
@@ -478,6 +480,22 @@ describe("the reading pane", () => {
     );
     await waitFor(() =>
       expect(window.location.pathname).toBe("/c/ec_1/mb_inbox"),
+    );
+  });
+
+  // The account's own choice: marked unread again, it is read on the server before it moves.
+  it("marks a message read before deleting it, where its account chooses so", async () => {
+    getConfigs.mockResolvedValue([{ ...workConfig, read_on_trash: true }]);
+    open();
+    fireEvent.click(await ready("Mark as unread"));
+    await ready("Mark as read");
+    postJob.mockClear();
+    fireEvent.click(await ready("Delete"));
+    await waitFor(() =>
+      expect(asked().map((j) => [j.kind, j.value, j.target, j.seen])).toEqual([
+        ["seen", true, "", false],
+        ["move", false, "mb_trash", true],
+      ]),
     );
   });
 

@@ -33,6 +33,7 @@ import {
   Notifications,
   notifiesOf,
 } from "@app/islands/app/Notifications";
+import { Reading, ReadOn } from "@app/islands/app/Reading";
 import { Results } from "@app/islands/app/Results";
 import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
@@ -98,6 +99,7 @@ export function Settings({
           />
         )}
       </section>
+      <Reading />
       <Notifications />
       <Account />
       <p className="text-sm text-muted">
@@ -425,6 +427,12 @@ function Details({
         </Row>
         <Row label="Archive to">
           <ArchiveTo config={config} />
+        </Row>
+        <Row label="When archived">
+          <ReadOn config={config} which="read_on_archive" />
+        </Row>
+        <Row label="When deleted">
+          <ReadOn config={config} which="read_on_trash" />
         </Row>
         <Row label="Notify">
           <Delivery config={config} />

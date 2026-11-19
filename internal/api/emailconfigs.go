@@ -46,23 +46,29 @@ type emailConfigJSON struct {
 	DigestEvery int    `json:"digest_every"`
 	// Off is its being turned off: kept, but neither read nor told about.
 	Off bool `json:"off"`
+	// ReadOnArchive and ReadOnTrash are whether its mail is marked read before it is archived or
+	// deleted, null where it follows the user's reading settings.
+	ReadOnArchive *bool `json:"read_on_archive"`
+	ReadOnTrash   *bool `json:"read_on_trash"`
 }
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
 	out := emailConfigJSON{
-		ID:          c.ID,
-		Name:        c.Name,
-		Email:       c.Email,
-		SenderName:  c.SenderName,
-		Incoming:    serverJSON(c.Incoming),
-		CreatedAt:   c.CreatedAt.Unix(),
-		UpdatedAt:   c.UpdatedAt.Unix(),
-		SyncedAt:    unixOrNil(c.SyncedAt),
-		SyncError:   c.SyncError,
-		Unseen:      c.Unseen,
-		Notify:      c.Notify,
-		DigestEvery: c.DigestEvery,
-		Off:         c.Off,
+		ID:            c.ID,
+		Name:          c.Name,
+		Email:         c.Email,
+		SenderName:    c.SenderName,
+		Incoming:      serverJSON(c.Incoming),
+		CreatedAt:     c.CreatedAt.Unix(),
+		UpdatedAt:     c.UpdatedAt.Unix(),
+		SyncedAt:      unixOrNil(c.SyncedAt),
+		SyncError:     c.SyncError,
+		Unseen:        c.Unseen,
+		Notify:        c.Notify,
+		DigestEvery:   c.DigestEvery,
+		Off:           c.Off,
+		ReadOnArchive: c.ReadOnArchive,
+		ReadOnTrash:   c.ReadOnTrash,
 	}
 	if c.ArchiveMailbox != "" {
 		out.ArchiveMailbox = &c.ArchiveMailbox
@@ -304,6 +310,59 @@ func (s *Server) putOff(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Notify(u.ID)
 	writeJSON(w, http.StatusOK, toJSON(c))
+}
+
+type configReadingBody struct {
+	ReadOnArchive *bool `json:"read_on_archive"`
+	ReadOnTrash   *bool `json:"read_on_trash"`
+}
+
+// putConfigReading chooses whether an email config marks its mail read before it is archived,
+// and before it is deleted, or follows the user's. See docs/reading.md.
+func (s *Server) putConfigReading(w http.ResponseWriter, r *http.Request) {
+	var body configReadingBody
+	if !decode(w, r, &body) {
+		return
+	}
+	u := userOf(r)
+	if err := s.store.SetEmailConfigReading(r.Context(), u.ID, r.PathValue("id"), body.ReadOnArchive, body.ReadOnTrash); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	c, err := s.store.EmailConfig(r.Context(), u.ID, r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toJSON(c))
+}
+
+type readingJSON struct {
+	ReadOnArchive bool `json:"read_on_archive"`
+	ReadOnTrash   bool `json:"read_on_trash"`
+}
+
+func (s *Server) reading(w http.ResponseWriter, r *http.Request) {
+	got, err := s.store.Reading(r.Context(), userOf(r).ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, readingJSON(got))
+}
+
+// putReading chooses, for every email config that does not choose for itself, whether mail is
+// marked read before it is archived, and before it is deleted.
+func (s *Server) putReading(w http.ResponseWriter, r *http.Request) {
+	var body readingJSON
+	if !decode(w, r, &body) {
+		return
+	}
+	if err := s.store.SetReading(r.Context(), userOf(r).ID, store.Reading(body)); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // offSentence is what a request that would reach a turned-off account's mail server is told.

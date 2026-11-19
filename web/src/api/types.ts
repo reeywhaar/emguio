@@ -44,7 +44,16 @@ export type EmailConfig = {
   digest_every: number;
   /** Turned off: kept, but neither read nor told about. */
   off: boolean;
+  /** Its mail marked read before it is archived, and before it is deleted; null follows Reading. */
+  read_on_archive: boolean | null;
+  read_on_trash: boolean | null;
 };
+
+/**
+ * Whether mail is marked read before it is archived, and before it is deleted, in every config
+ * that does not choose for itself.
+ */
+export type Reading = { read_on_archive: boolean; read_on_trash: boolean };
 
 /** Each message as it arrives, gathered into a digest, or not at all. */
 export type Notify = "now" | "digest" | "off";

@@ -16,6 +16,7 @@ import {
   getEmailConfigs,
   getEmailConfigsByIdMailboxes,
 } from "@app/api/actions/emailConfigs";
+import { getReading } from "@app/api/actions/reading";
 import { qk } from "@app/api/keys";
 import { labelOf, turnedOn } from "@app/islands/app/emailConfig";
 import type {
@@ -44,6 +45,26 @@ import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
 import { SIDE_BY_SIDE } from "@app/media";
+
+/**
+ * Whether a config's mail is marked read before it is archived, and before it is deleted: its own
+ * choice, or else the user's. See docs/reading.md.
+ */
+export function useReadOn(config: string): {
+  archive: boolean;
+  trash: boolean;
+} {
+  const configs = useQuery({
+    queryKey: qk.emailConfigs,
+    queryFn: getEmailConfigs,
+  });
+  const reading = useQuery({ queryKey: qk.reading, queryFn: getReading });
+  const c = configs.data?.find((each) => each.id === config);
+  return {
+    archive: c?.read_on_archive ?? reading.data?.read_on_archive ?? false,
+    trash: c?.read_on_trash ?? reading.data?.read_on_trash ?? false,
+  };
+}
 
 /**
  * Where each action sends a message: the folders the server says are for archiving, for
@@ -124,24 +145,24 @@ export function Actions({
   const pending = usePending(config);
 
   const asked = useAsk(config);
+  const readOn = useReadOn(config);
+  const draft = (job: Pick<JobDraft, "kind"> & Partial<JobDraft>) => ({
+    email_config: config,
+    mailbox: mailbox.id,
+    message,
+    value: false,
+    target: "",
+    seen: m?.seen ?? true,
+    label: m?.subject,
+    ...job,
+  });
   const ask = (job: Pick<JobDraft, "kind"> & Partial<JobDraft>) =>
-    asked([
-      {
-        email_config: config,
-        mailbox: mailbox.id,
-        message,
-        value: false,
-        target: "",
-        seen: m?.seen ?? true,
-        label: m?.subject,
-        ...job,
-      },
-    ]);
+    asked([draft(job)]);
 
   // On the press: the pending layer takes the message out of the list. Beside the list, the pane
   // goes on to the one below it as drawn, or else the one above, or else the folder; in the
   // list's place, back to the list.
-  const moveTo = (dest: Mailbox | null, elsewhere = false) => {
+  const moveTo = (dest: Mailbox | null, elsewhere = false, read = false) => {
     const beside = window.matchMedia(SIDE_BY_SIDE).matches;
     const drawn = listWithPending(
       client
@@ -153,11 +174,20 @@ export function Actions({
     const at = drawn.findIndex((x) => x.id === message);
     const neighbor =
       beside && at >= 0 ? (drawn[at + 1] ?? drawn[at - 1]) : undefined;
-    ask(
-      dest
-        ? { kind: elsewhere ? "transfer" : "move", target: dest.id }
-        : { kind: "delete" },
-    );
+    // Read on the server before it moves, so it arrives read.
+    const marked = read && m !== undefined && !m.seen;
+    asked([
+      ...(marked ? [draft({ kind: "seen", value: true, seen: false })] : []),
+      draft(
+        dest
+          ? {
+              kind: elsewhere ? "transfer" : "move",
+              target: dest.id,
+              ...(marked ? { seen: true } : {}),
+            }
+          : { kind: "delete" },
+      ),
+    ]);
     go(paths.mail(config, mailbox.id, neighbor?.id, q));
   };
 
@@ -195,7 +225,7 @@ export function Actions({
   };
   const remove = async () => {
     if (scheduled) return cancel();
-    if (to.trash) return moveTo(to.trash);
+    if (to.trash) return moveTo(to.trash, false, readOn.trash);
     const yes = await confirm({
       title: "Delete this message for good?",
       message:
@@ -214,7 +244,9 @@ export function Actions({
   const act = scheduled
     ? { remove }
     : {
-        archive: to.archive ? () => moveTo(to.archive!) : undefined,
+        archive: to.archive
+          ? () => moveTo(to.archive!, false, readOn.archive)
+          : undefined,
         remove,
         spam: to.spam ? () => moveTo(to.spam!) : undefined,
         notSpam: to.notSpam ? () => moveTo(to.notSpam!) : undefined,

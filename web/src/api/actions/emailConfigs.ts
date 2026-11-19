@@ -108,6 +108,16 @@ export const putEmailConfigsByIdOff = (id: string, off: boolean) =>
     body: { off },
   });
 
+/** Chooses whether a config marks mail read as it is archived or deleted; null follows Reading. */
+export const putEmailConfigsByIdReading = (
+  id: string,
+  body: Pick<EmailConfig, "read_on_archive" | "read_on_trash">,
+) =>
+  request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}/reading`, {
+    method: "PUT",
+    body,
+  });
+
 /** Chooses how a config's new mail is told, and turns folders' notifications on or off. */
 export const putEmailConfigsByIdNotifications = (
   id: string,
