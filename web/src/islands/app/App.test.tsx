@@ -210,6 +210,23 @@ describe("the application", () => {
     }
   });
 
+  // Settings has no account open: each one in the row goes to its mail, a lone one too.
+  it("goes to an account's mail from the header in Settings", async () => {
+    getEmailConfigs.mockResolvedValue([config("ec_1", "Work")]);
+    const restore = measuring(1000);
+    try {
+      window.history.replaceState(null, "", "/settings");
+      mount(<App />);
+      await screen.findByRole("navigation", { name: "Mail accounts" });
+      expect(names()).toEqual(["Work"]);
+      fireEvent.click(row().getByRole("link", { name: "Work" }));
+      await screen.findByRole("heading", { name: "Inbox of ec_1" });
+      screen.getByRole("button", { name: /^Mail account:\s*Work$/ });
+    } finally {
+      restore();
+    }
+  });
+
   // The open one and as many as fit beside a button for the rest; the open one stays in the row.
   it("puts the mail accounts that do not fit behind a button", async () => {
     getEmailConfigs.mockResolvedValue([

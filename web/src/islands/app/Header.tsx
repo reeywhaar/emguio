@@ -29,9 +29,9 @@ export function Header({ route }: { route: Route }) {
     queryFn: getEmailConfigs,
   });
   const on = configs.data && turnedOn(configs.data);
-  const current = on
-    ? pick(on, route.page === "mail" ? route.config : null)
-    : undefined;
+  // Away from the mail, none is open: each goes to its mail.
+  const current =
+    on && route.page === "mail" ? pick(on, route.config) : undefined;
   const unread = on?.some((c) => c.unseen > 0) ?? false;
   useEffect(() => markUnread(unread), [unread]);
 
@@ -123,7 +123,7 @@ function Accounts({
     return () => watch.disconnect();
   }, [current?.id]);
   const shown =
-    sizes && configs.length > 1
+    sizes && (configs.length > 1 || !current)
       ? fit({
           ids: configs.map((c) => c.id),
           ...sizes,
