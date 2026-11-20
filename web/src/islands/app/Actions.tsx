@@ -42,7 +42,11 @@ import {
 import { useAsk } from "@app/islands/app/ask";
 import { depthOf, labelOfMailbox } from "@app/islands/app/mailbox";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
-import { listWithPending, usePending } from "@app/islands/app/pending";
+import {
+  listWithPending,
+  usePending,
+  type Pending,
+} from "@app/islands/app/pending";
 import { go, paths } from "@app/islands/app/route";
 import { SIDE_BY_SIDE } from "@app/media";
 
@@ -408,7 +412,45 @@ const NEW = "new";
 const ELSEWHERE = "elsewhere";
 
 /** Where mail can be put: selectable, and not Scheduled, which the server refuses mail in. */
-const takes = (mb: Mailbox) => mb.selectable && mb.special_use !== "scheduled";
+export const takes = (mb: Mailbox) =>
+  mb.selectable && mb.special_use !== "scheduled";
+
+/**
+ * Moving messages of a folder to dest, another of its account's or another account's: each
+ * unread one asked read first where read is set, all of them before any move, so each arrives
+ * read. See docs/reading.md.
+ */
+export function moveJobs(
+  config: string,
+  mailbox: Mailbox,
+  messages: Message[],
+  dest: Mailbox,
+  { elsewhere = false, read = false } = {},
+): Pending[] {
+  const job = (m: Message, what: Partial<Pending>): Pending => ({
+    email_config: config,
+    mailbox: mailbox.id,
+    message: m.id,
+    kind: "move",
+    value: false,
+    target: "",
+    seen: m.seen,
+    label: m.subject,
+    ...what,
+  });
+  return [
+    ...messages
+      .filter((m) => read && !m.seen)
+      .map((m) => job(m, { kind: "seen", value: true, seen: false })),
+    ...messages.map((m) =>
+      job(m, {
+        kind: elsewhere ? "transfer" : "move",
+        target: dest.id,
+        ...(read ? { seen: true } : {}),
+      }),
+    ),
+  ];
+}
 
 /**
  * Every other folder a message can be moved to, or a new one, and, with another account to move

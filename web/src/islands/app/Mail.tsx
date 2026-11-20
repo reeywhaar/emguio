@@ -4,6 +4,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type DragEvent,
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -39,7 +40,16 @@ import {
 } from "@app/components/icons";
 import { PickerButton } from "@app/components/PickerButton";
 import { ago } from "@app/format";
+import {
+  moveJobs,
+  takes,
+  targets,
+  useArchiveTo,
+  useReadOn,
+} from "@app/islands/app/Actions";
+import { useAsk } from "@app/islands/app/ask";
 import { useCarry } from "@app/islands/app/carry";
+import { dragged, isMail, type Dragged } from "@app/islands/app/drag";
 import { blank, write } from "@app/islands/app/drafts";
 import {
   labelOf,
@@ -242,6 +252,7 @@ function Folders({
               config={config.id}
               boxes={boxes.data}
               current={current}
+              open={message}
             />
           ) : (
             <div className="flex flex-col gap-2 p-1">
@@ -461,14 +472,36 @@ function FolderList({
   config,
   boxes,
   current,
+  open = null,
   onPick,
 }: {
   config: string;
   boxes: Mailbox[];
   current: Mailbox | undefined;
+  /** The message open beside the list. */
+  open?: string | null;
   onPick?: () => void;
 }) {
   const client = useQueryClient();
+  const ask = useAsk(config);
+  const readOn = useReadOn(config);
+  const archiveTo = useArchiveTo(config);
+  // Mail dropped on a folder goes there as a move to it would, read first where archiving or
+  // deleting is set to; one open beside the list has gone, and so has the pane.
+  const take = (d: Dragged, dest: Mailbox) => {
+    const to = targets(boxes, d.mailbox, archiveTo);
+    const read =
+      dest.id === to.archive?.id
+        ? readOn.archive
+        : dest.id === to.trash?.id
+          ? readOn.trash
+          : false;
+    ask(moveJobs(config, d.mailbox, d.messages, dest, { read }));
+    d.dropped?.();
+    if (open && d.messages.some((m) => m.id === open)) {
+      go(paths.mail(config, d.mailbox.id, undefined, d.q));
+    }
+  };
   // The folder being carried, and the one beside it that it would go before or after.
   const [carrying, setCarrying] = useState<string | null>(null);
   const [onto, setOnto] = useState<string | null>(null);
@@ -561,6 +594,7 @@ function FolderList({
               onPick={onPick}
               onOver={(id) => over(mb, id)}
               onDrop={drop}
+              onTake={takes(mb) ? (d) => take(d, mb) : undefined}
             />
             {/* Absolute, so it takes no room and the rows do not shift under the pointer. */}
             {target && mb === marked ? (
@@ -654,6 +688,7 @@ function FolderLink({
   onPick,
   onOver,
   onDrop,
+  onTake,
 }: {
   config: string;
   mb: Mailbox;
@@ -664,7 +699,40 @@ function FolderLink({
   /** Carried over the folder with this id, or over none. */
   onOver: (id: string | null) => void;
   onDrop: () => void;
+  /** Set where mail can be dropped into it. */
+  onTake?: (d: Dragged) => void;
 }) {
+  // Mail dragged over it, which it takes: another folder's of this account.
+  const [welcoming, setWelcoming] = useState(false);
+  const welcome = (e: DragEvent) => {
+    const d = dragged();
+    return onTake && isMail(e) && d?.config === config && d.mailbox.id !== mb.id
+      ? d
+      : null;
+  };
+  const target = {
+    onDragEnter: (e: DragEvent) => {
+      if (welcome(e)) e.preventDefault();
+    },
+    onDragOver: (e: DragEvent) => {
+      if (!welcome(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setWelcoming(true);
+    },
+    onDragLeave: (e: DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+        setWelcoming(false);
+      }
+    },
+    onDrop: (e: DragEvent) => {
+      const d = welcome(e);
+      setWelcoming(false);
+      if (!d) return;
+      e.preventDefault();
+      onTake!(d);
+    },
+  };
   const carry = useCarry({
     find: "[data-folder]",
     enabled: !fixed,
@@ -699,9 +767,10 @@ function FolderLink({
   return (
     <Link
       {...carrying}
+      {...target}
       href={paths.mail(config, mb.id)}
       aria-current={current ? "page" : undefined}
-      className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${still} ${current ? "bg-shade font-medium" : "hover:bg-shade"}`}
+      className={`flex min-h-8 items-center gap-2 rounded-md px-3 text-sm ${still} ${welcoming ? "bg-shade ring-1 ring-brand ring-inset" : current ? "bg-shade font-medium" : "hover:bg-shade"}`}
       style={indent}
       onClick={(e) => {
         if (carry.spent.current) {

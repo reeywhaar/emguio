@@ -19,6 +19,7 @@ import {
   Action,
   MovePicker,
   targets,
+  moveJobs,
   useArchiveTo,
   useReadOn,
 } from "@app/islands/app/Actions";
@@ -81,23 +82,11 @@ export function Selection({
   // The rows moved away had focus.
   const allBox = useRef<HTMLInputElement | null>(null);
   const moveAll = (dest: Mailbox | null, elsewhere = false, read = false) => {
-    // The unread read on the server first, all of them, then every move: so each arrives read.
-    const unread = read ? chosen.filter((m) => !m.seen) : [];
-    ask([
-      ...unread.map((m) => job(m, { kind: "seen", value: true, seen: false })),
-      ...chosen.map((m) =>
-        job(
-          m,
-          dest
-            ? {
-                kind: elsewhere ? "transfer" : "move",
-                target: dest.id,
-                ...(read ? { seen: true } : {}),
-              }
-            : { kind: "delete" },
-        ),
-      ),
-    ]);
+    ask(
+      dest
+        ? moveJobs(config, mailbox, chosen, dest, { elsewhere, read })
+        : chosen.map((m) => job(m, { kind: "delete" })),
+    );
     change(new Set());
     allBox.current?.focus();
   };

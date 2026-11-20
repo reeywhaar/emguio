@@ -267,6 +267,23 @@ const start = async () => {
 const selectedCount = () =>
   screen.getByRole("checkbox", { name: "Select all" }).closest("label")!
     .textContent;
+/** What a browser hands a drag and its drop, as far as they are read. */
+const carrying = () => {
+  const types: string[] = [];
+  return {
+    types,
+    setData: (type: string) => types.push(type),
+    setDragImage: () => {},
+    effectAllowed: "",
+    dropEffect: "",
+  };
+};
+/** A folder down the side, by its name. */
+const sideFolder = (name: string) =>
+  within(screen.getByRole("navigation", { name: "Folders" })).getByRole(
+    "link",
+    { name: new RegExp(`^${name}`) },
+  );
 const checkbox = (list: ReturnType<typeof within>, name: string) =>
   list.getByRole("checkbox", { name }) as HTMLInputElement;
 
@@ -1088,6 +1105,63 @@ describe("the mail view", () => {
     mount(<Mail named="ec_1" mailbox="mb_inbox" message={null} />);
     await screen.findByRole("list", { name: "Messages" });
     expect(screen.queryByText(/^Scheduled · /)).toBeNull();
+  });
+
+  describe("dragging, with a mouse", () => {
+    const real = window.matchMedia;
+    beforeEach(() => {
+      window.matchMedia = (query: string) => ({
+        ...real(query),
+        matches: query === "(pointer: fine)" || real(query).matches,
+      });
+    });
+    afterEach(() => {
+      window.matchMedia = real;
+    });
+
+    it("moves a message dropped on a folder", async () => {
+      postJob.mockImplementation(take);
+      mount(<Mail named="ec_1" mailbox="mb_inbox" message={null} />);
+      const list = within(
+        await screen.findByRole("list", { name: "Messages" }),
+      );
+      const row = list.getByRole("link", { name: /Quarterly numbers/ });
+      const dataTransfer = carrying();
+      fireEvent.dragStart(row, { dataTransfer });
+      // Not on the folder it came from.
+      fireEvent.dragOver(sideFolder("Inbox"), { dataTransfer });
+      expect(sideFolder("Inbox").className).not.toContain("ring-brand");
+      fireEvent.dragOver(sideFolder("Work"), { dataTransfer });
+      expect(sideFolder("Work").className).toContain("ring-brand");
+      fireEvent.drop(sideFolder("Work"), { dataTransfer });
+      fireEvent.dragEnd(row, { dataTransfer });
+      await waitFor(() => expect(postJobsRequest).toHaveBeenCalledTimes(1));
+      expect(
+        (postJobsRequest.mock.calls[0]![0] as JobDraft[]).map((j) => [
+          j.message,
+          j.kind,
+          j.target,
+        ]),
+      ).toEqual([["m_1", "move", "mb_work"]]);
+      expect(sideFolder("Work").className).not.toContain("ring-brand");
+    });
+
+    // A selected row carries the selection, which goes once it is dropped.
+    it("moves a selection dragged by one of its rows", async () => {
+      postJob.mockImplementation(take);
+      const list = await start();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+      const row = checkbox(list, "Lunch?").closest("label")!;
+      const dataTransfer = carrying();
+      fireEvent.dragStart(row, { dataTransfer });
+      fireEvent.dragOver(sideFolder("Work"), { dataTransfer });
+      fireEvent.drop(sideFolder("Work"), { dataTransfer });
+      await waitFor(() => expect(postJobsRequest).toHaveBeenCalledTimes(1));
+      expect(
+        (postJobsRequest.mock.calls[0]![0] as JobDraft[]).map((j) => j.message),
+      ).toEqual(["m_1", "m_2"]);
+      await waitFor(() => expect(selectedCount()).toBe("0 selected"));
+    });
   });
 
   describe("selecting", () => {

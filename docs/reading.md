@@ -169,6 +169,19 @@ Star and read follow the selection: a single unstarred or unread message makes t
 or mark read, and only the messages that need it are asked about. Deleting from Trash, or on a
 server with none, asks first how many go for good.
 
+## Mail is dragged onto a folder with a mouse, and not with a finger
+
+A row of the list dragged onto a folder down the side is moved there: the one row, or every
+selected one when it is one of them. The jobs are the same a move to that folder asks for, the
+settings for marking read included when the folder is the one archiving or deleting moves to.
+A folder lights up while it would take what is dragged: one of the account's own that holds
+mail, other than the one it came from.
+
+The browser's drag and drop, and only where `(pointer: fine)` matches. A finger on the list is
+scrolling it, and a phone has no folders beside the list to drop on: there, a move is the
+folder picker. The folders' own dragging into order is pointer events, a finger's too, and the two
+do not meet.
+
 ## A message moves to another account as a transfer
 
 The move picker holds this account's folders; with another account to move to, it ends with

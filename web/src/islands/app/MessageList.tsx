@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
 
 import {
@@ -14,12 +14,14 @@ import { Tag } from "@app/components/Tag";
 import { Paperclip, Star } from "@app/components/icons";
 import { full, when } from "@app/format";
 import { Link } from "@app/islands/app/Link";
+import { CURSOR, endDrag, startDrag } from "@app/islands/app/drag";
 import { counterpart } from "@app/islands/app/mailbox";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 import { paths } from "@app/islands/app/route";
 import { textOf, unreadOnly } from "@app/islands/app/Search";
 import { Subject, untitled } from "@app/islands/app/Subject";
 import { NewsletterTag } from "@app/islands/app/Unsubscribe";
+import { useMatches } from "@app/media";
 
 /** How far before the end of the list the next run starts loading. */
 const AHEAD = 200;
@@ -145,6 +147,7 @@ export function MessageList({
   const anchor = useRef<string | null>(null);
 
   const selecting = Boolean(select);
+  const cursor = useMatches(CURSOR);
   // The first row in sight takes focus, and the list stays where it was scrolled to.
   useEffect(() => {
     const box = scroller.current;
@@ -213,6 +216,25 @@ export function MessageList({
               conversation={conversations[m.id]}
               selected={select ? select.selected.has(m.id) : undefined}
               onToggle={select ? (range) => toggle(m.id, range) : undefined}
+              onDrag={
+                cursor
+                  ? (e) => {
+                      // A selected row carries the selection; any other, itself.
+                      const all = select?.selected.has(m.id)
+                        ? messages.filter((x) => select.selected.has(x.id))
+                        : [m];
+                      startDrag(e, {
+                        config,
+                        mailbox,
+                        q,
+                        messages: all,
+                        dropped: select?.selected.has(m.id)
+                          ? () => select.change(new Set())
+                          : undefined,
+                      });
+                    }
+                  : undefined
+              }
             />
           ))}
         </ul>
@@ -298,6 +320,7 @@ function Row({
   conversation,
   selected,
   onToggle,
+  onDrag,
 }: {
   config: string;
   mailbox: Mailbox;
@@ -311,6 +334,8 @@ function Row({
   /** Set while selecting: whether this row is. */
   selected?: boolean;
   onToggle?: (range: boolean) => void;
+  /** Set where a mouse can drag it onto a folder. */
+  onDrag?: (e: DragEvent) => void;
 }) {
   const unread = !m.seen;
   const who = counterpart(mailbox, m);
@@ -377,7 +402,12 @@ function Row({
   return (
     <li className="border-b border-line">
       {onToggle ? (
-        <label className={`${look} cursor-pointer select-none`}>
+        <label
+          className={`${look} cursor-pointer select-none`}
+          draggable={onDrag !== undefined}
+          onDragStart={onDrag}
+          onDragEnd={endDrag}
+        >
           <input
             type="checkbox"
             checked={selected}
@@ -393,6 +423,9 @@ function Row({
           href={paths.mail(config, mailbox.id, m.id, q)}
           aria-current={open ? "true" : undefined}
           className={look}
+          draggable={onDrag !== undefined}
+          onDragStart={onDrag}
+          onDragEnd={endDrag}
         >
           {body}
         </Link>

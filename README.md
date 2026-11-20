@@ -23,7 +23,7 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 **Keeping it tidy**
 
 - Read, star, archive, delete, spam and move, for one message or a selection, done on the mail
-  server. Gmail's keys work.
+  server. Gmail's keys work, and with a mouse, mail is dragged onto a folder to move it there.
 - Mail moves to another of one's accounts too: each message is copied across and then deleted
   here, with a card in the corner showing how far it has got, and a way to cancel the rest.
 - Trash and Junk empty in one go.
