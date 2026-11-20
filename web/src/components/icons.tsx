@@ -186,7 +186,8 @@ export const PlusMark = () => (
 
 export const SelectMark = () => (
   <Mark>
-    <path d="M2.5 2.5h11v11h-11zM5 8l2 2 4-4" />
+    <rect x="2.5" y="2.5" width="11" height="11" rx="3" />
+    <path d="M5.25 8.25l1.75 1.75 3.75-3.75" />
   </Mark>
 );
 
