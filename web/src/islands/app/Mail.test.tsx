@@ -37,6 +37,7 @@ const deleteMailbox = vi.fn();
 const putOrder = vi.fn();
 const emptyFolder = vi.fn();
 const readFolder = vi.fn();
+const deleteOld = vi.fn();
 const postJob = vi.fn();
 const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
@@ -68,6 +69,11 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     emptyFolder(id, mailbox),
   postEmailConfigsByIdMailboxesByMailboxRead: (id: string, mailbox: string) =>
     readFolder(id, mailbox),
+  postEmailConfigsByIdMailboxesByMailboxDeleteOld: (
+    id: string,
+    mailbox: string,
+    body: unknown,
+  ) => deleteOld(id, mailbox, body),
   getEmailConfigsByIdMailboxesByMailboxThreads: (
     id: string,
     mailbox: string,
@@ -460,7 +466,7 @@ describe("the mail view", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/c/ec_1"));
   });
 
-  it("offers only marking read for the server's own folders", async () => {
+  it("offers only reading and old mail for the server's own folders", async () => {
     window.history.pushState({}, "", "/c/ec_1/mb_sent");
     mount(<Routed />);
     await screen.findAllByText("Bob");
@@ -468,6 +474,7 @@ describe("the mail view", () => {
     const menu = within(await screen.findByRole("menu"));
     expect(menu.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Mark all as read",
+      "Delete old mail…",
     ]);
   });
 
@@ -1104,6 +1111,45 @@ describe("the mail view", () => {
     mount(<Mail named="ec_1" mailbox="mb_trash" message={null} q="lunch" />);
     await screen.findByRole("list", { name: "Messages" });
     expect(screen.queryByRole("button", { name: /^Empty/ })).toBeNull();
+  });
+
+  // To Trash, once asked, as deleting a message does; from Trash, for good.
+  it("deletes a folder's old mail once asked", async () => {
+    getEmailConfigsByIdMailboxes.mockResolvedValue([
+      ...boxes,
+      box("mb_junk", ["Junk"], "junk", 3),
+      box("mb_trash", ["Trash"], "trash"),
+    ]);
+    deleteOld.mockResolvedValue({ messages: 2, trash: true });
+    const { unmount } = mount(
+      <Mail named="ec_1" mailbox="mb_junk" message={null} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Folder:" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete old mail…" }),
+    );
+    let ask = within(await screen.findByRole("dialog"));
+    ask.getByText(
+      "Mail that arrived in Junk more than 30 days ago is moved to Trash.",
+    );
+    fireEvent.click(ask.getByRole("button", { name: "Delete old mail" }));
+    await waitFor(() =>
+      expect(deleteOld).toHaveBeenCalledWith("ec_1", "mb_junk", {
+        days: 30,
+        read: false,
+      }),
+    );
+    unmount();
+
+    mount(<Mail named="ec_1" mailbox="mb_trash" message={null} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Folder:" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete old mail…" }),
+    );
+    ask = within(await screen.findByRole("dialog"));
+    ask.getByText(
+      "Mail that arrived in Trash more than 30 days ago is deleted from the server. This cannot be undone.",
+    );
   });
 
   // Any folder, from its menu, while any of it is unread; done at once, nothing to ask.

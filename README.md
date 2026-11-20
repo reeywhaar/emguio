@@ -26,7 +26,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
   server. Gmail's keys work, and with a mouse, mail is dragged onto a folder to move it there.
 - Mail moves to another of one's accounts too: each message is copied across and then deleted
   here, with a card in the corner showing how far it has got, and a way to cancel the rest.
-- Trash and Junk empty in one go, and any folder is marked all read from its menu.
+- Trash and Junk empty in one go. From any folder's menu, all of it is marked read, or its mail
+  older than 30 days deleted.
 - Folders of one's own are made, renamed, moved, deleted when empty, and dragged into order. The
   server's own stay as they are.
 

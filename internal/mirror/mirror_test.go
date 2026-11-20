@@ -1087,6 +1087,45 @@ func TestAFolderIsMarkedReadUpToWhatItHeld(t *testing.T) {
 	}
 }
 
+// What arrived before the day goes to Trash, read; from Trash, for good.
+func TestOldMailGoesToTrashOrForGood(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	ctx := context.Background()
+	w.create("Junk", "Trash")
+	w.deliver("Junk", 1, "alice@example.com", "Old")
+	w.deliver("Junk", 3*24*60, "bob@example.com", "New")
+	before := start.AddDate(0, 0, 2)
+
+	took, err := w.mirror.DeleteOld(ctx, w.target, "Junk", before, "Trash", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(took) != 1 {
+		t.Fatalf("took %v", took)
+	}
+	count := func(mailbox string) (uint32, uint32) {
+		t.Helper()
+		st, err := w.server.Status(mailbox, &imap.StatusOptions{NumMessages: true, NumUnseen: true}).Wait()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return deref(st.NumMessages), deref(st.NumUnseen)
+	}
+	if n, _ := count("Junk"); n != 1 {
+		t.Errorf("Junk holds %d", n)
+	}
+	if n, unseen := count("Trash"); n != 1 || unseen != 0 {
+		t.Errorf("Trash holds %d, %d unread", n, unseen)
+	}
+
+	if took, err := w.mirror.DeleteOld(ctx, w.target, "Trash", before, "", false); err != nil || len(took) != 1 {
+		t.Fatalf("from Trash took %v, %v", took, err)
+	}
+	if n, _ := count("Trash"); n != 0 {
+		t.Errorf("Trash still holds %d", n)
+	}
+}
+
 // after is the cursor past h, as a page that showed it last gives it.
 func after(uidValidity uint32, h store.Header) After {
 	return After{UIDValidity: uidValidity, UID: h.UID, Date: h.InternalDate}

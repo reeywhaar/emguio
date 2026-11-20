@@ -273,3 +273,60 @@ func TestAFolderIsMarkedReadInOneRequest(t *testing.T) {
 		t.Errorf("%d unread kept, the folder counts %d", unread, mb.Unseen)
 	}
 }
+
+// To Trash, read if asked, and what was kept of it goes; from Trash, for good.
+func TestOldMailIsDeletedToTrashOrFromIt(t *testing.T) {
+	c, cfg, boxes, _, fake := withOutbox(t)
+	ctx := context.Background()
+	fake.store.PutMailboxes(ctx, cfg, []store.Listed{
+		{Name: "INBOX", SpecialUse: store.UseInbox, Selectable: true},
+		{Name: "Junk", SpecialUse: store.UseJunk, Selectable: true},
+		{Name: "Trash", SpecialUse: store.UseTrash, Selectable: true},
+	})
+	all, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	for _, mb := range all {
+		boxes[mb.Name] = mb.ID
+	}
+	junk := boxes["Junk"]
+	fake.store.PutMessages(ctx, junk, []store.Header{
+		{UID: 1, InternalDate: time.Now(), Subject: "old"},
+		{UID: 2, InternalDate: time.Now(), Subject: "new"},
+	})
+	fake.oldUIDs = []uint32{1}
+
+	resp := c.do("POST", "/api/email-configs/"+cfg+"/mailboxes/"+junk+"/delete-old", `{"days":30,"read":true}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete old = %s %v", resp.Status, c.json(resp))
+	}
+	if got := c.json(resp); got["messages"] != float64(1) || got["trash"] != true {
+		t.Errorf("answered %v", got)
+	}
+	asked := fake.old[0]
+	if asked.mailbox != "Junk" || asked.to != "Trash" || !asked.read {
+		t.Errorf("asked %+v", asked)
+	}
+	if ago := time.Since(asked.before); ago < 29*24*time.Hour || ago > 31*24*time.Hour {
+		t.Errorf("before %s", asked.before)
+	}
+	var mb *store.Mailbox
+	after, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	for _, m := range after {
+		if m.ID == junk {
+			mb = m
+		}
+	}
+	if kept, _ := fake.store.Window(ctx, mb); len(kept) != 1 || kept[0].Subject != "new" {
+		t.Errorf("kept %+v", kept)
+	}
+
+	resp = c.do("POST", "/api/email-configs/"+cfg+"/mailboxes/"+boxes["Trash"]+"/delete-old", `{"days":30,"read":true}`)
+	if got := c.json(resp); got["trash"] != false {
+		t.Errorf("from Trash answered %v", got)
+	}
+	if asked := fake.old[1]; asked.to != "" || asked.read {
+		t.Errorf("from Trash asked %+v", asked)
+	}
+	if resp := c.do("POST", "/api/email-configs/"+cfg+"/mailboxes/"+junk+"/delete-old", `{"days":0}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("no days = %s", resp.Status)
+	}
+}

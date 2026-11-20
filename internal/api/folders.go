@@ -137,6 +137,64 @@ func (s *Server) readMailbox(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type deleteOldBody struct {
+	// Days is how old mail is to go, by when it arrived.
+	Days int `json:"days"`
+	// Read marks it read first, where it goes to Trash.
+	Read bool `json:"read"`
+}
+
+// deleteOldMail deletes what arrived in a folder more than some days ago: to Trash, as deleting
+// does, or for good from Trash or where there is none. See docs/reading.md.
+func (s *Server) deleteOldMail(w http.ResponseWriter, r *http.Request) {
+	c, mb, ok := s.mailboxOf(w, r)
+	if !ok {
+		return
+	}
+	var body deleteOldBody
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.Days < 1 || body.Days > 3650 {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "Days are from 1 to 3650.")
+		return
+	}
+	if !mb.Selectable {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "This folder only holds other folders.")
+		return
+	}
+	if s.mirror == nil {
+		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+		return
+	}
+	u := userOf(r)
+	boxes, err := s.store.MirrorMailboxes(r.Context(), c.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	to := ""
+	for _, other := range boxes {
+		if other.SpecialUse == store.UseTrash && other.Selectable && other.ID != mb.ID {
+			to = other.Name
+		}
+	}
+	before := s.store.Now().AddDate(0, 0, -body.Days)
+	took, err := s.mirror.DeleteOld(r.Context(), targetOf(u, c), mb.Name, before, to, body.Read && to != "")
+	if !s.serverError(w, r, c.ID, err, "This folder is no longer on the server.") {
+		return
+	}
+	if err := s.store.DeleteMessages(r.Context(), mb.ID, took); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.store.Notify(u.ID)
+	s.mirror.Refresh(c.ID)
+	s.log.Info("old mail deleted", "user", u.ID, "email_config", c.ID, "mailbox", mb.ID,
+		"days", body.Days, "messages", len(took), "to_trash", to != "")
+	writeJSON(w, http.StatusOK, map[string]any{"messages": len(took), "trash": to != ""})
+}
+
 // placeOf reads where a folder goes and what it is called, for one made or, self, renamed: the
 // folder it goes inside, nil for the top, and its name, or a refusal already written.
 func (s *Server) placeOf(w http.ResponseWriter, r *http.Request, c *store.EmailConfig, boxes []*store.Mailbox, self *store.Mailbox, body folderBody) (*store.Mailbox, string, bool) {

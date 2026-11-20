@@ -597,6 +597,55 @@ func (m *Mirror) ReadAll(ctx context.Context, t store.SyncTarget, mailbox string
 	return below, err
 }
 
+// DeleteOld deletes from a mailbox what arrived before a day: moved to another mailbox, Trash,
+// when to names one, and for good when it does not; marked read first when read is set. It says
+// the UIDs it took. A move needs MOVE or UIDPLUS, and deleting for good UIDPLUS, as Move and
+// Delete do.
+func (m *Mirror) DeleteOld(ctx context.Context, t store.SyncTarget, mailbox string, before time.Time, to string, read bool) ([]uint32, error) {
+	var took []uint32
+	err := m.change(ctx, t, func(f *fetcher) error {
+		if _, _, err := f.open(mailbox, true, true); err != nil {
+			return err
+		}
+		c := f.session.client
+		found, err := c.UIDSearch(&imap.SearchCriteria{Before: before}, f.session.all()).Wait()
+		if err != nil {
+			return refused(err)
+		}
+		uids := found.AllUIDs()
+		if len(uids) == 0 {
+			return nil
+		}
+		caps := c.Caps()
+		if !caps.Has(imap.CapUIDPlus) && (to == "" || !caps.Has(imap.CapMove)) {
+			return ErrUnsupported
+		}
+		set := imap.UIDSetNum(uids...)
+		if read {
+			if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close(); err != nil {
+				return refused(err)
+			}
+		}
+		if to != "" {
+			if _, err := c.Move(set, to).Wait(); err != nil {
+				return refused(err)
+			}
+		} else {
+			if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+				return refused(err)
+			}
+			if err := c.UIDExpunge(set).Close(); err != nil {
+				return refused(err)
+			}
+		}
+		for _, uid := range uids {
+			took = append(took, uint32(uid))
+		}
+		return nil
+	})
+	return took, err
+}
+
 // refused is a server's NO to an action, as the sentence a person is shown; a request the server
 // refused is not a session gone wrong.
 func refused(err error) error {

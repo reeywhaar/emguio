@@ -40,6 +40,9 @@ type fakeMirror struct {
 	emptied    []string
 	emptyBelow uint32
 	read       []string
+	// old is each DeleteOld asked for, and oldUIDs what it takes.
+	old     []oldAsked
+	oldUIDs []uint32
 	// deleted is each message deleted, as mailbox and UID; gone are the UIDs the server no longer has.
 	deleted []string
 	gone    map[uint32]bool
@@ -154,6 +157,22 @@ func (f *fakeMirror) Delete(_ context.Context, _ store.SyncTarget, mailbox strin
 		f.deleted = append(f.deleted, fmt.Sprintf("%s %d", mailbox, uid))
 	}
 	return had, nil
+}
+
+type oldAsked struct {
+	mailbox, to string
+	before      time.Time
+	read        bool
+}
+
+func (f *fakeMirror) DeleteOld(_ context.Context, _ store.SyncTarget, mailbox string, before time.Time, to string, read bool) ([]uint32, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.old = append(f.old, oldAsked{mailbox: mailbox, to: to, before: before, read: read})
+	return f.oldUIDs, nil
 }
 
 func (f *fakeMirror) ReadAll(_ context.Context, _ store.SyncTarget, mailbox string) (uint32, error) {

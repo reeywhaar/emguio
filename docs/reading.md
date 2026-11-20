@@ -96,6 +96,11 @@ before it is done. What goes is what the folder held when it was opened — `UID
 meanwhile stays. Without `UIDPLUS` the `EXPUNGE` is a plain one, which also takes what another
 client marked deleted there; all of it was going.
 
+Old mail is deleted from the same menu: whatever arrived more than 30 days ago, by the date the
+server holds it from, found with `UID SEARCH BEFORE`. It goes where deleting a message sends it —
+to Trash, read first where deleting is set to mark it read, and for good from Trash or on a
+server with none — asked about first, in one request.
+
 Marking a whole folder read, from its menu, is one request too, with nothing to ask first: a
 `UID STORE` of `\Seen` to the UIDs below the UIDNEXT the folder opened with, so mail arriving
 meanwhile stays unread. Spam and deleted mail that nobody means to open would otherwise count as

@@ -7,6 +7,7 @@ import {
 
 import {
   deleteEmailConfigsByIdMailboxesByMailbox,
+  postEmailConfigsByIdMailboxesByMailboxDeleteOld,
   postEmailConfigsByIdMailboxesByMailboxRead,
 } from "@app/api/actions/emailConfigs";
 import { mk, qk } from "@app/api/keys";
@@ -16,14 +17,20 @@ import { buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
 import { MoreMark } from "@app/components/icons";
 import { Menu, MenuItem } from "@app/components/Menu";
+import { useReadOn } from "@app/islands/app/Actions";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { say } from "@app/islands/app/notices";
 import { go, paths } from "@app/islands/app/route";
 
+/** How old mail is, in days, for Delete old mail to take it. */
+const OLD = 30;
+
+const messages = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
+
 /**
- * What can be done to a folder: all of it marked read, and one of the user's own renamed or
- * moved, or deleted once empty. See docs/reading.md.
+ * What can be done to a folder: all of it marked read, its old mail deleted, and one of the
+ * user's own renamed or moved, or deleted once empty. See docs/reading.md.
  */
 export function FolderMenu({
   config,
@@ -40,6 +47,47 @@ export function FolderMenu({
   // Each opening starts the form afresh.
   const [opened, setOpened] = useState(0);
   const own = folder.special_use === "";
+  const name = labelOfMailbox(folder);
+  const readOn = useReadOn(config);
+  // Old mail goes to Trash, as deleting a message does; from Trash, or with none, for good.
+  const toTrash = boxes.some(
+    (mb) => mb.special_use === "trash" && mb.selectable && mb.id !== folder.id,
+  );
+  const deleteOld = useMutation({
+    mutationKey: mk.folderWork(config),
+    mutationFn: () =>
+      postEmailConfigsByIdMailboxesByMailboxDeleteOld(config, folder.id, {
+        days: OLD,
+        read: toTrash && readOn.trash,
+      }),
+    onSuccess: ({ messages: n, trash }) =>
+      say(
+        n === 0
+          ? `No mail in ${name} is older than ${OLD} days.`
+          : trash
+            ? `Moved ${messages(n)} to Trash.`
+            : `Deleted ${messages(n)} for good.`,
+      ),
+    onError: (err) => say(messageOf(err)),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: qk.lists(config) });
+      void client.invalidateQueries({ queryKey: qk.mailboxes(config) });
+    },
+  });
+  const askOld = async () => {
+    if (
+      await confirm({
+        title: `Delete old mail from ${name}?`,
+        message: toTrash
+          ? `Mail that arrived in ${name} more than ${OLD} days ago is moved to Trash.`
+          : `Mail that arrived in ${name} more than ${OLD} days ago is deleted from the server. This cannot be undone.`,
+        confirm: "Delete old mail",
+        danger: !toTrash,
+      })
+    ) {
+      deleteOld.mutate();
+    }
+  };
   // Drawn read at once, and as it was if the server refuses.
   const read = useMutation({
     mutationKey: mk.folderWork(config),
@@ -96,7 +144,7 @@ export function FolderMenu({
   const drop = async () => {
     if (
       await confirm({
-        title: `Delete ${labelOfMailbox(folder)}?`,
+        title: `Delete ${name}?`,
         message:
           "It is deleted from the server. A folder with mail or other folders in it is not.",
         confirm: "Delete",
@@ -128,6 +176,15 @@ export function FolderMenu({
               }}
             >
               Mark all as read
+            </MenuItem>
+            <MenuItem
+              disabled={folder.messages === 0 || deleteOld.isPending}
+              onClick={() => {
+                close();
+                void askOld();
+              }}
+            >
+              Delete old mail…
             </MenuItem>
             {own ? (
               <>

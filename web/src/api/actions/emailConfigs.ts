@@ -78,6 +78,20 @@ export const deleteEmailConfigsByIdMailboxesByMailbox = (
   );
 
 /** Deletes for good everything Trash or Junk holds. */
+/**
+ * Deletes what arrived in a folder more than days ago: to Trash, read first if asked, or for
+ * good from Trash or where there is none. Answered with how many went, and whether to Trash.
+ */
+export const postEmailConfigsByIdMailboxesByMailboxDeleteOld = (
+  id: string,
+  mailbox: string,
+  body: { days: number; read: boolean },
+) =>
+  request<{ messages: number; trash: boolean }>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/delete-old`,
+    { method: "POST", body },
+  );
+
 /** Marks read every message in a folder, on the server, before it answers. */
 export const postEmailConfigsByIdMailboxesByMailboxRead = (
   id: string,

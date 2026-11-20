@@ -414,6 +414,17 @@ meanwhile stays unread. Done on the mail server before it answers `204`, not as 
 that only holds other folders answers `400 invalid`.
 
 ```
+POST /api/email-configs/{id}/mailboxes/{mailbox}/delete-old
+```
+
+Deletes what arrived in the folder more than some days ago, by the date the server holds it
+from: `{"days": 30, "read": true}`, days from 1 to 3650. It goes to Trash, as deleting a message
+does, marked read first when `read` is set; from Trash, or on a server with none, it is deleted
+for good. Done on the mail server before it answers `200 {"messages": 12, "trash": true}`: how
+many went, and whether to Trash. A folder that only holds other folders, or days out of range,
+answers `400 invalid`.
+
+```
 PUT /api/email-configs/{id}/mailboxes/order
 ```
 
