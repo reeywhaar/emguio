@@ -73,8 +73,10 @@ func (m *Mirror) use(ctx context.Context, t store.SyncTarget, do func(f *fetcher
 	return m.on(ctx, m.fetcherFor(t, false), do)
 }
 
-// change runs one change on the config's session for changing.
+// change runs one change on the config's session for changing, which its user is told is
+// underway.
 func (m *Mirror) change(ctx context.Context, t store.SyncTarget, do func(f *fetcher) error) error {
+	defer m.store.Working(t.UserID, t.ID)()
 	return m.on(ctx, m.fetcherFor(t, true), do)
 }
 

@@ -291,7 +291,9 @@ func (m *Mirror) session(ctx context.Context, w *worker) (bool, error) {
 	var named []string
 	for {
 		began := time.Now()
+		done := m.store.Working(w.target.UserID, w.target.ID)
 		changed, err := s.pass(ctx, full, named)
+		done()
 		if err != nil {
 			return synced, err
 		}

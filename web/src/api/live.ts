@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
+import { setBusy } from "@app/api/busy";
 import { qk } from "@app/api/keys";
 import type { Mailbox } from "@app/api/types";
 
@@ -47,7 +48,20 @@ export function useLive() {
     // A reconnection means the stream was down, and whatever happened meanwhile was not said.
     // Asking once on the way back is cheaper than tracking what was missed.
     source.addEventListener("open", refresh);
-    return () => source.close();
+    // Which configs the server is at work on, said whole each time; while the stream is down,
+    // nothing it says is known.
+    source.addEventListener("busy", (e) => {
+      try {
+        setBusy(JSON.parse((e as MessageEvent<string>).data) as string[]);
+      } catch {
+        setBusy([]);
+      }
+    });
+    source.addEventListener("error", () => setBusy([]));
+    return () => {
+      source.close();
+      setBusy([]);
+    };
   }, [client]);
 }
 

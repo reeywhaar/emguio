@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { postEmailConfigsByIdMailboxesByMailboxEmpty } from "@app/api/actions/emailConfigs";
-import { qk } from "@app/api/keys";
+import { mk, qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
 import type { Mailbox } from "@app/api/types";
 import { Button } from "@app/components/Button";
@@ -26,6 +26,7 @@ export function EmptyFolder({
   const name = labelOfMailbox(mailbox);
   const count = `${mailbox.messages.toLocaleString()} ${mailbox.messages === 1 ? "message" : "messages"}`;
   const empty = useMutation({
+    mutationKey: mk.folderWork(config),
     mutationFn: () =>
       postEmailConfigsByIdMailboxesByMailboxEmpty(config, mailbox.id),
     onSettled: () => {

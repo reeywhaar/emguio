@@ -163,6 +163,16 @@ above, or else back to the folder. Where the message is open in the list's place
 is always back to the folder. The mirror is asked for a look once the run is over: the
 window has places to fill, and the counts are the server's to confirm.
 
+## Work underway is said under the folders
+
+The line under the folders says "Updating…", and its button turns, while anything is underway for
+the account on its mail server: a look asked for, jobs asked for and not yet done, a folder
+being emptied or marked read, and whatever the server says it is at work on — a look over the
+folders, a job, a change asked of it. The last comes over the event stream, as the accounts
+being worked on, sent whole whenever that changes; a change on its own says nothing about what
+the mail server is doing, and a press that takes a moment to answer would otherwise look like
+nothing happened. While the stream is down, none is.
+
 ## A selection is acted on in one request
 
 The button beside the folder's name turns the list's rows into checkboxes; a Shift-click takes

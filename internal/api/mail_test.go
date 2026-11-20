@@ -609,3 +609,57 @@ func TestTheEventStreamSaysWhenMailMoved(t *testing.T) {
 		}
 	}
 }
+
+// Which accounts the server is working on: at once on connecting, and as it changes.
+func TestTheEventStreamSaysWhichAccountsAreBeingWorkedOn(t *testing.T) {
+	s, st, c, cfg, _ := withMail(t, 0)
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL+"/api/events", nil)
+	req.AddCookie(c.cookie)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	lines := make(chan string)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+		close(lines)
+	}()
+	// The data of the next busy event.
+	next := func() string {
+		t.Helper()
+		deadline := time.After(5 * time.Second)
+		busy := false
+		for {
+			select {
+			case line := <-lines:
+				if line == "event: busy" {
+					busy = true
+				} else if busy && strings.HasPrefix(line, "data: ") {
+					return strings.TrimPrefix(line, "data: ")
+				}
+			case <-deadline:
+				t.Fatal("no busy event arrived")
+			}
+		}
+	}
+
+	if got := next(); got != "[]" {
+		t.Errorf("on connecting, busy %s", got)
+	}
+	me := c.json(c.do("GET", "/api/auth/me", ""))
+	done := st.Working(me["id"].(string), cfg)
+	if got := next(); got != `["`+cfg+`"]` {
+		t.Errorf("working, busy %s", got)
+	}
+	done()
+	if got := next(); got != "[]" {
+		t.Errorf("done, busy %s", got)
+	}
+}

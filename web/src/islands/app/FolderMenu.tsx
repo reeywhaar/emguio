@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
 
 import {
   deleteEmailConfigsByIdMailboxesByMailbox,
   postEmailConfigsByIdMailboxesByMailboxRead,
 } from "@app/api/actions/emailConfigs";
-import { qk } from "@app/api/keys";
+import { mk, qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
-import type { Mailbox } from "@app/api/types";
+import type { Mailbox, MessagePage } from "@app/api/types";
 import { buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
 import { MoreMark } from "@app/components/icons";
@@ -36,14 +40,46 @@ export function FolderMenu({
   // Each opening starts the form afresh.
   const [opened, setOpened] = useState(0);
   const own = folder.special_use === "";
+  // Drawn read at once, and as it was if the server refuses.
   const read = useMutation({
+    mutationKey: mk.folderWork(config),
     mutationFn: () =>
       postEmailConfigsByIdMailboxesByMailboxRead(config, folder.id),
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: qk.folder(config, folder.id) });
+      const lists = client.getQueriesData<InfiniteData<MessagePage>>({
+        queryKey: qk.folder(config, folder.id),
+      });
+      const counts = client.getQueryData<Mailbox[]>(qk.mailboxes(config));
+      client.setQueriesData<InfiniteData<MessagePage>>(
+        { queryKey: qk.folder(config, folder.id) },
+        (old) =>
+          old && {
+            ...old,
+            pages: old.pages.map((p) => ({
+              ...p,
+              messages: p.messages.map((m) => ({ ...m, seen: true })),
+            })),
+          },
+      );
+      client.setQueryData<Mailbox[]>(qk.mailboxes(config), (old) =>
+        old?.map((mb) => (mb.id === folder.id ? { ...mb, unseen: 0 } : mb)),
+      );
+      return { lists, counts };
+    },
+    onError: (err, _v, before) => {
+      for (const [key, data] of before?.lists ?? []) {
+        client.setQueryData(key, data);
+      }
+      if (before?.counts) {
+        client.setQueryData(qk.mailboxes(config), before.counts);
+      }
+      say(messageOf(err));
+    },
     onSettled: () => {
       void client.invalidateQueries({ queryKey: qk.folder(config, folder.id) });
       void client.invalidateQueries({ queryKey: qk.mailboxes(config) });
     },
-    onError: (err) => say(messageOf(err)),
   });
   const remove = useMutation({
     mutationFn: () =>

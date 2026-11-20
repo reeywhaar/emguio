@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setBusy } from "@app/api/busy";
 import { qk } from "@app/api/keys";
 import { ApiError } from "@app/api/transport";
 import type {
@@ -831,6 +832,21 @@ describe("the mail view", () => {
       expect(screen.getAllByText("Updated just now").length).toBeGreaterThan(0),
     );
     expect(button.hasAttribute("disabled")).toBe(false);
+  });
+
+  // While the server says it is at work on the account's mail server, the line says so too.
+  it("says Updating while the server is at work on the account", async () => {
+    getEmailConfigs.mockResolvedValue([
+      { ...work, synced_at: Math.round(Date.now() / 1000) },
+    ]);
+    mount(<Mail named="ec_1" mailbox={null} message={null} />);
+    await waitFor(() =>
+      expect(screen.getAllByText("Updated just now").length).toBeGreaterThan(0),
+    );
+    act(() => setBusy(["ec_2", "ec_1"]));
+    expect(screen.getAllByText("Updating…").length).toBeGreaterThan(0);
+    act(() => setBusy(["ec_2"]));
+    expect(screen.getAllByText("Updated just now").length).toBeGreaterThan(0);
   });
 
   // New mail is lit for a moment as it comes in; what was there already is not.

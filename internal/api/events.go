@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -15,14 +16,20 @@ const ping = 25 * time.Second
 // when the gap is over.
 const eventGap = time.Second
 
+// busyGap is the least time between two busy events: a run of jobs starts and stops work on a
+// server for each, and what the page shows of it needs no more than this.
+const busyGap = 250 * time.Millisecond
+
 /*
 events tells a browser that something changed, so it can ask what.
 
 Server-sent events rather than a websocket: what travels is one word in one direction, the
 browser's EventSource reconnects on its own with backoff, and it is plain HTTP.
 
-The message carries nothing. What changed is a question the caller already has endpoints for,
-and a payload here would be a second copy of the model to keep true.
+A change carries nothing. What changed is a question the caller already has endpoints for,
+and a payload here would be a second copy of the model to keep true. Which email configs the
+server is working on is not in the model, and asks for nothing to be read again, so it travels
+whole, in an event of its own.
 */
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -39,8 +46,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	changes, stop := s.store.Watch(userOf(r).ID)
+	user := userOf(r).ID
+	changes, stop := s.store.Watch(user)
 	defer stop()
+	busy, stopBusy := s.store.WatchBusy(user)
+	defer stopBusy()
 
 	beat := time.NewTicker(ping)
 	defer beat.Stop()
@@ -55,6 +65,18 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 		quiet = time.After(eventGap)
 	}
+	var (
+		busyQuiet <-chan time.Time
+		busyOwed  bool
+	)
+	sayBusy := func() {
+		ids, _ := json.Marshal(s.store.Busy(user))
+		fmt.Fprintf(w, "event: busy\ndata: %s\n\n", ids)
+		flusher.Flush()
+		busyQuiet = time.After(busyGap)
+	}
+	// At once, so a page opened while work is underway knows.
+	sayBusy()
 	for {
 		select {
 		case <-r.Context().Done():
@@ -72,6 +94,18 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			if owed {
 				owed = false
 				changed()
+			}
+		case <-busy:
+			if busyQuiet != nil {
+				busyOwed = true
+				continue
+			}
+			sayBusy()
+		case <-busyQuiet:
+			busyQuiet = nil
+			if busyOwed {
+				busyOwed = false
+				sayBusy()
 			}
 		case <-beat.C:
 			// A comment. EventSource ignores it; everything in between counts it as traffic.

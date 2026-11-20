@@ -974,18 +974,29 @@ twice, or a zone emguio does not know answers `400 invalid`.
 GET /api/events
 ```
 
-A stream of Server-Sent Events saying that something the user can see has changed: mail emguio
-keeps, a folder's counts, a run of jobs done, a draft written. Every event is the same:
+A stream of Server-Sent Events saying that something the user can see has changed, and which of
+the user's email configs emguio is working on. Something changed — mail emguio keeps, a folder's
+counts, a run of jobs done, a draft written — is always the same:
 
 ```
 event: changed
 data: 1
 ```
 
-It carries nothing else: whoever listens reads again what it shows. Events are at least a second
-apart, and changes closer together are one event. A comment line, `: ping`, comes every 25
-seconds so nothing between closes the stream. A program usually has no need for it: it can ask
-for what it needs when it needs it.
+It carries nothing else: whoever listens reads again what it shows. These are at least a second
+apart, and changes closer together are one event.
+
+Which email configs emguio is at work on, on their mail servers — looking over their folders, or
+doing a job or another change asked of it — comes at once on connecting, and again each time it
+changes, at least a quarter of a second apart:
+
+```
+event: busy
+data: ["ec_01k6r2t5v7x9z1b3d5f7h9k1m3"]
+```
+
+An empty list is none. A comment line, `: ping`, comes every 25 seconds so nothing between closes
+the stream. A program usually has no need for it: it can ask for what it needs when it needs it.
 
 ```sh
 curl -N -b jar -c jar https://emguio.example.com/api/events

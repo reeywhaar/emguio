@@ -49,4 +49,6 @@ export const mk = {
   /** Every action on a message, in any config. */
   actions: ["action"] as const,
   actionsOf: (config: string) => ["action", config] as const,
+  /** What is done to a whole folder of a config on its server, which the sidebar says is underway. */
+  folderWork: (config: string) => ["folder-work", config] as const,
 };

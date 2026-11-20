@@ -52,6 +52,13 @@ type Store struct {
 
 	// changes counts what people wrote down, which a backup is taken for; see changed.
 	changes atomic.Uint64
+
+	// busy counts the work underway on each email config's mail server, and busyOf whose each
+	// is; see Working.
+	busyMu       sync.Mutex
+	busy         map[string]int
+	busyOf       map[string]string
+	busyWatchers map[chan struct{}]string
 }
 
 const readers = 4
@@ -83,7 +90,8 @@ func Open(dir string, sealer *seal.Sealer) (*Store, error) {
 	}
 
 	s := &Store{writer: writer, reader: reader, now: time.Now, sealer: sealer, watchers: map[chan struct{}]string{},
-		arrived: make(chan struct{}, 1)}
+		arrived: make(chan struct{}, 1), busy: map[string]int{}, busyOf: map[string]string{},
+		busyWatchers: map[chan struct{}]string{}}
 	if err := migrations.Run(context.Background(), writer); err != nil {
 		s.Close()
 		return nil, err

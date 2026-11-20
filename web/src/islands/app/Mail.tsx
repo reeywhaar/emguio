@@ -7,7 +7,12 @@ import {
   type DragEvent,
   type ReactNode,
 } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import {
   getEmailConfigs,
@@ -15,7 +20,8 @@ import {
   postEmailConfigsByIdSync,
   putEmailConfigsByIdMailboxesOrder,
 } from "@app/api/actions/emailConfigs";
-import { qk } from "@app/api/keys";
+import { useBusy } from "@app/api/busy";
+import { mk, qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
 import type { EmailConfig, Mailbox } from "@app/api/types";
 import { Button, buttonLook } from "@app/components/Button";
@@ -861,6 +867,12 @@ function SyncState({ config }: { config: EmailConfig }) {
     const id = setTimeout(() => setAsked(null), LOOK_WAIT);
     return () => clearTimeout(id);
   }, [asked]);
+  // Work on the account's mail server is an update underway too: what the server says it is
+  // doing, the jobs asked for and not yet done, and a whole folder being emptied or marked read.
+  const busy = useBusy(config.id);
+  const jobs = usePending(config.id).length;
+  const folderWork = useIsMutating({ mutationKey: mk.folderWork(config.id) });
+  const working = busy || jobs > 0 || folderWork > 0;
   // "Updated a minute ago" goes on getting older with nothing else changing.
   const [, tick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -871,7 +883,7 @@ function SyncState({ config }: { config: EmailConfig }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <span className="min-w-0 flex-1 truncate text-xs text-muted">
-        {waiting
+        {waiting || working
           ? "Updating…"
           : config.synced_at
             ? `Updated ${ago(config.synced_at)}`
@@ -881,7 +893,7 @@ function SyncState({ config }: { config: EmailConfig }) {
       </span>
       <FetchMail
         config={config}
-        waiting={waiting}
+        waiting={waiting || working}
         onAsk={() => setAsked(config)}
         onFail={() => setAsked(null)}
       />
