@@ -402,22 +402,33 @@ function Row({
   return (
     <li className="border-b border-line">
       {onToggle ? (
-        <label
-          className={`${look} cursor-pointer select-none`}
+        // The column with the checkbox selects; the rest opens the message, as it does when not
+        // selecting.
+        <div
+          className={`flex items-stretch ${open || selected ? "bg-shade" : "bg-bg hover:bg-fill"} ${arrived ? "arrived" : ""}`}
           draggable={onDrag !== undefined}
           onDragStart={onDrag}
           onDragEnd={endDrag}
         >
-          <input
-            type="checkbox"
-            checked={selected}
-            readOnly
-            onClick={(e) => onToggle(e.shiftKey)}
-            aria-label={bare ? m.preview : m.subject || "No subject"}
-            className="mt-1"
-          />
-          {body}
-        </label>
+          <label className="flex shrink-0 cursor-pointer items-start py-2.5 pr-1 pl-2 select-none">
+            <input
+              type="checkbox"
+              checked={selected}
+              readOnly
+              onClick={(e) => onToggle(e.shiftKey)}
+              aria-label={bare ? m.preview : m.subject || "No subject"}
+              className="mt-1"
+            />
+          </label>
+          <Link
+            href={paths.mail(config, mailbox.id, m.id, q)}
+            aria-current={open ? "true" : undefined}
+            className="flex min-w-0 flex-1 items-start py-2.5 pr-2 pl-2"
+            draggable={false}
+          >
+            {body}
+          </Link>
+        </div>
       ) : (
         <Link
           href={paths.mail(config, mailbox.id, m.id, q)}

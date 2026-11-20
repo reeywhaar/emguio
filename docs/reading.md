@@ -175,8 +175,9 @@ nothing happened. While the stream is down, none is.
 
 ## A selection is acted on in one request
 
-The button beside the folder's name turns the list's rows into checkboxes; a Shift-click takes
-every row from the last one clicked. The folder's header becomes the selection's: how many,
+The button beside the folder's name gives each of the list's rows a checkbox, in a column of its
+own that selects; the rest of a row still opens the message, and the selection stays. A
+Shift-click takes every row from the last one clicked. The folder's header becomes the selection's: how many,
 all or none, and the same actions as the reading pane, with the same keys. Escape, or the cross,
 goes back to opening messages.
 

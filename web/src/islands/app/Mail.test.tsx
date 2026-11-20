@@ -1252,6 +1252,18 @@ describe("the mail view", () => {
       );
     });
 
+    // The checkbox's column selects; the rest of the row opens the message, still selecting.
+    it("opens a message from its row while selecting, and selects from its checkbox", async () => {
+      const list = await start();
+      fireEvent.click(list.getByRole("link", { name: /Lunch\?/ }));
+      await waitFor(() =>
+        expect(window.location.pathname).toBe("/c/ec_1/mb_inbox/m_2"),
+      );
+      expect(selectedCount()).toBe("0 selected");
+      fireEvent.click(checkbox(list, "Lunch?").closest("label")!);
+      expect(selectedCount()).toBe("1 selected");
+    });
+
     // Read if any is unread: only the unread ones are asked about.
     it("marks a mixed selection read, asking only for the unread", async () => {
       getMessages.mockResolvedValue({
