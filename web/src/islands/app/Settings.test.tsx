@@ -582,9 +582,7 @@ describe("settings", () => {
       name: "When archived",
     });
     await waitFor(() =>
-      expect(archived.options[0]!.textContent).toBe(
-        "As set for all: leave as it is",
-      ),
+      expect(archived.options[0]!.textContent).toBe("Default: leave as it is"),
     );
     expect(archived.value).toBe("");
     fireEvent.change(archived, { target: { value: "read" } });

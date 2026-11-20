@@ -196,8 +196,8 @@ export function ReadOn({
       >
         <option value="">
           {all === undefined
-            ? "As set for all"
-            : `As set for all: ${all ? "mark read" : "leave as it is"}`}
+            ? "Default"
+            : `Default: ${all ? "mark read" : "leave as it is"}`}
         </option>
         <option value="read">Mark read</option>
         <option value="leave">Leave as it is</option>
