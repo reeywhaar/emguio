@@ -108,6 +108,35 @@ func (s *Server) emptyMailbox(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// readMailbox marks read everything a folder holds, on the server and here. See docs/reading.md.
+func (s *Server) readMailbox(w http.ResponseWriter, r *http.Request) {
+	c, mb, ok := s.mailboxOf(w, r)
+	if !ok {
+		return
+	}
+	if !mb.Selectable {
+		refuse(w, http.StatusBadRequest, CodeInvalid, "This folder only holds other folders.")
+		return
+	}
+	if s.mirror == nil {
+		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
+		return
+	}
+	u := userOf(r)
+	below, err := s.mirror.ReadAll(r.Context(), targetOf(u, c), mb.Name)
+	if !s.serverError(w, r, c.ID, err, "This folder is no longer on the server.") {
+		return
+	}
+	if err := s.store.ReadAll(r.Context(), mb.ID, below); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.store.Notify(u.ID)
+	s.mirror.Refresh(c.ID)
+	s.log.Info("folder read", "user", u.ID, "email_config", c.ID, "mailbox", mb.ID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // placeOf reads where a folder goes and what it is called, for one made or, self, renamed: the
 // folder it goes inside, nil for the top, and its name, or a refusal already written.
 func (s *Server) placeOf(w http.ResponseWriter, r *http.Request, c *store.EmailConfig, boxes []*store.Mailbox, self *store.Mailbox, body folderBody) (*store.Mailbox, string, bool) {

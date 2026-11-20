@@ -161,6 +161,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("PUT /api/email-configs/{id}/mailboxes/{mailbox}", s.requireSession(s.awake(s.renameMailbox)))
 	s.handle("DELETE /api/email-configs/{id}/mailboxes/{mailbox}", s.requireSession(s.awake(s.deleteMailbox)))
 	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/empty", s.requireSession(s.awake(s.emptyMailbox)))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/read", s.requireSession(s.awake(s.readMailbox)))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.awake(s.listMessages)))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/threads", s.requireSession(s.awake(s.threadCounts)))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.awake(s.readMessage)))

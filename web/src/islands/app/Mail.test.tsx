@@ -35,6 +35,7 @@ const putMailbox = vi.fn();
 const deleteMailbox = vi.fn();
 const putOrder = vi.fn();
 const emptyFolder = vi.fn();
+const readFolder = vi.fn();
 const postJob = vi.fn();
 const postJobsRequest = vi.fn();
 const getJobs = vi.fn();
@@ -64,6 +65,8 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     putOrder(id, ids),
   postEmailConfigsByIdMailboxesByMailboxEmpty: (id: string, mailbox: string) =>
     emptyFolder(id, mailbox),
+  postEmailConfigsByIdMailboxesByMailboxRead: (id: string, mailbox: string) =>
+    readFolder(id, mailbox),
   getEmailConfigsByIdMailboxesByMailboxThreads: (
     id: string,
     mailbox: string,
@@ -418,10 +421,10 @@ describe("the mail view", () => {
     putMailbox.mockResolvedValue(box("mb_work", ["Projects"]));
     window.history.pushState({}, "", "/c/ec_1/mb_work");
     mount(<Routed />);
-    const menu = await screen.findByRole<HTMLSelectElement>("combobox", {
-      name: "Folder",
-    });
-    fireEvent.change(menu, { target: { value: "edit" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Folder:" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Rename or move…" }),
+    );
     const dialog = within(await screen.findByRole("dialog"));
     dialog.getByRole("heading", { name: "Rename or move folder" });
     const name = dialog.getByLabelText<HTMLInputElement>("Name");
@@ -445,12 +448,8 @@ describe("the mail view", () => {
     deleteMailbox.mockResolvedValue(undefined);
     window.history.pushState({}, "", "/c/ec_1/mb_work");
     mount(<Routed />);
-    fireEvent.change(
-      await screen.findByRole<HTMLSelectElement>("combobox", {
-        name: "Folder",
-      }),
-      { target: { value: "delete" } },
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Folder:" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete…" }));
     await screen.findByText("Delete Work?");
     const sure = screen.getAllByRole("button", { name: "Delete" });
     fireEvent.click(sure[sure.length - 1]!);
@@ -460,11 +459,15 @@ describe("the mail view", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/c/ec_1"));
   });
 
-  it("offers nothing of the kind for the server's own folders", async () => {
+  it("offers only marking read for the server's own folders", async () => {
     window.history.pushState({}, "", "/c/ec_1/mb_sent");
     mount(<Routed />);
     await screen.findAllByText("Bob");
-    expect(screen.queryByRole("combobox", { name: "Folder" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Folder:" }));
+    const menu = within(await screen.findByRole("menu"));
+    expect(menu.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
+      "Mark all as read",
+    ]);
   });
 
   // From the sidebar a folder is made on its own, nothing moved, and opened.
@@ -1085,6 +1088,37 @@ describe("the mail view", () => {
     mount(<Mail named="ec_1" mailbox="mb_trash" message={null} q="lunch" />);
     await screen.findByRole("list", { name: "Messages" });
     expect(screen.queryByRole("button", { name: /^Empty/ })).toBeNull();
+  });
+
+  // Any folder, from its menu, while any of it is unread; done at once, nothing to ask.
+  it("marks a folder all read from its menu", async () => {
+    getEmailConfigsByIdMailboxes.mockResolvedValue([
+      ...boxes,
+      box("mb_junk", ["Junk"], "junk", 3),
+      box("mb_trash", ["Trash"], "trash"),
+    ]);
+    readFolder.mockResolvedValue(undefined);
+    const { unmount } = mount(
+      <Mail named="ec_1" mailbox="mb_junk" message={null} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Folder:" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Mark all as read" }),
+    );
+    await waitFor(() =>
+      expect(readFolder).toHaveBeenCalledWith("ec_1", "mb_junk"),
+    );
+    expect(screen.queryByRole("menu")).toBeNull();
+    unmount();
+
+    // Nothing unread, nothing to mark.
+    mount(<Mail named="ec_1" mailbox="mb_trash" message={null} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Folder:" }));
+    expect(
+      (
+        await screen.findByRole("menuitem", { name: "Mark all as read" })
+      ).hasAttribute("disabled"),
+    ).toBe(true);
   });
 
   // In Sent a message dated ahead of now is one the server holds to send then; in INBOX it is a

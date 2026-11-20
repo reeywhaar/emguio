@@ -576,6 +576,25 @@ func (m *Mirror) Empty(ctx context.Context, t store.SyncTarget, mailbox string) 
 	return below, held, err
 }
 
+// ReadAll marks read what a mailbox held when it was opened: a STORE of \Seen to the UIDs below
+// the UIDNEXT it opened with, so mail arriving meanwhile stays unread. It says that UIDNEXT.
+func (m *Mirror) ReadAll(ctx context.Context, t store.SyncTarget, mailbox string) (uint32, error) {
+	var below uint32
+	err := m.change(ctx, t, func(f *fetcher) error {
+		_, n, err := f.open(mailbox, true, true)
+		if err != nil {
+			return err
+		}
+		below = f.uidNext
+		if n == 0 || below <= 1 {
+			return nil
+		}
+		set := imap.UIDSet{{Start: 1, Stop: imap.UID(below - 1)}}
+		return refused(f.session.client.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close())
+	})
+	return below, err
+}
+
 // refused is a server's NO to an action, as the sentence a person is shown; a request the server
 // refused is not a session gone wrong.
 func refused(err error) error {

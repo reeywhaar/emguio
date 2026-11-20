@@ -311,7 +311,7 @@ function Folders({
               <h1 className="hidden min-w-0 flex-1 truncate font-semibold md:block">
                 {current ? labelOfMailbox(current) : ""}
               </h1>
-              {current && current.special_use === "" && boxes.data ? (
+              {current?.selectable && boxes.data ? (
                 <FolderMenu
                   config={config.id}
                   boxes={boxes.data}

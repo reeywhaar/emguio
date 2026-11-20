@@ -406,6 +406,14 @@ mail that arrives meanwhile stays. Done on the mail server before it answers `20
 Any other folder answers `400 invalid`.
 
 ```
+POST /api/email-configs/{id}/mailboxes/{mailbox}/read
+```
+
+Marks read every message in the folder, as it holds them when it is opened: mail that arrives
+meanwhile stays unread. Done on the mail server before it answers `204`, not as a job. A folder
+that only holds other folders answers `400 invalid`.
+
+```
 PUT /api/email-configs/{id}/mailboxes/order
 ```
 

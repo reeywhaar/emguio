@@ -78,6 +78,16 @@ export const deleteEmailConfigsByIdMailboxesByMailbox = (
   );
 
 /** Deletes for good everything Trash or Junk holds. */
+/** Marks read every message in a folder, on the server, before it answers. */
+export const postEmailConfigsByIdMailboxesByMailboxRead = (
+  id: string,
+  mailbox: string,
+) =>
+  request<void>(
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}/read`,
+    { method: "POST" },
+  );
+
 export const postEmailConfigsByIdMailboxesByMailboxEmpty = (
   id: string,
   mailbox: string,

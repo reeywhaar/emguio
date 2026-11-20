@@ -35,9 +35,11 @@ type fakeMirror struct {
 	parts map[string][2]string
 	// kicked is each config told it has a job waiting.
 	kicked []string
-	// emptied is each mailbox emptied, which held messages below emptyBelow.
+	// emptied is each mailbox emptied, which held messages below emptyBelow; read, each one
+	// marked read.
 	emptied    []string
 	emptyBelow uint32
+	read       []string
 	// deleted is each message deleted, as mailbox and UID; gone are the UIDs the server no longer has.
 	deleted []string
 	gone    map[uint32]bool
@@ -152,6 +154,16 @@ func (f *fakeMirror) Delete(_ context.Context, _ store.SyncTarget, mailbox strin
 		f.deleted = append(f.deleted, fmt.Sprintf("%s %d", mailbox, uid))
 	}
 	return had, nil
+}
+
+func (f *fakeMirror) ReadAll(_ context.Context, _ store.SyncTarget, mailbox string) (uint32, error) {
+	if f.err != nil {
+		return 0, f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.read = append(f.read, mailbox)
+	return f.emptyBelow, nil
 }
 
 func (f *fakeMirror) Empty(_ context.Context, _ store.SyncTarget, mailbox string) (uint32, uint32, error) {

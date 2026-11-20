@@ -703,6 +703,25 @@ func (s *Store) Emptied(ctx context.Context, mailboxID string, below uint32) err
 	return tx.Commit()
 }
 
+// ReadAll records a mailbox's messages below a UID as read, as the server marked them, and its
+// unread count as what is left.
+func (s *Store) ReadAll(ctx context.Context, mailboxID string, below uint32) error {
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("read all: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET seen = 1 WHERE mailbox_id = ? AND uid < ?`, mailboxID, below); err != nil {
+		return fmt.Errorf("read all: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE mailboxes SET unseen = (SELECT COUNT(*) FROM messages WHERE mailbox_id = mailboxes.id AND seen = 0)
+		 WHERE id = ?`, mailboxID); err != nil {
+		return fmt.Errorf("read all: %w", err)
+	}
+	return tx.Commit()
+}
+
 // RenameMailboxes renames a mailbox here as the server renamed it, and every mailbox inside it
 // with it, keeping their ids: what names one — a link, a job, the folder chosen to archive to —
 // goes on naming it.

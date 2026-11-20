@@ -40,6 +40,8 @@ type Mirror interface {
 	Delete(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32) (mirror.Had, error)
 	// Empty deletes for good what a mailbox held, and says the UIDNEXT it held up to and how many.
 	Empty(ctx context.Context, t store.SyncTarget, mailbox string) (uint32, uint32, error)
+	// ReadAll marks read what a mailbox held, and says the UIDNEXT it held up to.
+	ReadAll(ctx context.Context, t store.SyncTarget, mailbox string) (uint32, error)
 	// Unsubscribe is how a message says to stop its sender's mail, read from the server, or
 	// mirror.ErrGone.
 	Unsubscribe(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (message.Unsubscribe, error)

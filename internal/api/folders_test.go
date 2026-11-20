@@ -225,3 +225,51 @@ func TestTrashIsEmptiedAndNothingElseIs(t *testing.T) {
 		t.Errorf("empty INBOX = %s", resp.Status)
 	}
 }
+
+// Marked read in one request, up to what the server held; what came after stays unread.
+func TestAFolderIsMarkedReadInOneRequest(t *testing.T) {
+	c, cfg, boxes, _, fake := withOutbox(t)
+	ctx := context.Background()
+	fake.store.PutMailboxes(ctx, cfg, []store.Listed{
+		{Name: "INBOX", SpecialUse: store.UseInbox, Selectable: true},
+		{Name: "Junk", SpecialUse: store.UseJunk, Selectable: true},
+	})
+	all, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	for _, mb := range all {
+		boxes[mb.Name] = mb.ID
+	}
+	junk := boxes["Junk"]
+	fake.store.PutMessages(ctx, junk, []store.Header{
+		{UID: 1, InternalDate: time.Now(), Subject: "win"},
+		{UID: 2, InternalDate: time.Now(), Subject: "win again"},
+		{UID: 5, InternalDate: time.Now(), Subject: "arrived meanwhile"},
+	})
+	fake.emptyBelow = 5
+
+	if resp := c.do("POST", "/api/email-configs/"+cfg+"/mailboxes/"+junk+"/read", ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("read = %s %v", resp.Status, c.json(resp))
+	}
+	if len(fake.read) != 1 || fake.read[0] != "Junk" {
+		t.Errorf("read %v", fake.read)
+	}
+	var mb *store.Mailbox
+	after, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	for _, m := range after {
+		if m.ID == junk {
+			mb = m
+		}
+	}
+	kept, _ := fake.store.Window(ctx, mb)
+	unread := 0
+	for _, m := range kept {
+		if !m.Flags.Seen {
+			unread++
+			if m.Subject != "arrived meanwhile" {
+				t.Errorf("%q is still unread", m.Subject)
+			}
+		}
+	}
+	if unread != 1 || mb.Unseen != 1 {
+		t.Errorf("%d unread kept, the folder counts %d", unread, mb.Unseen)
+	}
+}

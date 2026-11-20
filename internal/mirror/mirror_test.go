@@ -1063,6 +1063,30 @@ func TestTrashIsEmptiedOfWhatItHeld(t *testing.T) {
 	}
 }
 
+func TestAFolderIsMarkedReadUpToWhatItHeld(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	ctx := context.Background()
+	w.create("Junk")
+	w.deliver("Junk", 1, "alice@example.com", "Old")
+	w.deliver("Junk", 2, "bob@example.com", "Older")
+
+	below, err := w.mirror.ReadAll(ctx, w.target, "Junk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if below != 3 {
+		t.Errorf("below %d", below)
+	}
+	w.deliver("Junk", 3, "carol@example.com", "After")
+	st, err := w.server.Status("Junk", &imap.StatusOptions{NumUnseen: true}).Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := deref(st.NumUnseen); n != 1 {
+		t.Errorf("%d unread, want the one that came after", n)
+	}
+}
+
 // after is the cursor past h, as a page that showed it last gives it.
 func after(uidValidity uint32, h store.Header) After {
 	return After{UIDValidity: uidValidity, UID: h.UID, Date: h.InternalDate}

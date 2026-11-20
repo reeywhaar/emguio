@@ -19,6 +19,7 @@ export function PickerButton({
   name,
   plain = false,
   chevron = true,
+  look,
   className = "",
   children,
   ...props
@@ -29,12 +30,14 @@ export function PickerButton({
   plain?: boolean;
   /** Off for a label that says it opens something itself. */
   chevron?: boolean;
+  /** A look of its own in place of a select's or plain, such as a button's. */
+  look?: string;
 }) {
   return (
     <button
       type="button"
       aria-haspopup="dialog"
-      className={`${pickerLook(plain)} ${className}`}
+      className={`${look ?? pickerLook(plain)} ${className}`}
       {...props}
     >
       <span className="sr-only">{name}: </span>

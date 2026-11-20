@@ -20,6 +20,7 @@ export function Menu({
   label,
   plain = false,
   chevron,
+  look,
   end = false,
   title,
   disabled,
@@ -32,6 +33,8 @@ export function Menu({
   /** Just the label, without a field around it: for a bar, not a form. */
   plain?: boolean;
   chevron?: boolean;
+  /** A look of its own for the button, such as a button's. */
+  look?: string;
   /** Opened along the button's right edge rather than its left: for a button at the right. */
   end?: boolean;
   title?: string;
@@ -74,6 +77,7 @@ export function Menu({
         name={name}
         plain={plain}
         chevron={chevron}
+        look={look}
         title={title}
         disabled={disabled}
         aria-haspopup="menu"

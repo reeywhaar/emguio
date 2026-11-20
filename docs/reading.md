@@ -67,8 +67,10 @@ the move then goes to it as to any other. A name holding the server's delimiter 
 than read as nesting, which is what choosing where it goes is for, and so is one a sibling already
 has.
 
-A folder of the user's own — none of the server's, which keep their names and places — has a menu
-beside its name above the list: rename or move, in the same dialog, and delete. Renaming is
+Every folder has a menu beside its name above the list, a dropdown of commands rather than a
+select, whose first line would be the folder's name. It marks all of the folder read, and a
+folder of the user's own — none of the server's, which keep their names and places — is renamed
+or moved there, in the same dialog, and deleted. Renaming is
 `RENAME`, and so is moving, into another folder or to the top: what is inside goes with it. Here
 the folder and those inside it are renamed in place before the folders are listed again, so each
 keeps its id, and a link, a waiting job or the folder chosen to archive to goes on naming it.
@@ -93,6 +95,11 @@ before it is done. What goes is what the folder held when it was opened — `UID
 `\Deleted` and `UID EXPUNGE` of the UIDs below the UIDNEXT it opened with — so mail arriving
 meanwhile stays. Without `UIDPLUS` the `EXPUNGE` is a plain one, which also takes what another
 client marked deleted there; all of it was going.
+
+Marking a whole folder read, from its menu, is one request too, with nothing to ask first: a
+`UID STORE` of `\Seen` to the UIDs below the UIDNEXT the folder opened with, so mail arriving
+meanwhile stays unread. Spam and deleted mail that nobody means to open would otherwise count as
+unread in every other client.
 
 A move is `MOVE` where the server has it. Without it, it is `COPY`, `\Deleted` and an `EXPUNGE`
 of those UIDs alone, which needs `UIDPLUS`: a plain `EXPUNGE` would also remove whatever another
