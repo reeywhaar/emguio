@@ -118,7 +118,7 @@ export function MenuItem({
     <button
       type="button"
       role="menuitem"
-      className={`rounded-md px-3 py-1.5 text-left text-sm whitespace-nowrap hover:bg-shade disabled:opacity-50 pointer-coarse:py-2.5 ${
+      className={`cursor-default rounded-md px-3 py-1.5 text-left text-sm whitespace-nowrap select-none hover:bg-shade disabled:opacity-50 disabled:hover:bg-transparent pointer-coarse:py-2.5 ${
         danger ? "text-accent" : "text-fg"
       }`}
       {...props}
