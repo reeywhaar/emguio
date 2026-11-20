@@ -414,7 +414,7 @@ function Row({
             readOnly
             onClick={(e) => onToggle(e.shiftKey)}
             aria-label={bare ? m.preview : m.subject || "No subject"}
-            className="mt-1 size-4 shrink-0 accent-brand"
+            className="mt-1"
           />
           {body}
         </label>

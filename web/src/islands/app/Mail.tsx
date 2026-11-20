@@ -283,6 +283,22 @@ function Folders({
               done={() => setSelected(null)}
             />
           ) : null}
+          {/* Where Done is while selecting, so one place starts and ends it. Selecting is about
+              the list: an open message is closed for it. */}
+          {!selected && current?.selectable ? (
+            <Button
+              ref={selectButton}
+              size="bar"
+              aria-label="Select messages"
+              title="Select messages"
+              onClick={() => {
+                setSelected(new Set());
+                go(paths.mail(config.id, current.id, undefined, q));
+              }}
+            >
+              <SelectMark />
+            </Button>
+          ) : null}
           {!selected && boxes.data && boxes.data.length > 0 ? (
             <FolderPicker
               config={config}
@@ -330,21 +346,6 @@ function Folders({
                   }
                 >
                   <FilterMark on={unreadOnly(q)} />
-                </Button>
-              ) : null}
-              {current?.selectable ? (
-                // Selecting is about the list: an open message is closed for it.
-                <Button
-                  ref={selectButton}
-                  size="bar"
-                  aria-label="Select messages"
-                  title="Select messages"
-                  onClick={() => {
-                    setSelected(new Set());
-                    go(paths.mail(config.id, current.id, undefined, q));
-                  }}
-                >
-                  <SelectMark />
                 </Button>
               ) : null}
             </>
