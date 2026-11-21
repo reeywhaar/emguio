@@ -24,6 +24,17 @@ type Options = {
   signal?: AbortSignal;
 };
 
+/** Told when a request is refused because the user is sealed; see whenSealed. */
+let sealed: (() => void) | null = null;
+
+/** Has fn told of a request refused as sealed, until what it returns is called. */
+export function whenSealed(fn: () => void): () => void {
+  sealed = fn;
+  return () => {
+    if (sealed === fn) sealed = null;
+  };
+}
+
 export async function request<T>(
   path: string,
   options: Options = {},
@@ -55,6 +66,7 @@ export async function request<T>(
     // The server writes the sentence for whoever reads it; re-wording it here would mean
     // maintaining two vocabularies for one failure.
     const refusal = refusalOf(text);
+    if (refusal?.code === "sealed") sealed?.();
     if (refusal) {
       throw new ApiError(
         response.status,

@@ -21,6 +21,7 @@ const (
 	CodeRateLimited          = "rate_limited"
 	CodeBusy                 = "busy"
 	CodeInternal             = "internal"
+	CodeSealed               = "sealed"
 )
 
 // errorBody is the shape of every refusal.

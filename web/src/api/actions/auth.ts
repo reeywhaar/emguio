@@ -18,7 +18,7 @@ export const getAuthInvitesByToken = (token: string) =>
 
 export const postAuthInvitesByTokenAccept = (
   token: string,
-  body: { username: string; password: string },
+  body: { username: string; password: string; seal_key: string },
 ) =>
   request<void>(`/api/auth/invites/${encodeURIComponent(token)}/accept`, {
     method: "POST",

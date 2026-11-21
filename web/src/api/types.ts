@@ -4,6 +4,8 @@ export type Me = {
   id: string;
   username: string;
   created_at: number;
+  /** Whether their seal key is open since the server started; none before they make one. */
+  seal: "none" | "sealed" | "open";
 };
 
 /** How a server is secured: TLS from the first byte, or upgraded with STARTTLS. */

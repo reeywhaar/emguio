@@ -77,16 +77,26 @@ describe("an invitation link", () => {
 
     type("Username", "misha");
     type("Password", "a good password");
+    const sealKey = screen.getByLabelText("Seal key");
+    const again = screen.getByLabelText("Seal key again");
+    fireEvent.change(sealKey, { target: { value: "a long seal key" } });
+    fireEvent.change(again, { target: { value: "a long seal kez" } });
     const create = screen.getByRole<HTMLButtonElement>("button", {
       name: "Create it",
     });
     await waitFor(() => expect(create.disabled).toBe(false));
+    // Typed twice, alike, before anything is sent.
     fireEvent.click(create);
+    await screen.findByText("The two seal keys do not match.");
+    expect(postAuthInvitesByTokenAccept).not.toHaveBeenCalled();
 
+    fireEvent.change(again, { target: { value: "a long seal key" } });
+    fireEvent.click(create);
     await waitFor(() => expect(leaveFor).toHaveBeenCalledWith("/"));
     expect(postAuthInvitesByTokenAccept).toHaveBeenCalledWith("a-token", {
       username: "misha",
       password: "a good password",
+      seal_key: "a long seal key",
     });
   });
 

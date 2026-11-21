@@ -13,6 +13,8 @@ import (
 type credentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// SealKey is the new user's seal key, on accepting an invitation.
+	SealKey string `json:"seal_key"`
 }
 
 // login checks a password and issues a cookie.
@@ -65,10 +67,16 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	u := userOf(r)
+	seal, err := s.store.SealState(r.Context(), u.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":         u.ID,
 		"username":   u.Username,
 		"created_at": u.CreatedAt.Unix(),
+		"seal":       seal,
 	})
 }
 
@@ -92,8 +100,17 @@ func (s *Server) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	// Checked first, so a seal key that will not do leaves the invitation unspent.
+	if err := store.ValidateSealKey(req.SealKey); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	u, err := s.store.AcceptInvite(r.Context(), r.PathValue("token"), req.Username, req.Password)
 	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.store.CreateSealKey(r.Context(), u.ID, req.SealKey); err != nil {
 		s.fail(w, r, err)
 		return
 	}

@@ -34,6 +34,7 @@ import {
   notifiesOf,
 } from "@app/islands/app/Notifications";
 import { Reading, ReadOn } from "@app/islands/app/Reading";
+import { SealKeySettings } from "@app/islands/app/Seal";
 import { Results } from "@app/islands/app/Results";
 import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
@@ -101,6 +102,7 @@ export function Settings({
       </section>
       <Reading />
       <Notifications />
+      <SealKeySettings />
       <Account />
       <p className="text-sm text-muted">
         A program can do what this page does, through the API:{" "}

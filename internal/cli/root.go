@@ -13,7 +13,6 @@ import (
 
 	"emguio/internal/app"
 	"emguio/internal/config"
-	"emguio/internal/seal"
 	"emguio/internal/store"
 )
 
@@ -53,11 +52,11 @@ func setup() (*config.Config, *store.Store, *slog.Logger, error) {
 	level.Set(cfg.LogLevel)
 	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level, ReplaceAttr: readable}))
 
-	sealer, err := seal.New(cfg.SecretKey)
-	if err != nil {
-		return nil, nil, nil, err
+	// Each user unseals their own mail passwords; a key for all of them is not read any more.
+	if os.Getenv("EMGUIO_SECRET_KEY") != "" {
+		log.Warn("EMGUIO_SECRET_KEY is no longer read: each user unseals with a seal key of their own. Remove it.")
 	}
-	st, err := store.Open(cfg.DataDir, sealer)
+	st, err := store.Open(cfg.DataDir)
 	if err != nil {
 		return nil, nil, nil, err
 	}

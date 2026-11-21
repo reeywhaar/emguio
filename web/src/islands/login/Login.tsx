@@ -10,6 +10,7 @@ import { Button } from "@app/components/Button";
 import { TextField } from "@app/components/TextField";
 import { Wordmark } from "@app/components/Wordmark";
 import { leaveFor } from "@app/leave";
+import { newKeyProblem, SEAL_KEY_MIN } from "@app/sealKey";
 
 /**
  * The only document an unauthenticated visitor loads: a few kilobytes instead of the whole
@@ -88,6 +89,8 @@ function Accept({ token }: { token: string }) {
   const [live, setLive] = useState<boolean | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [sealKey, setSealKey] = useState("");
+  const [again, setAgain] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -111,10 +114,19 @@ function Accept({ token }: { token: string }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    const problem = newKeyProblem(sealKey, again);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await postAuthInvitesByTokenAccept(token, { username, password });
+      await postAuthInvitesByTokenAccept(token, {
+        username,
+        password,
+        seal_key: sealKey,
+      });
       leaveFor("/");
     } catch (err) {
       setError(messageOf(err));
@@ -142,6 +154,31 @@ function Accept({ token }: { token: string }) {
           className="w-full"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+        />
+        <p className="mt-2 text-sm text-muted">
+          Your seal key opens the mail passwords you save. emguio asks for it
+          after every restart, and reads none of your mail until you give it.
+          Keep it somewhere safe.
+        </p>
+        <TextField
+          name="seal-key"
+          type="password"
+          autoComplete="off"
+          aria-label="Seal key"
+          placeholder={`Seal key, ${SEAL_KEY_MIN} characters or more`}
+          className="w-full"
+          value={sealKey}
+          onChange={(e) => setSealKey(e.target.value)}
+        />
+        <TextField
+          name="seal-key-again"
+          type="password"
+          autoComplete="off"
+          aria-label="Seal key again"
+          placeholder="Seal key again"
+          className="w-full"
+          value={again}
+          onChange={(e) => setAgain(e.target.value)}
         />
         {error ? <p className="text-sm text-accent">{error}</p> : null}
         <Button

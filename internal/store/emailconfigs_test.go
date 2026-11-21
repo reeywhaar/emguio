@@ -6,8 +6,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"emguio/internal/seal"
 )
 
 func draft() EmailConfigInput {
@@ -29,10 +27,17 @@ func withOutgoing(in EmailConfigInput, username, password string) EmailConfigInp
 	return in
 }
 
+// testSealKey is every test user's seal key.
+const testSealKey = "a seal key for the tests"
+
+// newUser is a user with a seal key, open.
 func newUser(t *testing.T, st *Store, name string) *User {
 	t.Helper()
 	u, err := st.CreateUser(context.Background(), name, "a good password")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSealKey(context.Background(), u.ID, testSealKey); err != nil {
 		t.Fatal(err)
 	}
 	return u
@@ -199,25 +204,19 @@ func TestAnOutgoingServerWithItsOwnUsernameNeedsItsOwnPassword(t *testing.T) {
 	}
 }
 
-// Changing the key makes every saved password unreadable, and the form has to say so in words a
+// A seal key replaced makes every saved password unreadable, and the form has to say so in words a
 // person can act on rather than failing to dial.
-func TestAPasswordSealedWithAnotherKeyAsksToBeEnteredAgain(t *testing.T) {
-	dir := t.TempDir()
-	st, _ := Open(dir, sealer(t))
+func TestAPasswordSealedWithAReplacedKeyAsksToBeEnteredAgain(t *testing.T) {
+	st := openStore(t)
 	ctx := context.Background()
 	u := newUser(t, st, "misha")
 	cfg, _ := st.CreateEmailConfig(ctx, u.ID, draft())
-	st.Close()
-
-	other, _ := seal.New(bytes.Repeat([]byte{8}, seal.KeySize))
-	st, err := Open(dir, other)
-	if err != nil {
+	if err := st.ResetSealKey(ctx, u.ID, "a new seal key, the old one forgotten"); err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
 	edit := draft()
 	edit.Incoming.Password = ""
-	_, err = st.Logins(ctx, u.ID, cfg.ID, edit)
+	_, err := st.Logins(ctx, u.ID, cfg.ID, edit)
 	if !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "Enter it again") {
 		t.Errorf("err = %v, want a refusal asking for the password", err)
 	}

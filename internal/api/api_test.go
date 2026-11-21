@@ -15,7 +15,6 @@ import (
 
 	"emguio/internal/config"
 	"emguio/internal/ids"
-	"emguio/internal/seal"
 	"emguio/internal/store"
 )
 
@@ -31,11 +30,7 @@ func newServerStore(t *testing.T, files fstest.MapFS) (*Server, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sealer, err := seal.New(bytes.Repeat([]byte{7}, seal.KeySize))
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, err := store.Open(t.TempDir(), sealer)
+	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

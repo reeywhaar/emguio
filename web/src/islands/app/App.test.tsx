@@ -59,7 +59,12 @@ const config = (id: string, name: string): EmailConfig => ({
 beforeEach(() => {
   window.history.pushState({}, "", "/");
   window.localStorage.clear();
-  getAuthMe.mockResolvedValue({ id: "u_1", username: "misha", created_at: 0 });
+  getAuthMe.mockResolvedValue({
+    id: "u_1",
+    username: "misha",
+    created_at: 0,
+    seal: "open",
+  });
   getEmailConfigs.mockResolvedValue([]);
   // Each config's INBOX is named for it, so a test can tell which one is open.
   getEmailConfigsByIdMailboxes.mockImplementation(async (id: string) => [
@@ -269,6 +274,19 @@ describe("the application", () => {
     } finally {
       restore();
     }
+  });
+
+  // Sealed, the page asks for the seal key and nothing of the user's is asked for.
+  it("asks a sealed user for their seal key before anything else", async () => {
+    getAuthMe.mockResolvedValue({
+      id: "u_1",
+      username: "misha",
+      created_at: 0,
+      seal: "sealed",
+    });
+    mount(<App />);
+    await screen.findByRole("heading", { name: "Unseal" });
+    expect(getEmailConfigs).not.toHaveBeenCalled();
   });
 
   it("puts a dot on the tab's icon while any mail account has unread mail", async () => {

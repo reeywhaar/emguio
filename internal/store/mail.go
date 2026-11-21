@@ -147,8 +147,9 @@ type SyncTarget struct {
 	Host string
 }
 
-// SyncTargets lists every email config on the instance that is turned on. The mirror acts for
-// each one's user without a request from them, which is the one reason to read across users.
+// SyncTargets lists every email config on the instance that is turned on and whose user has
+// unsealed: the mirror cannot sign in for one who has not. It acts for each one's user without a
+// request from them, which is the one reason to read across users.
 func (s *Store) SyncTargets(ctx context.Context) ([]SyncTarget, error) {
 	rows, err := s.reader.QueryContext(ctx, `SELECT id, user_id, updated_at, incoming_host FROM email_configs WHERE off = 0`)
 	if err != nil {
@@ -165,7 +166,9 @@ func (s *Store) SyncTargets(ctx context.Context) ([]SyncTarget, error) {
 			return nil, fmt.Errorf("sync targets: %w", err)
 		}
 		t.UpdatedAt = fromUnix(updated)
-		out = append(out, t)
+		if s.Unsealed(t.UserID) {
+			out = append(out, t)
+		}
 	}
 	return out, rows.Err()
 }

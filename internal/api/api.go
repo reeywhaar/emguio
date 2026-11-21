@@ -65,6 +65,8 @@ type Server struct {
 	// unsubscribes bounds how many one-click unsubscribes a user sends: each is a request
 	// emguio makes to an address a message names.
 	unsubscribes *limiter
+	// unseals bounds tries at a user's seal key, each an Argon2 derivation.
+	unseals *limiter
 
 	// writeDeadline is how long a request that changes something may run. A field so a test
 	// can make it short.
@@ -105,7 +107,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		mirror:    mirror,
 		push:      push,
 		holds:     holds{said: map[string]heldUntil{}},
-		proxyKey:  proxyKey(cfg.SecretKey),
+		proxyKey:  proxyKey(),
 
 		loginAll:     newLimiter(30, 2*time.Second),
 		loginUser:    newLimiter(5, 20*time.Second),
@@ -114,6 +116,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		images:       newLimiter(200, 100*time.Millisecond),
 		pushTests:    newLimiter(3, 20*time.Second),
 		unsubscribes: newLimiter(10, 6*time.Second),
+		unseals:      newLimiter(5, 12*time.Second),
 
 		writeDeadline: WriteDeadline,
 	}
@@ -136,58 +139,63 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("POST /api/auth/invites/{token}/accept", http.HandlerFunc(s.acceptInvite))
 	s.handle("POST /api/auth/logout", s.requireSession(s.logout))
 	s.handle("GET /api/auth/me", s.requireSession(s.me))
+	s.handle("POST /api/seal", s.requireSession(s.createSealKey))
+	s.handle("POST /api/seal/carry", s.requireSession(s.carrySealKey))
+	s.handle("POST /api/seal/unseal", s.requireSession(s.unseal))
+	s.handle("PUT /api/seal", s.requireSession(s.changeSealKey))
+	s.handle("POST /api/seal/reset", s.requireSession(s.resetSealKey))
 
-	s.handle("GET /api/email-configs", s.requireSession(s.listEmailConfigs))
-	s.handle("POST /api/email-configs", s.requireSession(s.createEmailConfig))
-	s.handle("POST /api/email-configs/test", s.requireSession(s.testEmailConfig))
-	s.handle("POST /api/email-configs/autoconfig", s.requireSession(s.lookUpSettings))
-	s.handle("PUT /api/email-configs/order", s.requireSession(s.orderEmailConfigs))
-	s.handle("PUT /api/email-configs/{id}", s.requireSession(s.putEmailConfig))
-	s.handle("DELETE /api/email-configs/{id}", s.requireSession(s.deleteEmailConfig))
-	s.handle("PUT /api/email-configs/{id}/archive", s.requireSession(s.putArchive))
-	s.handle("PUT /api/email-configs/{id}/notifications", s.requireSession(s.putNotifications))
-	s.handle("PUT /api/email-configs/{id}/off", s.requireSession(s.putOff))
-	s.handle("PUT /api/email-configs/{id}/reading", s.requireSession(s.putConfigReading))
-	s.handle("POST /api/email-configs/{id}/test", s.requireSession(s.testEmailConfig))
-	s.handle("POST /api/email-configs/{id}/sync", s.requireSession(s.awake(s.syncEmailConfig)))
-	s.handle("POST /api/email-configs/{id}/send", s.requireSession(s.awake(s.sendMessage)))
-	s.handle("GET /api/email-configs/{id}/hold", s.requireSession(s.awake(s.holdLimit)))
-	s.handle("POST /api/email-configs/{id}/drafts", s.requireSession(s.awake(s.createDraft)))
-	s.handle("PUT /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.awake(s.saveDraft)))
-	s.handle("DELETE /api/email-configs/{id}/drafts/{draft}", s.requireSession(s.awake(s.deleteDraft)))
-	s.handle("GET /api/email-configs/{id}/mailboxes", s.requireSession(s.listMailboxes))
-	s.handle("POST /api/email-configs/{id}/mailboxes", s.requireSession(s.awake(s.createMailbox)))
-	s.handle("PUT /api/email-configs/{id}/mailboxes/order", s.requireSession(s.orderMailboxes))
-	s.handle("PUT /api/email-configs/{id}/mailboxes/{mailbox}", s.requireSession(s.awake(s.renameMailbox)))
-	s.handle("DELETE /api/email-configs/{id}/mailboxes/{mailbox}", s.requireSession(s.awake(s.deleteMailbox)))
-	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/empty", s.requireSession(s.awake(s.emptyMailbox)))
-	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/read", s.requireSession(s.awake(s.readMailbox)))
-	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/delete-old", s.requireSession(s.awake(s.deleteOldMail)))
-	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireSession(s.awake(s.listMessages)))
-	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/threads", s.requireSession(s.awake(s.threadCounts)))
-	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireSession(s.awake(s.readMessage)))
-	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/conversation", s.requireSession(s.awake(s.conversation)))
-	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/unsubscribe", s.requireSession(s.awake(s.unsubscribe)))
-	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireSession(s.awake(s.readPart)))
-	s.handle("GET /api/proxy", s.requireSession(s.proxyImage))
+	s.handle("GET /api/email-configs", s.requireUnsealed(s.listEmailConfigs))
+	s.handle("POST /api/email-configs", s.requireUnsealed(s.createEmailConfig))
+	s.handle("POST /api/email-configs/test", s.requireUnsealed(s.testEmailConfig))
+	s.handle("POST /api/email-configs/autoconfig", s.requireUnsealed(s.lookUpSettings))
+	s.handle("PUT /api/email-configs/order", s.requireUnsealed(s.orderEmailConfigs))
+	s.handle("PUT /api/email-configs/{id}", s.requireUnsealed(s.putEmailConfig))
+	s.handle("DELETE /api/email-configs/{id}", s.requireUnsealed(s.deleteEmailConfig))
+	s.handle("PUT /api/email-configs/{id}/archive", s.requireUnsealed(s.putArchive))
+	s.handle("PUT /api/email-configs/{id}/notifications", s.requireUnsealed(s.putNotifications))
+	s.handle("PUT /api/email-configs/{id}/off", s.requireUnsealed(s.putOff))
+	s.handle("PUT /api/email-configs/{id}/reading", s.requireUnsealed(s.putConfigReading))
+	s.handle("POST /api/email-configs/{id}/test", s.requireUnsealed(s.testEmailConfig))
+	s.handle("POST /api/email-configs/{id}/sync", s.requireUnsealed(s.awake(s.syncEmailConfig)))
+	s.handle("POST /api/email-configs/{id}/send", s.requireUnsealed(s.awake(s.sendMessage)))
+	s.handle("GET /api/email-configs/{id}/hold", s.requireUnsealed(s.awake(s.holdLimit)))
+	s.handle("POST /api/email-configs/{id}/drafts", s.requireUnsealed(s.awake(s.createDraft)))
+	s.handle("PUT /api/email-configs/{id}/drafts/{draft}", s.requireUnsealed(s.awake(s.saveDraft)))
+	s.handle("DELETE /api/email-configs/{id}/drafts/{draft}", s.requireUnsealed(s.awake(s.deleteDraft)))
+	s.handle("GET /api/email-configs/{id}/mailboxes", s.requireUnsealed(s.listMailboxes))
+	s.handle("POST /api/email-configs/{id}/mailboxes", s.requireUnsealed(s.awake(s.createMailbox)))
+	s.handle("PUT /api/email-configs/{id}/mailboxes/order", s.requireUnsealed(s.orderMailboxes))
+	s.handle("PUT /api/email-configs/{id}/mailboxes/{mailbox}", s.requireUnsealed(s.awake(s.renameMailbox)))
+	s.handle("DELETE /api/email-configs/{id}/mailboxes/{mailbox}", s.requireUnsealed(s.awake(s.deleteMailbox)))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/empty", s.requireUnsealed(s.awake(s.emptyMailbox)))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/read", s.requireUnsealed(s.awake(s.readMailbox)))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/delete-old", s.requireUnsealed(s.awake(s.deleteOldMail)))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages", s.requireUnsealed(s.awake(s.listMessages)))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/threads", s.requireUnsealed(s.awake(s.threadCounts)))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}", s.requireUnsealed(s.awake(s.readMessage)))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/conversation", s.requireUnsealed(s.awake(s.conversation)))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/unsubscribe", s.requireUnsealed(s.awake(s.unsubscribe)))
+	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireUnsealed(s.awake(s.readPart)))
+	s.handle("GET /api/proxy", s.requireUnsealed(s.proxyImage))
 
-	s.handle("GET /api/jobs", s.requireSession(s.listJobs))
-	s.handle("POST /api/jobs", s.requireSession(s.postJobs))
-	s.handle("DELETE /api/jobs/{job}", s.requireSession(s.dismissJob))
-	s.handle("GET /api/transfers", s.requireSession(s.listTransfers))
-	s.handle("POST /api/transfers/{transfer}/cancel", s.requireSession(s.cancelTransfer))
-	s.handle("DELETE /api/transfers/{transfer}", s.requireSession(s.dismissTransfer))
+	s.handle("GET /api/jobs", s.requireUnsealed(s.listJobs))
+	s.handle("POST /api/jobs", s.requireUnsealed(s.postJobs))
+	s.handle("DELETE /api/jobs/{job}", s.requireUnsealed(s.dismissJob))
+	s.handle("GET /api/transfers", s.requireUnsealed(s.listTransfers))
+	s.handle("POST /api/transfers/{transfer}/cancel", s.requireUnsealed(s.cancelTransfer))
+	s.handle("DELETE /api/transfers/{transfer}", s.requireUnsealed(s.dismissTransfer))
 
-	s.handle("GET /api/reading", s.requireSession(s.reading))
-	s.handle("PUT /api/reading", s.requireSession(s.putReading))
+	s.handle("GET /api/reading", s.requireUnsealed(s.reading))
+	s.handle("PUT /api/reading", s.requireUnsealed(s.putReading))
 
-	s.handle("GET /api/push/key", s.requireSession(s.pushKey))
-	s.handle("GET /api/push/settings", s.requireSession(s.pushSettings))
-	s.handle("PUT /api/push/settings", s.requireSession(s.putPushSettings))
-	s.handle("GET /api/devices", s.requireSession(s.listDevices))
-	s.handle("POST /api/devices", s.requireSession(s.createDevice))
-	s.handle("POST /api/devices/test", s.requireSession(s.testDevices))
-	s.handle("DELETE /api/devices/{id}", s.requireSession(s.deleteDevice))
+	s.handle("GET /api/push/key", s.requireUnsealed(s.pushKey))
+	s.handle("GET /api/push/settings", s.requireUnsealed(s.pushSettings))
+	s.handle("PUT /api/push/settings", s.requireUnsealed(s.putPushSettings))
+	s.handle("GET /api/devices", s.requireUnsealed(s.listDevices))
+	s.handle("POST /api/devices", s.requireUnsealed(s.createDevice))
+	s.handle("POST /api/devices/test", s.requireUnsealed(s.testDevices))
+	s.handle("DELETE /api/devices/{id}", s.requireUnsealed(s.deleteDevice))
 
 	s.handle("GET /api/events", s.requireSession(s.events))
 
@@ -388,6 +396,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		refuse(w, http.StatusConflict, CodeConflict, sentence(err, "That already exists."))
 	case errors.Is(err, store.ErrInvalid):
 		refuse(w, http.StatusBadRequest, CodeInvalid, sentence(err, "That request is not valid."))
+	case errors.Is(err, store.ErrSealed):
+		refuse(w, http.StatusLocked, CodeSealed, sentence(err, "Unseal emguio with your seal key first."))
 	case errors.Is(err, context.DeadlineExceeded):
 		// The deadline on a write: it was waiting for something that was not coming, and the
 		// time it waited is what a hang looks like in the log.
@@ -407,7 +417,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 // sentence is the error's own text when it carries one written for a reader.
 func sentence(err error, fallback string) string {
 	switch msg := err.Error(); msg {
-	case "", store.ErrNotFound.Error(), store.ErrConflict.Error(), store.ErrInvalid.Error():
+	case "", store.ErrNotFound.Error(), store.ErrConflict.Error(), store.ErrInvalid.Error(), store.ErrSealed.Error():
 		return fallback
 	default:
 		return msg

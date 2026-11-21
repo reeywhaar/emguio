@@ -12,7 +12,6 @@ ghcr.io/reeywhaar/emguio:latest
 | --- | --- | --- |
 | `EMGUIO_PUBLIC_URL` | *required* | The address you open in a browser |
 | `EMGUIO_DATA_DIR` | `/data` | Where `emguio.db` lives. Fixed in the image; a variable for local runs |
-| `EMGUIO_SECRET_KEY` | *required* | 32 random bytes, base64. Seals the passwords of email configs |
 | `EMGUIO_ALLOW_NETWORKS` | — | Private addresses or ranges emguio may connect to, comma-separated |
 | `EMGUIO_BACKUP_URL` | — | A backup agent's `POST` address; see [Backups](#backups). Unset, nothing is backed up |
 | `EMGUIO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; see [Logs](#logs) |
@@ -45,17 +44,13 @@ bound to this address, and has to turn them on again after a move — see [push.
 A trailing slash is trimmed. A path is refused — emguio serves from the root, and a prefix would
 produce links that half work.
 
-## `EMGUIO_SECRET_KEY`
+## There is no server key
 
-Required. It seals the password of every email config, and emguio refuses to start without it:
-
-```sh
-openssl rand -base64 32
-```
-
-**Keep it apart from the data directory and its backups**, which is the point of it: a copied
-database is not a list of mail passwords. **And keep it**: a new key makes every saved password
-unreadable, and each user has to enter theirs again. See [email-configs.md](email-configs.md).
+Each user's mail passwords are sealed with a key their seal key opens, which they type after each
+start of the instance; nothing in the environment opens them. See
+[email-configs.md](email-configs.md). An `EMGUIO_SECRET_KEY` left from before is not read, and
+emguio says so in its log at start. Each user from before signs in and gives that key once, which
+keeps their saved passwords and is their seal key from then on; then the variable can go.
 
 ## `EMGUIO_ALLOW_NETWORKS`
 
@@ -71,7 +66,6 @@ EMGUIO_ALLOW_NETWORKS=10.0.0.0/8,192.168.1.20
 ```sh
 docker run -d --name emguio \
   -e EMGUIO_PUBLIC_URL=https://mail.example.com \
-  -e EMGUIO_SECRET_KEY=… \
   -v emguio-data:/data \
   -p 8080:80 \
   ghcr.io/reeywhaar/emguio:latest
@@ -113,7 +107,6 @@ services:
     image: ghcr.io/reeywhaar/emguio:latest
     environment:
       EMGUIO_PUBLIC_URL: https://mail.example.com
-      EMGUIO_SECRET_KEY: ${EMGUIO_SECRET_KEY}
       EMGUIO_BACKUP_URL: http://backup:8080/backup
     volumes: [emguio-data:/data]
     ports: ["8080:80"]
@@ -146,13 +139,12 @@ There is no heartbeat: an instance nobody has changed sends nothing, and whether
 
 ### Restoring
 
-Stop the container, extract the archive into the data directory, start it again with the same
-`EMGUIO_SECRET_KEY`. Everybody stays signed in, because sessions are in the same file, and the
-mail is read again from the servers. Without the key the accounts are kept and each asks for its
-passwords again.
+Stop the container, extract the archive into the data directory, start it again. Everybody stays
+signed in, because sessions are in the same file; each user unseals with their seal key, as after
+any start, and their mail is read again from the servers.
 
 The archive holds every password hash and every device's subscription, and the mail passwords
-sealed: worth the same care as the directory itself, and kept apart from the key.
+sealed with keys only their users' seal keys open: worth the same care as the directory itself.
 
 ## Logs
 
@@ -184,7 +176,9 @@ the host printed an invitation:
 docker exec emguio emguio invite
 ```
 
-The link is good for a week and makes one user. Accepting it signs them in.
+The link is good for a week and makes one user, with a seal key they choose. Accepting it signs
+them in. After every start of the container each user unseals with that key before their mail is
+read; see [email-configs.md](email-configs.md).
 
 On an empty database `serve` logs one at startup, as the `link` of its line, so the first user
 needs nothing but the container's log:
@@ -275,8 +269,7 @@ secrets, and stays quiet when they are not.
 sh patch-packages.sh
 cd web && npm ci && npm run build && cd ..
 mkdir -p data
-EMGUIO_PUBLIC_URL=http://localhost EMGUIO_DATA_DIR=data \
-  EMGUIO_SECRET_KEY=<the same key every run> go run . serve
+EMGUIO_PUBLIC_URL=http://localhost EMGUIO_DATA_DIR=data go run . serve
 ```
 
 `npm run dev` in `web/` serves the frontend with reloading and sends `/api` to the Go server on

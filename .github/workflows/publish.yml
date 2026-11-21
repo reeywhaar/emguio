@@ -130,8 +130,7 @@ jobs:
           docker run --rm "$REF" version
           # A volume, because the server never creates /data: without one it exits at start.
           docker run -d --name emguio-smoke -p 8080:80 -v emguio-smoke:/data \
-            -e EMGUIO_PUBLIC_URL=http://localhost:8080 \
-            -e EMGUIO_SECRET_KEY="$(openssl rand -base64 32)" "$REF"
+            -e EMGUIO_PUBLIC_URL=http://localhost:8080 "$REF"
           # The container's own logs, however this ends: a failure without them is a guess.
           trap 'docker logs emguio-smoke; docker rm -f emguio-smoke >/dev/null' EXIT
           for i in $(seq 1 30); do

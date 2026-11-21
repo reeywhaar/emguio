@@ -527,10 +527,11 @@ blank image until somebody asks — the reading pane says how many — with the 
 it in `data-src`, and asking swaps the addresses in where they stand, without fetching the
 message again.
 
-The proxy fetches only addresses it signed itself, with a key derived from the server key, so it
-relays the images in messages and nothing else. The signature makes the address the same in
-every message, with nothing stored, and it is served `immutable`: a logo in every newsletter is
-fetched once. It dials through the same screen as every mail server, accepts only what is an
+The proxy fetches only addresses it signed itself, with a key made at each start and never
+stored, so it relays the images in messages and nothing else. The signature makes the address the
+same in every message until the next start, with nothing stored, and it is served `immutable`: a
+logo in every newsletter is fetched once; a message read before a restart is read again for its
+images to load. It dials through the same screen as every mail server, accepts only what is an
 image by its own bytes rather than by the header, and relays at most 10 MB.
 
 The frame's CSP names this origin as well as `'self'`: Firefox does not count a `srcdoc` frame's

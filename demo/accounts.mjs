@@ -6,8 +6,9 @@ import {
   messages as personalMessages,
 } from "../web/scripts/screenshots/seed.mjs";
 
-// Who signs in to emguio.
+// Who signs in to emguio, and the seal key that opens their mail passwords after each start.
 export const user = { username: "demo", password: "demodemo" };
+export const sealKey = "demodemodemo";
 
 // What every mail account here signs in with: the mail server takes any address with it.
 export const password = "demodemo";

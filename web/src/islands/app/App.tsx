@@ -1,6 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { getAuthMe } from "@app/api/actions/auth";
+import { qk } from "@app/api/keys";
 import { useLive } from "@app/api/live";
+import { whenSealed } from "@app/api/transport";
 import { Boundary } from "@app/components/Boundary";
 import { Compose } from "@app/islands/app/Compose";
 import { Header } from "@app/islands/app/Header";
@@ -9,12 +13,31 @@ import { Jobs } from "@app/islands/app/Jobs";
 import { Mail } from "@app/islands/app/Mail";
 import { Notice } from "@app/islands/app/Notice";
 import { paths, useRoute, type Route } from "@app/islands/app/route";
+import { Seal } from "@app/islands/app/Seal";
 import { Settings } from "@app/islands/app/Settings";
 import { Transfers } from "@app/islands/app/Transfers";
 
 export function App() {
   const route = useRoute();
+  const client = useQueryClient();
+  const me = useQuery({ queryKey: qk.me, queryFn: getAuthMe });
   useLive();
+  // A request refused as sealed — the server restarted under an open page — asks again who is
+  // signed in, and the page below follows.
+  useEffect(
+    () => whenSealed(() => client.invalidateQueries({ queryKey: qk.me })),
+    [client],
+  );
+  // Nothing of the user's is asked for until their seal key is open.
+  if (!me.data) return null;
+  if (me.data.seal !== "open") {
+    return (
+      <div className="fixed inset-0 flex flex-col overflow-y-auto">
+        <Seal state={me.data.seal} />
+        <Notice />
+      </div>
+    );
+  }
   // Pinned to the window rather than as tall as it: the mail view scrolls its own list, and every
   // other page scrolls inside the space under the header, so the window itself has nothing to
   // scroll. A height of 100dvh can round a pixel or two past the screen in Mobile Safari, and

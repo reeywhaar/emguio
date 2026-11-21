@@ -1,7 +1,6 @@
 package push
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -13,7 +12,6 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"emguio/internal/seal"
 	"emguio/internal/store"
 	"emguio/internal/webpush"
 	"emguio/internal/webpush/webpushtest"
@@ -39,8 +37,7 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	sealer, _ := seal.New(bytes.Repeat([]byte{7}, seal.KeySize))
-	st, err := store.Open(t.TempDir(), sealer)
+	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +45,9 @@ func newWorld(t *testing.T) *world {
 	ctx := context.Background()
 	u, err := st.CreateUser(ctx, "misha", "a good password")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSealKey(ctx, u.ID, "a seal key for the tests"); err != nil {
 		t.Fatal(err)
 	}
 	c, err := st.CreateEmailConfig(ctx, u.ID, store.EmailConfigInput{

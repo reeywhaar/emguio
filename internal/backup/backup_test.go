@@ -13,14 +13,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"emguio/internal/seal"
 	"emguio/internal/store"
 )
 
 func openStore(t *testing.T, dir string) *store.Store {
 	t.Helper()
-	sealer, _ := seal.New(bytes.Repeat([]byte{7}, seal.KeySize))
-	st, err := store.Open(dir, sealer)
+	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

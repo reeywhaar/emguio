@@ -1019,7 +1019,9 @@ curl -N -b jar -c jar https://emguio.example.com/api/events
 GET /api/auth/me
 ```
 
-The user signed in: `{"id": "u_…", "username": "ann", "created_at": 1790000000}`.
+The user signed in: `{"id": "u_…", "username": "ann", "created_at": 1790000000, "seal": "open"}`.
+`seal` is `open` once they have unsealed since the instance started, `sealed` before, and `none`
+for a user from before seal keys, who has yet to make one; see below.
 
 ```
 POST /api/auth/logout
@@ -1042,10 +1044,61 @@ used, expired or never given out, alike.
 POST /api/auth/invites/{token}/accept
 ```
 
-Makes the user and signs them in. The body is `{"username": "…", "password": "…"}`, and the
-answer `204` with the session cookie set. The username, trimmed, is 1 to 64 bytes with no control
-characters; one taken already, without regard to case, answers `409 conflict` and leaves the link
-unspent. The password is 8 to 72 bytes.
+Makes the user, with their seal key, and signs them in. The body is
+`{"username": "…", "password": "…", "seal_key": "…"}`, and the answer `204` with the session
+cookie set. The username, trimmed, is 1 to 64 bytes with no control characters; one taken already,
+without regard to case, answers `409 conflict` and leaves the link unspent. The password is 8 to
+72 bytes. The seal key is at least 12 characters; a shorter one answers `400 invalid` and leaves
+the link unspent.
+
+## Seal key
+
+Each user's mail passwords are sealed with a key of their own, opened by their seal key: a
+passphrase apart from their password, which emguio never stores. After every start of the
+instance a user is sealed until they unseal, and until then every call but the ones in this
+section, signing out and `GET /api/auth/me` answers `423 sealed`, and none of their mail is read.
+See [email-configs.md](email-configs.md).
+
+```
+POST /api/seal/unseal
+```
+
+`{"key": "…"}` opens the user's seal key until the instance stops, and their mail is read from
+then on. `204`, or `400 invalid` for a key that is not theirs. Five tries, then one every twelve
+seconds; past that, `429 rate_limited`.
+
+```
+PUT /api/seal
+```
+
+`{"current": "…", "key": "…"}` changes the seal key; the current one has to open it. The mail
+passwords stay as they are. `204`, `400 invalid` for a wrong current key or a new one shorter than
+12 characters, and limited as unsealing is.
+
+```
+POST /api/seal/reset
+```
+
+`{"key": "…"}` replaces a forgotten seal key with a new one, and opens it. Every mail password the
+user saved was sealed with the old one, and each mail account asks for its passwords again; its
+folders and settings are kept. `204`.
+
+```
+POST /api/seal
+```
+
+`{"key": "…"}` makes the first seal key of a user from before seal keys, and opens it: as `reset`,
+their saved mail passwords are asked for again. `409 conflict` for one who has a key.
+
+```
+POST /api/seal/carry
+```
+
+`{"key": "…"}` is the other way for that user: the key the instance ran with before seal keys, as
+`EMGUIO_SECRET_KEY` was, 32 bytes in base64. Every saved mail password it opens is sealed again
+with a key of the user's own, and that old key is their seal key from then on, to be changed with
+`PUT /api/seal`. `204`; `400 invalid` for a key that is not 32 bytes in base64, or that opens none
+of the user's saved passwords; `409 conflict` for one who has a key. Limited as unsealing is.
 
 ## Errors
 
@@ -1074,4 +1127,5 @@ do not match on it. Two codes can share a status: `gone` and `not_found` are bot
 | `unreadable` | 422 | A message part, or a part carried into a message, that cannot be decoded. |
 | `rate_limited` | 429 | Too many sign-in attempts, connection tests, images or test notifications. Wait, then try again. |
 | `busy` | 503 | A request that changes something, stopped after two minutes of waiting. Try it again. |
+| `sealed` | 423 | The user has not unsealed since the instance started; see [Seal key](#seal-key). |
 | `internal` | 500 | A fault in emguio. The message does not say what. |

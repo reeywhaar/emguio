@@ -1,8 +1,8 @@
 package api
 
 import (
-	"crypto/hkdf"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -278,11 +278,11 @@ func (s *Server) readPart(w http.ResponseWriter, r *http.Request) {
 // imageMax bounds what the proxy relays: an image in a message, not a download.
 const imageMax = 10 << 20
 
-// proxyKey signs the addresses the proxy will fetch, derived from the server key so it changes
-// when that does and is never stored.
-func proxyKey(secret []byte) []byte {
-	key, err := hkdf.Key(sha256.New, secret, nil, "emguio image proxy", 32)
-	if err != nil {
+// proxyKey signs the addresses the proxy will fetch: random, made on each start, so a message
+// read before a restart is read again for its images to load.
+func proxyKey() []byte {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
 		panic(err)
 	}
 	return key

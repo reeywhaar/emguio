@@ -38,7 +38,7 @@ fi
 
 echo
 echo "Ready: http://localhost:$port"
-echo "Sign in as demo, password demodemo. Ctrl-C stops the demo."
+echo "Sign in as demo, password demodemo; the seal key, if asked, is demodemodemo. Ctrl-C stops the demo."
 echo
 # In the background and waited for, so a signal ends the wait at once and the demo goes down.
 docker compose logs --follow --no-log-prefix emguio &

@@ -382,8 +382,6 @@ const emguio = container(
     "-e",
     "EMGUIO_DATA_DIR=/data",
     "-e",
-    `EMGUIO_SECRET_KEY=${randomBytes(32).toString("base64")}`,
-    "-e",
     `EMGUIO_ALLOW_NETWORKS=${subnet}`,
     "-e",
     "SSL_CERT_FILE=/ca.pem",
@@ -519,8 +517,8 @@ function until(what, f) {
 }
 
 /**
- * Everything drawn: fonts in, pictures decoded, nothing still loading, and the dialog's entrance
- * over.
+ * Everything drawn: fonts in, pictures decoded, nothing still loading or underway on the mail
+ * server, and the dialog's entrance over.
  */
 async function settled() {
   await until("the fonts", () =>
@@ -529,6 +527,12 @@ async function settled() {
   await until("what is loading", () =>
     browser.eval(`document.querySelector(".dummy") === null`),
   );
+  // Quiet for a second: work on the mail server comes in runs, a moment apart.
+  const idle = () =>
+    browser.eval(`document.querySelector('[class*="animate-spin"]') === null`);
+  await until("work on the mail server to end", idle);
+  await sleep(1000);
+  await until("work on the mail server to end", idle);
   await until("the pictures to decode", () =>
     browser.eval(
       "[...document.images].every((i) => i.complete && i.naturalWidth > 0)",
@@ -638,7 +642,11 @@ const still = () =>
     style.textContent =
       "*, ::before, ::after { caret-color: transparent !important; transition: none !important; }";
     document.head.append(style);
-    for (const animation of document.getAnimations()) animation.finish();
+    // One that never ends cannot be finished: it is drawn as it starts.
+    for (const animation of document.getAnimations()) {
+      if (animation.effect?.getComputedTiming().endTime === Infinity) animation.cancel();
+      else animation.finish();
+    }
     return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))));
   })()`);
 
@@ -662,6 +670,14 @@ const shots = [
       await type(
         `document.querySelector("input[name=password]")`,
         account.password,
+      );
+      await type(
+        `document.querySelector("input[name=seal-key]")`,
+        account.sealKey,
+      );
+      await type(
+        `document.querySelector("input[name=seal-key-again]")`,
+        account.sealKey,
       );
     },
     then: async () => {

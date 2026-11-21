@@ -21,6 +21,7 @@ export const now = "2026-06-17T10:30:00Z";
 export const account = {
   username: "robert",
   password: "a password nobody will ever type",
+  sealKey: "a seal key nobody types either",
 };
 
 // The mail account added in Settings, on the servers capture.mjs runs as imap. and smtp.example.com.

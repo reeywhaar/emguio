@@ -230,7 +230,7 @@ will skip the edit forever.
 why, an email config that cannot connect and the class of error, a sync that dropped a mailbox, a
 sweep that deleted something, a backup sent or failed, a migration applied.
 
-**Never** a password — a user's or an email config's — the server key, a token, a cookie value,
+**Never** a password — a user's or an email config's — a seal key, a token, a cookie value,
 a recovery code. **Never** anything from a message: subject, addresses, body, attachment names.
 A log line about an email config names its id and host; one about a message names its id.
 

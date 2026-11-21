@@ -40,9 +40,10 @@ type Store struct {
 	// now is injectable so expiry is driven rather than slept through.
 	now func() time.Time
 
-	// sealer seals the passwords of email configs. They never leave this package unsealed except
-	// to be dialed with.
-	sealer *seal.Sealer
+	// keys are each unsealed user's key, which seals the passwords of their email configs. They
+	// never leave this package unsealed except to be dialed with. See sealkeys.go.
+	keysMu sync.RWMutex
+	keys   map[string]*seal.Sealer
 
 	watchMu  sync.Mutex
 	watchers map[chan struct{}]string
@@ -66,7 +67,7 @@ const readers = 4
 // Open opens the database in dir, applies migrations, and verifies its pragmas.
 //
 // dir must already exist and is never created — see docs/deploy.md.
-func Open(dir string, sealer *seal.Sealer) (*Store, error) {
+func Open(dir string) (*Store, error) {
 	info, err := os.Stat(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -89,7 +90,7 @@ func Open(dir string, sealer *seal.Sealer) (*Store, error) {
 		return nil, err
 	}
 
-	s := &Store{writer: writer, reader: reader, now: time.Now, sealer: sealer, watchers: map[chan struct{}]string{},
+	s := &Store{writer: writer, reader: reader, now: time.Now, keys: map[string]*seal.Sealer{}, watchers: map[chan struct{}]string{},
 		arrived: make(chan struct{}, 1), busy: map[string]int{}, busyOf: map[string]string{},
 		busyWatchers: map[chan struct{}]string{}}
 	if err := migrations.Run(context.Background(), writer); err != nil {

@@ -31,14 +31,11 @@ services:
     depends_on:
       mail:
         condition: service_healthy
-    # A key made once and kept with the data, and an invitation the seed signs up with on a first
-    # start, before serving.
+    # An invitation the seed signs up with on a first start, before serving.
     entrypoint:
       - /bin/sh
       - -c
       - |
-        [ -s /data/demo-key ] || head -c 32 /dev/urandom | base64 > /data/demo-key
-        export EMGUIO_SECRET_KEY="$$(cat /data/demo-key)"
         emguio invite > /handoff/invite
         exec emguio serve
     environment:

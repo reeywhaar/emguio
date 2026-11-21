@@ -58,10 +58,17 @@ func (c *client) json(resp *http.Response) map[string]any {
 	return out
 }
 
+// sealKey is every test user's seal key.
+const sealKey = "a seal key for the tests"
+
+// user is a user with a seal key, open.
 func user(t *testing.T, st *store.Store, username, password string) *store.User {
 	t.Helper()
 	u, err := st.CreateUser(context.Background(), username, password)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSealKey(context.Background(), u.ID, sealKey); err != nil {
 		t.Fatal(err)
 	}
 	return u
@@ -205,7 +212,12 @@ func TestAnInvitationMakesOneUserAndSignsThemIn(t *testing.T) {
 		t.Fatalf("a live invitation = %s", resp.Status)
 	}
 
-	body := `{"username":"misha","password":"a good password"}`
+	// A seal key that will not do leaves the invitation unspent.
+	short := `{"username":"misha","password":"a good password","seal_key":"short"}`
+	if resp := c.do("POST", "/api/auth/invites/"+token+"/accept", short); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a short seal key = %s", resp.Status)
+	}
+	body := `{"username":"misha","password":"a good password","seal_key":"` + sealKey + `"}`
 	if resp := c.do("POST", "/api/auth/invites/"+token+"/accept", body); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("accept = %s", resp.Status)
 	}
@@ -214,7 +226,8 @@ func TestAnInvitationMakesOneUserAndSignsThemIn(t *testing.T) {
 	if c.cookie == nil {
 		t.Fatal("accepting an invitation did not sign the user in")
 	}
-	if me := c.json(c.do("GET", "/api/auth/me", "")); me["username"] != "misha" {
+	// Their seal key is open: they made it a moment ago.
+	if me := c.json(c.do("GET", "/api/auth/me", "")); me["username"] != "misha" || me["seal"] != "open" {
 		t.Errorf("me = %v", me)
 	}
 
@@ -222,7 +235,7 @@ func TestAnInvitationMakesOneUserAndSignsThemIn(t *testing.T) {
 	if resp := second.do("GET", "/api/auth/invites/"+token, ""); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("a spent invitation = %s, want 404", resp.Status)
 	}
-	if resp := second.do("POST", "/api/auth/invites/"+token+"/accept", `{"username":"robin","password":"a good password"}`); resp.StatusCode == http.StatusNoContent {
+	if resp := second.do("POST", "/api/auth/invites/"+token+"/accept", `{"username":"robin","password":"a good password","seal_key":"`+sealKey+`"}`); resp.StatusCode == http.StatusNoContent {
 		t.Error("one invitation made two users")
 	}
 }
@@ -234,7 +247,7 @@ func TestATakenUsernameSaysSo(t *testing.T) {
 	_, token, _ := st.CreateInvite(context.Background())
 
 	c := newClient(t, s)
-	resp := c.do("POST", "/api/auth/invites/"+token+"/accept", `{"username":"Misha","password":"a good password"}`)
+	resp := c.do("POST", "/api/auth/invites/"+token+"/accept", `{"username":"Misha","password":"a good password","seal_key":"`+sealKey+`"}`)
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status = %s, want 409", resp.Status)
 	}
@@ -258,5 +271,50 @@ func TestASlidingSessionReissuesItsCookie(t *testing.T) {
 	}
 	if !c.cookie.Expires.After(first) {
 		t.Errorf("cookie expires %v after sliding, want later than %v", c.cookie.Expires, first)
+	}
+}
+
+// Sealed, a user reaches nothing but signing out, themselves and their seal key; unsealed with
+// the right key, everything.
+func TestASealedUserUnsealsWithTheirKey(t *testing.T) {
+	s, st := newServerStore(t, nil)
+	ctx := context.Background()
+	u, err := st.CreateUser(ctx, "misha", "a good password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newClient(t, s)
+	c.do("POST", "/api/auth/login", `{"username":"misha","password":"a good password"}`)
+
+	// A user from before seal keys makes one.
+	if me := c.json(c.do("GET", "/api/auth/me", "")); me["seal"] != "none" {
+		t.Fatalf("me = %v", me)
+	}
+	if resp := c.do("GET", "/api/email-configs", ""); resp.StatusCode != http.StatusLocked || c.json(resp)["code"] != CodeSealed {
+		t.Fatalf("sealed, the list = %s", resp.Status)
+	}
+	if resp := c.do("POST", "/api/seal", `{"key":"`+sealKey+`"}`); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("make = %s %v", resp.Status, c.json(resp))
+	}
+	if resp := c.do("GET", "/api/email-configs", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("open, the list = %s", resp.Status)
+	}
+
+	// As after a restart.
+	st.Lock(u.ID)
+	if me := c.json(c.do("GET", "/api/auth/me", "")); me["seal"] != "sealed" {
+		t.Fatalf("me = %v", me)
+	}
+	if resp := c.do("POST", "/api/seal/unseal", `{"key":"not the seal key at all"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a wrong key = %s", resp.Status)
+	}
+	if resp := c.do("POST", "/api/seal/unseal", `{"key":"`+sealKey+`"}`); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("unseal = %s %v", resp.Status, c.json(resp))
+	}
+	if resp := c.do("PUT", "/api/seal", `{"current":"`+sealKey+`","key":"another seal key, longer still"}`); resp.StatusCode != http.StatusNoContent {
+		t.Errorf("change = %s %v", resp.Status, c.json(resp))
+	}
+	if resp := c.do("POST", "/api/seal/reset", `{"key":"a third seal key, the second forgotten"}`); resp.StatusCode != http.StatusNoContent {
+		t.Errorf("reset = %s %v", resp.Status, c.json(resp))
 	}
 }

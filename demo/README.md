@@ -10,7 +10,8 @@ one run to the next, so a browser signed in stays signed in.
 
 from the top of the checkout. It builds and starts everything, says when the accounts are filled,
 and follows emguio's log; then open <http://localhost:8080> and sign in as **demo**, password
-**demodemo**. Ctrl-C stops it. `./run_demo.sh --fresh` starts without what earlier runs kept,
+**demodemo**. The seal key is **demodemodemo**; each run opens it for you, so it is asked for only
+if emguio restarts on its own. Ctrl-C stops it. `./run_demo.sh --fresh` starts without what earlier runs kept,
 signed out. To serve on another port, set `DEMO_PORT=9090`.
 
 Without the script: `docker compose up --build` here, and `docker compose down` to stop, with

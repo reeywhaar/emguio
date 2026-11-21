@@ -41,24 +41,37 @@ There is no plain-text choice. STARTTLS fails the connection when the server doe
 and an IMAP server that signs somebody in before STARTTLS is refused, so a password never
 crosses the network in the clear because a server forgot to offer encryption.
 
-## A password is sealed with the server key
+## A password is sealed with its user's own key, opened by their seal key
 
 emguio signs in on its users' behalf, so it has to be able to read their mail passwords back.
-They are sealed with XChaCha20-Poly1305 under `EMGUIO_SECRET_KEY`, bound to the row and the
-server they belong to: a sealed value copied into another row, or from incoming to outgoing,
+They are sealed with XChaCha20-Poly1305 under a random key of their user's, bound to the row and
+the server they belong to: a sealed value copied into another row, or from incoming to outgoing,
 does not open.
 
-The key is never in the database and never in its backups. That is what it protects: a copied
-`emguio.db`, or an archive of one, is not a list of mail passwords. It does not protect a running
-host, which has to hold the key to dial anything.
+That key is kept sealed in turn, with one made by Argon2id from the user's **seal key**: a
+passphrase of at least 12 characters, chosen when they accept their invitation and apart from
+their password, which emguio never stores. Nothing on the host opens it: a copied `emguio.db`, an
+archive of one, or the whole host at rest, is not a list of mail passwords.
 
-**Changing the key makes every saved password unreadable.** Nothing breaks: the form says the
-saved password can no longer be read and asks for it again. Keep the key where the backups are
-not, and keep it.
+**After every start each user is sealed until they unseal.** They sign in, and the page asks for
+their seal key before anything else; the key it opens is held in memory only, until the process
+stops. Until then none of their mail is read and nothing of theirs is told to their devices:
+reading mail when nobody is there is what an open key is for, and nothing opens it but its user.
+One user's being sealed holds back nobody else's mail.
 
-A key per user, derived from their login password, was the stronger option and was not taken:
-reading mail has to happen when nobody is signed in, and a server that can only decrypt during a
-session cannot.
+A seal key is changed in Settings with the current one: the user's key is sealed again, and the
+mail passwords stay as they are. **One forgotten is replaced, not recovered**: a new seal key
+opens a new key, and each of the user's mail accounts asks for its passwords again, with its
+folders and settings kept.
+
+A user from before seal keys, whose passwords were sealed with the key the instance ran with
+then, is not locked out of them: the page offers to carry them over with that key, which opens
+them, seals them again with a key of the user's own, and is their seal key from then on, to be
+changed in Settings. Without it they make a new seal key, and each account asks for its passwords
+again.
+
+It does not protect a running instance from whoever controls it, which sees a seal key as it is
+typed and holds open keys to dial with.
 
 ## A password is never sent back
 

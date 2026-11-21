@@ -3,21 +3,15 @@ package config
 import (
 	"log/slog"
 	"net/netip"
-	"strings"
 	"testing"
 )
 
-// key is 32 bytes of 0x01, base64.
-const key = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
-
-// set clears everything this package reads, so no test passes on another's leftovers, and
-// supplies a key unless the test says otherwise.
+// set clears everything this package reads, so no test passes on another's leftovers.
 func set(t *testing.T, kv map[string]string) {
 	t.Helper()
-	for _, k := range []string{PublicURLEnv, DataDirEnv, LogLevelEnv, SecretKeyEnv, AllowNetworksEnv} {
+	for _, k := range []string{PublicURLEnv, DataDirEnv, LogLevelEnv, AllowNetworksEnv} {
 		t.Setenv(k, "")
 	}
-	t.Setenv(SecretKeyEnv, key)
 	for k, v := range kv {
 		t.Setenv(k, v)
 	}
@@ -91,36 +85,6 @@ func TestDefaults(t *testing.T) {
 	}
 	if cfg.LogLevel != slog.LevelInfo {
 		t.Errorf("level = %v, want info", cfg.LogLevel)
-	}
-}
-
-// Without it no email config can be saved, and finding that out at the first save is too late.
-func TestTheSecretKeyIsRequired(t *testing.T) {
-	set(t, map[string]string{PublicURLEnv: "https://mail.example.com", SecretKeyEnv: ""})
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "openssl rand -base64 32") {
-		t.Fatalf("err = %v, want a refusal saying how to make one", err)
-	}
-}
-
-func TestASecretKeyOfTheWrongLengthIsRefused(t *testing.T) {
-	set(t, map[string]string{PublicURLEnv: "https://mail.example.com", SecretKeyEnv: "AQEBAQEBAQEBAQEBAQEBAQ=="})
-	if _, err := Load(); err == nil {
-		t.Fatal("accepted a 16-byte key")
-	}
-}
-
-// openssl pads and uses + and /; a value copied out of somewhere else may do neither.
-func TestTheSecretKeyIsReadInEitherAlphabet(t *testing.T) {
-	for _, raw := range []string{key, strings.TrimRight(key, "="), " " + key + "\n"} {
-		set(t, map[string]string{PublicURLEnv: "https://mail.example.com", SecretKeyEnv: raw})
-		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("%q: %v", raw, err)
-		}
-		if len(cfg.SecretKey) != 32 || cfg.SecretKey[0] != 1 {
-			t.Errorf("%q decoded to %v", raw, cfg.SecretKey)
-		}
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"emguio/internal/ids"
+	"emguio/internal/seal"
 )
 
 // What an incoming server can speak, and how a server is secured — see docs/email-configs.md.
@@ -205,7 +206,11 @@ func (s *Store) emailConfigRow(ctx context.Context, userID, id string) (*emailCo
 
 // CreateEmailConfig saves a new email config. Both passwords it signs in with are required.
 func (s *Store) CreateEmailConfig(ctx context.Context, userID string, in EmailConfigInput) (*EmailConfig, error) {
-	in, err := s.complete(nil, in)
+	sl, err := s.openSealer(userID)
+	if err != nil {
+		return nil, err
+	}
+	in, err = s.complete(nil, in)
 	if err != nil {
 		return nil, err
 	}
@@ -213,8 +218,8 @@ func (s *Store) CreateEmailConfig(ctx context.Context, userID string, in EmailCo
 	id := ids.New(ids.EmailConfig, now.UnixMilli())
 	args := []any{id, userID, in.Name, in.Email, in.SenderName,
 		in.Incoming.Protocol, in.Incoming.Host, in.Incoming.Port, in.Incoming.TLS, in.Incoming.Username,
-		s.sealer.Seal([]byte(in.Incoming.Password), secretAAD(id, "incoming"))}
-	args = append(args, s.outgoingColumns(id, in.Outgoing)...)
+		sl.Seal([]byte(in.Incoming.Password), secretAAD(id, "incoming"))}
+	args = append(args, outgoingColumns(sl, id, in.Outgoing)...)
 	args = append(args, unix(now), unix(now))
 	_, err = s.writer.ExecContext(ctx,
 		`INSERT INTO email_configs (`+emailConfigColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -231,6 +236,10 @@ func (s *Store) CreateEmailConfig(ctx context.Context, userID string, in EmailCo
 // UpdateEmailConfig replaces an email config with what a form sent, keeping any password the
 // form left empty.
 func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in EmailConfigInput) (*EmailConfig, error) {
+	sl, err := s.openSealer(userID)
+	if err != nil {
+		return nil, err
+	}
 	r, err := s.emailConfigRow(ctx, userID, id)
 	if err != nil {
 		return nil, err
@@ -241,8 +250,8 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 	now := s.Now()
 	args := []any{in.Name, in.Email, in.SenderName,
 		in.Incoming.Protocol, in.Incoming.Host, in.Incoming.Port, in.Incoming.TLS, in.Incoming.Username,
-		s.sealer.Seal([]byte(in.Incoming.Password), secretAAD(id, "incoming"))}
-	args = append(args, s.outgoingColumns(id, in.Outgoing)...)
+		sl.Seal([]byte(in.Incoming.Password), secretAAD(id, "incoming"))}
+	args = append(args, outgoingColumns(sl, id, in.Outgoing)...)
 	args = append(args, unix(now), id, userID)
 
 	tx, err := s.writer.BeginTx(ctx, nil)
@@ -357,7 +366,7 @@ func (s *Store) complete(r *emailConfigRow, in EmailConfigInput) (EmailConfigInp
 		if err := sameHosts(sentTo, r.incomingHosts()); err != nil {
 			return in, err
 		}
-		p, err := s.open(r.incomingSecret, r.ID, "incoming")
+		p, err := s.open(r.UserID, r.incomingSecret, r.ID, "incoming")
 		if err != nil {
 			return in, err
 		}
@@ -370,7 +379,7 @@ func (s *Store) complete(r *emailConfigRow, in EmailConfigInput) (EmailConfigInp
 		if err := sameHosts([]string{o.Host}, []string{r.Outgoing.Host}); err != nil {
 			return in, err
 		}
-		p, err := s.open(r.outgoingSecret, r.ID, "outgoing")
+		p, err := s.open(r.UserID, r.outgoingSecret, r.ID, "outgoing")
 		if err != nil {
 			return in, err
 		}
@@ -403,10 +412,14 @@ func sameHosts(sentTo, savedFor []string) error {
 	return nil
 }
 
-func (s *Store) open(sealed []byte, id, role string) (string, error) {
-	plain, err := s.sealer.Open(sealed, secretAAD(id, role))
+func (s *Store) open(userID string, sealed []byte, id, role string) (string, error) {
+	sl, err := s.openSealer(userID)
 	if err != nil {
-		return "", Invalid("The password saved for the %s server can no longer be read: the server key has changed since it was saved. Enter it again.", role)
+		return "", err
+	}
+	plain, err := sl.Open(sealed, secretAAD(id, role))
+	if err != nil {
+		return "", Invalid("The password saved for the %s server can no longer be read: it was sealed with a key that is gone. Enter it again.", role)
 	}
 	return string(plain), nil
 }
@@ -417,14 +430,14 @@ func secretAAD(id, role string) []byte { return []byte(id + "/" + role) }
 
 // outgoingColumns are the five outgoing values in column order: all NULL for no server, and a
 // NULL username and secret for one that signs in as the incoming server does.
-func (s *Store) outgoingColumns(id string, o *Login) []any {
+func outgoingColumns(sl *seal.Sealer, id string, o *Login) []any {
 	if o == nil {
 		return []any{nil, nil, nil, nil, nil}
 	}
 	if o.Username == "" {
 		return []any{o.Host, o.Port, o.TLS, nil, nil}
 	}
-	return []any{o.Host, o.Port, o.TLS, o.Username, s.sealer.Seal([]byte(o.Password), secretAAD(id, "outgoing"))}
+	return []any{o.Host, o.Port, o.TLS, o.Username, sl.Seal([]byte(o.Password), secretAAD(id, "outgoing"))}
 }
 
 func shown(id, userID string, in EmailConfigInput, created, updated time.Time) *EmailConfig {

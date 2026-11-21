@@ -7,6 +7,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 - **Invitation only.** A user exists because somebody with a shell on the host printed a link.
 - **Email configs belong to the user.** Added in Settings rather than in a config file, and never
   mixed: one is shown at a time.
+- **Sealed with each user's own key.** Mail passwords open only with the seal key their user types
+  after each restart; neither the host nor a copy of the database reads them.
 
 ## What it does
 
@@ -79,7 +81,6 @@ services:
     restart: unless-stopped
     environment:
       EMGUIO_PUBLIC_URL: https://mail.example.com
-      EMGUIO_SECRET_KEY: ${EMGUIO_SECRET_KEY}
     volumes:
       - emguio-data:/data
     networks:
@@ -94,13 +95,6 @@ volumes:
 networks:
   caddy:
     external: true
-```
-
-The key seals the mail passwords users save. Make it once and keep it, apart from the data
-volume and its backups: a new one makes every user enter their passwords again.
-
-```sh
-echo "EMGUIO_SECRET_KEY=$(openssl rand -base64 32)" > .env
 ```
 
 ### 2. Start it
@@ -118,7 +112,10 @@ emguio-1  | {"time":"…","level":"INFO","msg":"no users yet: open this link to 
 
 ### 3. Make your user
 
-Open the link, and choose a username and a password.
+Open the link, and choose a username, a password and a seal key. The seal key opens your saved
+mail passwords: emguio asks for it after every restart, and nothing reads your mail until you give
+it. Keep it somewhere safe; a forgotten one can be replaced, and each mail account then asks for
+its password again.
 
 [![Making a user](docs/screenshots/invite.png)](docs/screenshots/invite.png)
 

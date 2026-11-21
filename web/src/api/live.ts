@@ -48,6 +48,10 @@ export function useLive() {
     // A reconnection means the stream was down, and whatever happened meanwhile was not said.
     // Asking once on the way back is cheaper than tracking what was missed.
     source.addEventListener("open", refresh);
+    // A reconnection can be a restart, after which the user is sealed again.
+    source.addEventListener("open", () => {
+      client.invalidateQueries({ queryKey: qk.me });
+    });
     // Which configs the server is at work on, said whole each time; while the stream is down,
     // nothing it says is known.
     source.addEventListener("busy", (e) => {

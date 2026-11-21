@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { fill, Imap, quote } from "../web/scripts/mail.mjs";
-import { accounts, owner, password, user } from "./accounts.mjs";
+import { accounts, owner, password, sealKey, user } from "./accounts.mjs";
 
 const EMGUIO = "http://emguio";
 const ca = readFileSync("/certs/ca.pem");
@@ -43,6 +43,35 @@ const json = (body) => ({
 // The user signed up on an earlier run is kept, and the browser's session with it.
 const signedIn = await fetch(`${EMGUIO}/api/auth/login`, json(user));
 let cookie = signedIn.ok ? cookieOf(signedIn) : undefined;
+
+/** What emguio answers the demo user, signed in. */
+const as = (path, method = "GET", body) =>
+  fetch(`${EMGUIO}${path}`, {
+    method,
+    headers: {
+      Cookie: cookie,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+// emguio starts sealed: the kept user's seal key is opened, or made for one kept from before
+// seal keys, whose accounts' passwords are then saved again.
+let resave = false;
+if (cookie) {
+  const me = await (await as("/api/auth/me")).json();
+  const opening =
+    me.seal === "sealed"
+      ? await as("/api/seal/unseal", "POST", { key: sealKey })
+      : me.seal === "none"
+        ? await as("/api/seal", "POST", { key: sealKey })
+        : undefined;
+  if (opening && !opening.ok)
+    throw new Error(
+      `opening the seal key answered ${opening.status}: ${await opening.text()}`,
+    );
+  resave = me.seal === "none";
+}
 
 // The mail server starts empty: mail in it is this start's, put in by a seed before this one.
 const open = () =>
@@ -88,7 +117,7 @@ if (!cookie) {
   const token = link.split("/invite/")[1];
   const joined = await fetch(
     `${EMGUIO}/api/auth/invites/${token}/accept`,
-    json(user),
+    json({ ...user, seal_key: sealKey }),
   );
   if (!joined.ok)
     throw new Error(
@@ -99,19 +128,9 @@ if (!cookie) {
 
 // Accounts kept from an earlier run stay, and are read again for this start's mail: emguio read
 // them while the mail server was still empty. One not there yet is added.
-const listed = await fetch(`${EMGUIO}/api/email-configs`, {
-  headers: { Cookie: cookie },
-});
+const listed = await as("/api/email-configs");
 const kept = (await listed.json()).email_configs;
 for (const account of accounts) {
-  const there = kept.find((c) => c.email === account.email);
-  if (there) {
-    await fetch(`${EMGUIO}/api/email-configs/${there.id}/sync`, {
-      method: "POST",
-      headers: { Cookie: cookie },
-    });
-    continue;
-  }
   const server = (host, port) => ({
     host,
     port,
@@ -119,20 +138,24 @@ for (const account of accounts) {
     username: account.email,
     password,
   });
-  const res = await fetch(`${EMGUIO}/api/email-configs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({
-      name: account.name,
-      email: account.email,
-      sender_name: owner,
-      incoming: { protocol: "imap", ...server("imap.example.com", 993) },
-      outgoing: server("smtp.example.com", 465),
-    }),
-  });
+  const body = {
+    name: account.name,
+    email: account.email,
+    sender_name: owner,
+    incoming: { protocol: "imap", ...server("imap.example.com", 993) },
+    outgoing: server("smtp.example.com", 465),
+  };
+  const there = kept.find((c) => c.email === account.email);
+  if (there && !resave) {
+    await as(`/api/email-configs/${there.id}/sync`, "POST");
+    continue;
+  }
+  const res = there
+    ? await as(`/api/email-configs/${there.id}`, "PUT", body)
+    : await as("/api/email-configs", "POST", body);
   if (!res.ok)
     throw new Error(
-      `adding ${account.email} answered ${res.status}: ${await res.text()}`,
+      `saving ${account.email} answered ${res.status}: ${await res.text()}`,
     );
 }
 console.log("ready: sign in at http://localhost:8080 as demo / demodemo");
