@@ -657,7 +657,7 @@ const still = () =>
 const shots = [
   {
     name: "invite",
-    window: [640, 420],
+    window: [640, 620],
     go: async () => {
       await browser.open(`/invite/${invite}`);
       await until("the invitation's form", () =>
