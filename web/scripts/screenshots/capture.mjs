@@ -72,7 +72,7 @@ let browser;
 function cleanup() {
   browser?.close();
   for (const container of started)
-    spawnSync("docker", ["rm", "-f", container], { stdio: "ignore" });
+    spawnSync("docker", ["rm", "-f", "-v", container], { stdio: "ignore" });
   if (network)
     spawnSync("docker", ["network", "rm", name], { stdio: "ignore" });
   // Chromium is still writing its profile as it exits.
