@@ -148,10 +148,11 @@ jobs:
           token=$(docker logs emguio-smoke 2>&1 | grep -o '/invite/[A-Za-z0-9_-]*' | head -1 | cut -d/ -f3)
           test -n "$token"
           curl -fsS -c jar -H 'Content-Type: application/json' \
-            -d '{"username":"smoke","password":"a smoke-test password"}' \
+            -d '{"username":"smoke","password":"a smoke-test password","seal_key":"a smoke-test seal key"}' \
             "http://localhost:8080/api/auth/invites/$token/accept"
           curl -fsS -b jar http://localhost:8080/ | grep -q 'id="root"'
-          # An email config saves and lists, which is the key and the sealing working together.
+          # An email config saves and lists, which is the user's seal key and the sealing working
+          # together.
           curl -fsS -b jar -H 'Content-Type: application/json' \
             -d '{"name":"","email":"smoke@example.com","incoming":{"protocol":"imap","host":"imap.example.com","port":993,"tls":"implicit","username":"smoke","password":"a password"},"outgoing":null}' \
             http://localhost:8080/api/email-configs | grep -q '"id":"ec_'
