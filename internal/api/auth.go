@@ -40,7 +40,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.store.Authenticate(r.Context(), req.Username, req.Password)
 	if errors.Is(err, store.ErrNotFound) {
 		// One refusal for a wrong password and a missing user.
-		s.log.Info("sign-in refused: the username and password do not match")
+		s.log.Info("sign-in refused: the username and password do not match", "ip", s.clientIP(r))
 		refuse(w, http.StatusUnauthorized, CodeUnauthenticated, "That username and password do not match.")
 		return
 	}

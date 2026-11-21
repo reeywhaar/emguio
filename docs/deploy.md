@@ -13,6 +13,7 @@ ghcr.io/reeywhaar/emguio:latest
 | `EMGUIO_PUBLIC_URL` | *required* | The address you open in a browser |
 | `EMGUIO_DATA_DIR` | `/data` | Where `emguio.db` lives. Fixed in the image; a variable for local runs |
 | `EMGUIO_ALLOW_NETWORKS` | — | Private addresses or ranges emguio may connect to, comma-separated |
+| `EMGUIO_TRUSTED_PROXIES` | `private` | Whose `X-Forwarded-For` is believed; see [The caller](#the-caller-is-the-first-x-forwarded-for-hop-that-is-not-a-trusted-proxy) |
 | `EMGUIO_BACKUP_URL` | — | A backup agent's `POST` address; see [Backups](#backups). Unset, nothing is backed up |
 | `EMGUIO_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; see [Logs](#logs) |
 
@@ -60,6 +61,35 @@ mail server on the same network as emguio is named here, as addresses or CIDR ra
 ```sh
 EMGUIO_ALLOW_NETWORKS=10.0.0.0/8,192.168.1.20
 ```
+
+## The caller is the first `X-Forwarded-For` hop that is not a trusted proxy
+
+emguio sits behind a proxy, so the connection it sees is the proxy's. Each proxy appends who it
+accepted to `X-Forwarded-For`, so emguio reads the header right to left, stepping over hops that
+are trusted proxies; the first one that is not is the caller. Everything left of it is whatever
+the caller sent.
+
+The header is read at all only when the connection comes from a trusted proxy. From anywhere else
+it is the caller's own claim, and believing it would let a stranger choose the address fail2ban
+bans — yours, say. `X-Real-IP` is never read: a proxy that does not set it passes the caller's
+along.
+
+`EMGUIO_TRUSTED_PROXIES` names the trusted proxies: addresses, ranges, `private`, or `none`,
+separated by commas or spaces.
+
+| setup | value |
+| --- | --- |
+| Proxy on the same host or Docker network | `private`, the default |
+| Proxy on another machine | its address, e.g. `198.51.100.3` |
+| A CDN in front of that proxy | `private` plus the CDN's published ranges |
+| No proxy, or the port is reachable without it | `none` |
+
+Caddy and Traefik set the header by default; nginx needs
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`.
+
+`private` is 10/8, 172.16/12, 192.168/16, fc00::/7 and loopback. It assumes every caller with
+such an address is yours — on a shared Docker network, every other container; where that is not
+so, name the proxy itself instead.
 
 ## The data directory
 
@@ -162,6 +192,22 @@ and settings lookups as they change; and the sweeps. At `debug`, also each routi
 
 Never in a line: a password, an email address, a subject, a folder's name, what somebody searched
 for, or a request's query. A folder is named by its id and its use — `sent`, `drafts` or `own`.
+
+### A wrong password is one line, for fail2ban
+
+emguio bans nobody itself. Each refused sign-in is logged with the caller's address, and never the
+username:
+
+```
+{"time":"…","level":"INFO","msg":"sign-in refused: the username and password do not match","ip":"203.0.113.7"}
+```
+
+```ini
+# filter.d/emguio.local
+[Definition]
+failregex = ^\{.*"msg":"sign-in refused.*"ip":"<ADDR>"
+ignoreregex =
+```
 
 ## Port
 

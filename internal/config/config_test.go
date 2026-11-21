@@ -109,3 +109,29 @@ func TestAllowedNetworksAreRangesOrAddresses(t *testing.T) {
 		t.Error("accepted a network that is neither an address nor a range")
 	}
 }
+
+func TestTrustedProxiesArePrivateUnlessNamed(t *testing.T) {
+	set(t, map[string]string{PublicURLEnv: "https://mail.example.com"})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TrustedProxies.Trusts(netip.MustParseAddr("172.18.0.5")) || cfg.TrustedProxies.Trusts(netip.MustParseAddr("203.0.113.7")) {
+		t.Errorf("default proxies = %v, want the private ranges", cfg.TrustedProxies)
+	}
+
+	set(t, map[string]string{PublicURLEnv: "https://mail.example.com", TrustedProxiesEnv: "none"})
+	if cfg, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TrustedProxies.Trusts(netip.MustParseAddr("127.0.0.1")) {
+		t.Error("none trusted loopback")
+	}
+
+	for _, bad := range []string{"my-proxy", "none, private", "10.0.0.0/33"} {
+		set(t, map[string]string{PublicURLEnv: "https://mail.example.com", TrustedProxiesEnv: bad})
+		if _, err := Load(); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
