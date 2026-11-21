@@ -7,10 +7,11 @@ import {
 } from "@app/api/actions/auth";
 import { messageOf } from "@app/api/transport";
 import { Button } from "@app/components/Button";
+import { NewSealKey } from "@app/components/NewSealKey";
 import { TextField } from "@app/components/TextField";
 import { Wordmark } from "@app/components/Wordmark";
 import { leaveFor } from "@app/leave";
-import { newKeyProblem, SEAL_KEY_MIN } from "@app/sealKey";
+import { newKeyProblem } from "@app/sealKey";
 
 /**
  * The only document an unauthenticated visitor loads: a few kilobytes instead of the whole
@@ -160,25 +161,15 @@ function Accept({ token }: { token: string }) {
           after every restart, and reads none of your mail until you give it.
           Keep it somewhere safe.
         </p>
-        <TextField
+        <NewSealKey
+          label="Seal key"
           name="seal-key"
-          type="password"
-          autoComplete="off"
-          aria-label="Seal key"
-          placeholder={`Seal key, ${SEAL_KEY_MIN} characters or more`}
-          className="w-full"
           value={sealKey}
-          onChange={(e) => setSealKey(e.target.value)}
-        />
-        <TextField
-          name="seal-key-again"
-          type="password"
-          autoComplete="off"
-          aria-label="Seal key again"
-          placeholder="Seal key again"
-          className="w-full"
-          value={again}
-          onChange={(e) => setAgain(e.target.value)}
+          again={again}
+          onChange={(next, nextAgain) => {
+            setSealKey(next);
+            setAgain(nextAgain);
+          }}
         />
         {error ? <p className="text-sm text-accent">{error}</p> : null}
         <Button

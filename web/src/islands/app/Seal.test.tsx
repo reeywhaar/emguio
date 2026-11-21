@@ -105,6 +105,25 @@ describe("the seal page", () => {
   });
 });
 
+describe("a generated seal key", () => {
+  // Both fields filled and shown, to copy and keep; what is sent is what was shown.
+  it("fills both fields with one to keep", async () => {
+    mount(<Seal state="none" />);
+    fireEvent.click(screen.getByRole("button", { name: "Create a seal key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate one" }));
+    const key = screen.getByLabelText<HTMLInputElement>("New seal key");
+    const again = screen.getByLabelText<HTMLInputElement>("New seal key again");
+    expect(key.value).toMatch(
+      /^([0-9a-hjkmnp-tv-z]{4}-){4}[0-9a-hjkmnp-tv-z]{4}$/,
+    );
+    expect(again.value).toBe(key.value);
+    expect(key.type).toBe("text");
+    screen.getByRole("button", { name: "Copy" });
+    fireEvent.click(screen.getByRole("button", { name: "Make it" }));
+    await waitFor(() => expect(postSeal).toHaveBeenCalledWith(key.value));
+  });
+});
+
 describe("the seal key in Settings", () => {
   it("changes it with the current one", async () => {
     mount(<SealKeySettings />);

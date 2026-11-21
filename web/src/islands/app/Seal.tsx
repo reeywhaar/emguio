@@ -13,11 +13,12 @@ import { messageOf } from "@app/api/transport";
 import type { Me } from "@app/api/types";
 import { Button } from "@app/components/Button";
 import { Dialog } from "@app/components/Dialog";
+import { NewSealKey } from "@app/components/NewSealKey";
 import { TextField } from "@app/components/TextField";
 import { say } from "@app/islands/app/notices";
 import { leaveFor } from "@app/leave";
 import { forget } from "@app/push";
-import { newKeyProblem, SEAL_KEY_MIN } from "@app/sealKey";
+import { newKeyProblem } from "@app/sealKey";
 
 /**
  * What a signed-in user sees until their seal key is open: unsealing after a restart, making a
@@ -245,26 +246,16 @@ function NewKey({
         </p>
       </div>
       <form className="flex flex-col gap-3" onSubmit={submit}>
-        <TextField
+        <NewSealKey
+          label="New seal key"
           name="new-seal-key"
-          type="password"
-          autoComplete="new-password"
-          aria-label="New seal key"
-          placeholder={`New seal key, ${SEAL_KEY_MIN} characters or more`}
-          className="w-full"
           value={key}
-          onChange={(e) => setKey(e.target.value)}
+          again={again}
+          onChange={(next, nextAgain) => {
+            setKey(next);
+            setAgain(nextAgain);
+          }}
           autoFocus
-        />
-        <TextField
-          name="new-seal-key-again"
-          type="password"
-          autoComplete="new-password"
-          aria-label="New seal key again"
-          placeholder="New seal key again"
-          className="w-full"
-          value={again}
-          onChange={(e) => setAgain(e.target.value)}
         />
         {error ? <p className="text-sm text-accent">{error}</p> : null}
         <Button
@@ -400,25 +391,15 @@ function ChangeSealKey({
           onChange={(e) => setCurrent(e.target.value)}
           autoFocus
         />
-        <TextField
+        <NewSealKey
+          label="New seal key"
           name="new-seal-key"
-          type="password"
-          autoComplete="new-password"
-          aria-label="New seal key"
-          placeholder={`New seal key, ${SEAL_KEY_MIN} characters or more`}
-          className="w-full"
           value={key}
-          onChange={(e) => setKey(e.target.value)}
-        />
-        <TextField
-          name="new-seal-key-again"
-          type="password"
-          autoComplete="new-password"
-          aria-label="New seal key again"
-          placeholder="New seal key again"
-          className="w-full"
-          value={again}
-          onChange={(e) => setAgain(e.target.value)}
+          again={again}
+          onChange={(next, nextAgain) => {
+            setKey(next);
+            setAgain(nextAgain);
+          }}
         />
         <p className="text-xs text-muted">
           Your saved mail passwords stay as they are.
