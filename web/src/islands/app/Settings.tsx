@@ -140,35 +140,39 @@ function Account() {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="caps text-muted">You</h2>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-bg px-4 py-2">
-        <span className="text-sm">
-          Signed in as{" "}
-          {me.data ? (
-            <span className="font-medium">{me.data.username}</span>
-          ) : (
-            "…"
-          )}
-        </span>
-        <span className="-mr-2 flex items-center">
+      <div className="flex flex-col divide-y divide-line rounded-lg border border-line bg-bg px-4">
+        <div className="flex items-center justify-between gap-3 py-2">
+          <span className="min-w-0 text-sm">
+            Signed in as{" "}
+            {me.data ? (
+              <span className="font-medium">{me.data.username}</span>
+            ) : (
+              "…"
+            )}
+          </span>
           <Button
             variant="link"
-            className="rounded-md px-2 py-1.5"
-            aria-haspopup="dialog"
-            onClick={() =>
-              setChanging((c) => ({ open: true, opened: c.opened + 1 }))
-            }
-          >
-            Change password
-          </Button>
-          <Button
-            variant="link"
-            className="rounded-md px-2 py-1.5"
+            className="-mr-2 shrink-0 rounded-md px-2 py-1.5"
             disabled={signOut.isPending}
             onClick={() => signOut.mutate()}
           >
             Sign out
           </Button>
-        </span>
+        </div>
+        <div className="flex items-center justify-between gap-3 py-2">
+          <span className="min-w-0 text-sm">Password</span>
+          <Button
+            variant="link"
+            className="-mr-2 shrink-0 rounded-md px-2 py-1.5"
+            aria-haspopup="dialog"
+            aria-label="Change password"
+            onClick={() =>
+              setChanging((c) => ({ open: true, opened: c.opened + 1 }))
+            }
+          >
+            Change
+          </Button>
+        </div>
         {changing.opened > 0 ? (
           <PasswordDialog
             key={changing.opened}

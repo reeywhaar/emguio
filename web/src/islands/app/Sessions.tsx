@@ -66,11 +66,8 @@ export function Sessions() {
                       · last used {when(s.last_seen_at)}
                     </span>
                   )}
-                  {/* A guess, so what it was guessed from is under it. */}
-                  <span
-                    className="block truncate text-xs text-faint"
-                    title={s.user_agent}
-                  >
+                  {/* A guess, so what it was guessed from is under it, whole. */}
+                  <span className="scroll-thin block overflow-x-auto text-xs whitespace-nowrap text-faint">
                     {s.user_agent}
                   </span>
                 </span>
