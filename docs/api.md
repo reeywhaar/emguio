@@ -1041,6 +1041,34 @@ POST /api/auth/logout
 
 Ends this session and clears the cookie. `204`. The user's other sessions stay signed in.
 
+```
+GET /api/sessions
+```
+
+The user's sessions, the most recently used first:
+
+```json
+{"sessions": [{"id": "s_3f9a1c0b7e2d", "current": true, "created_at": 1790000000,
+  "last_seen_at": 1790003600, "expires_at": 1790608400, "device": "Firefox on a Mac",
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Firefox/140.0"}]}
+```
+
+`current` is the one this request came with. `device` is a guess at the browser and platform, and
+`user_agent` what it was guessed from. An `id` is derived from the session, never the cookie's
+value. A session is good for seven days from when it was last used.
+
+```
+DELETE /api/sessions/{id}
+```
+
+Signs that session out. `204`; for the current one the cookie is cleared in the same answer.
+
+```
+DELETE /api/sessions
+```
+
+Signs out every session but the current one. `204`.
+
 A user joins by invitation. Whoever runs the instance prints a link with `emguio invite`; it ends
 in `/invite/{token}`, makes one user, and is good for seven days. Neither call below needs a
 session.
@@ -1068,8 +1096,8 @@ the link unspent.
 Each user's mail passwords are sealed with a key of their own, opened by their seal key: a
 passphrase apart from their password, which emguio never stores. After every start of the
 instance a user is sealed until they unseal, and until then every call but the ones in this
-section, signing out and `GET /api/auth/me` answers `423 sealed`, and none of their mail is read.
-See [email-configs.md](email-configs.md).
+section, signing out, the sessions and `GET /api/auth/me` answers `423 sealed`, and none of
+their mail is read. See [email-configs.md](email-configs.md).
 
 ```
 POST /api/seal/unseal

@@ -5,6 +5,8 @@
  */
 export const qk = {
   me: ["me"] as const,
+  /** Where the user is signed in. */
+  sessions: ["sessions"] as const,
   /** The user's jobs, across every config: what is drawn as still to be done. */
   jobs: ["jobs"] as const,
   /** The user's moves of messages to another of their accounts. */

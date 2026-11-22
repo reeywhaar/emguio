@@ -47,6 +47,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 - The header shows which accounts have unread mail, and the tab's icon gets a dot.
 - An account can be turned off without deleting it: it is not read or notified from until it is
   turned on again.
+- Settings lists where the user is signed in, each with its browser, and signs any of them out,
+  or all but this one.
 
 **Web app and notifications**
 

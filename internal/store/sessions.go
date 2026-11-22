@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"emguio/internal/ids"
 )
 
 // How long a session lasts and how often its window is pushed forward.
@@ -28,12 +30,20 @@ const userAgentMax = 400
 // the lookup is timing-safe without trying to be: telling two rows apart by timing would mean
 // finding a 256-bit preimage.
 type Session struct {
+	// ID is derived from the stored hash, so it is stable for the life of the session and
+	// reveals nothing: a hash of a hash of a value only the browser holds.
+	ID         string
 	UserID     string
 	UserAgent  string
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
 }
+
+// SessionID names in public the session presenting this token, without a lookup.
+func SessionID(token string) string { return sessionID(hashToken(token)) }
+
+func sessionID(idHash []byte) string { return ids.Derive(ids.Session, idHash) }
 
 func hashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
@@ -54,6 +64,7 @@ func (s *Store) CreateSession(ctx context.Context, token, userID, userAgent stri
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 	return &Session{
+		ID:         SessionID(token),
 		UserID:     userID,
 		UserAgent:  userAgent,
 		CreatedAt:  now,
@@ -82,6 +93,7 @@ func (s *Store) SessionByToken(ctx context.Context, token string) (*Session, err
 	if err != nil {
 		return nil, fmt.Errorf("session: %w", err)
 	}
+	sess.ID = SessionID(token)
 	sess.CreatedAt = fromUnix(created)
 	sess.LastSeenAt = fromUnix(lastSeen)
 	sess.ExpiresAt = fromUnix(expires)
@@ -102,6 +114,84 @@ func (s *Store) TouchSession(ctx context.Context, token, userAgent string) (time
 	}
 	n, _ := res.RowsAffected()
 	return expires, n > 0, nil
+}
+
+// Sessions lists a user's live sign-ins, most recently used first. Lapsed rows are left out
+// rather than left to the sweep: one that expired minutes ago is not offered for signing out.
+func (s *Store) Sessions(ctx context.Context, userID string) ([]*Session, error) {
+	rows, err := s.reader.QueryContext(ctx,
+		`SELECT id_hash, user_agent, created_at, last_seen_at, expires_at
+		   FROM sessions WHERE user_id = ? AND expires_at > ?
+		  ORDER BY last_seen_at DESC`,
+		userID, unix(s.Now()))
+	if err != nil {
+		return nil, fmt.Errorf("sessions: %w", err)
+	}
+	defer rows.Close()
+	out := []*Session{}
+	for rows.Next() {
+		var (
+			idHash                     []byte
+			created, lastSeen, expires int64
+			sess                       = Session{UserID: userID}
+		)
+		if err := rows.Scan(&idHash, &sess.UserAgent, &created, &lastSeen, &expires); err != nil {
+			return nil, fmt.Errorf("sessions: %w", err)
+		}
+		sess.ID = sessionID(idHash)
+		sess.CreatedAt = fromUnix(created)
+		sess.LastSeenAt = fromUnix(lastSeen)
+		sess.ExpiresAt = fromUnix(expires)
+		out = append(out, &sess)
+	}
+	return out, rows.Err()
+}
+
+// RevokeSession signs out one of a user's sessions by its public id.
+//
+// The id is a digest, so no query turns it back into a key: the user's own rows are read and
+// matched. That is the scoping too: somebody else's session matches nothing here.
+func (s *Store) RevokeSession(ctx context.Context, userID, id string) error {
+	if !ids.Valid(ids.Session, id) {
+		return Invalid("%q is not a session id.", id)
+	}
+	rows, err := s.reader.QueryContext(ctx, `SELECT id_hash FROM sessions WHERE user_id = ?`, userID)
+	if err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	var target []byte
+	for rows.Next() {
+		var idHash []byte
+		if err := rows.Scan(&idHash); err != nil {
+			rows.Close()
+			return fmt.Errorf("revoke session: %w", err)
+		}
+		if sessionID(idHash) == id {
+			target = idHash
+			break
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	if target == nil {
+		return NotFound("There is no such session.")
+	}
+	if _, err := s.writer.ExecContext(ctx, `DELETE FROM sessions WHERE id_hash = ?`, target); err != nil {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return nil
+}
+
+// RevokeOtherSessions signs out every session of a user but the one presenting token.
+func (s *Store) RevokeOtherSessions(ctx context.Context, userID, token string) (int64, error) {
+	res, err := s.writer.ExecContext(ctx,
+		`DELETE FROM sessions WHERE user_id = ? AND id_hash <> ?`, userID, hashToken(token))
+	if err != nil {
+		return 0, fmt.Errorf("revoke sessions: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 // DeleteSession signs one session out.

@@ -35,6 +35,7 @@ import {
 } from "@app/islands/app/Notifications";
 import { Reading, ReadOn } from "@app/islands/app/Reading";
 import { SealKeySettings } from "@app/islands/app/Seal";
+import { Sessions } from "@app/islands/app/Sessions";
 import { Results } from "@app/islands/app/Results";
 import { go, paths, type Route } from "@app/islands/app/route";
 import { leaveFor } from "@app/leave";
@@ -104,6 +105,7 @@ export function Settings({
       <Notifications />
       <SealKeySettings />
       <Account />
+      <Sessions />
       <p className="text-sm text-muted">
         A program can do what this page does, through the API:{" "}
         <a href="/docs" className="underline">

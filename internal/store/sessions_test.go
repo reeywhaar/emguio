@@ -77,3 +77,36 @@ func TestDeletingAUserTakesTheirSessions(t *testing.T) {
 		t.Errorf("session after its user = %v, want gone", err)
 	}
 }
+
+// A lapsed session is not offered for signing out, and an id is the session's, not its cookie.
+func TestTheListIsLiveSessionsMostRecentFirst(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 1, 4, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return at })
+	u, err := st.CreateUser(ctx, "misha", "a good password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.CreateSession(ctx, "old", u.ID, "Firefox")
+	st.SetClock(func() time.Time { return at.Add(SessionLifetime - time.Hour) })
+	st.CreateSession(ctx, "new", u.ID, "Safari")
+	st.SetClock(func() time.Time { return at.Add(SessionLifetime) })
+
+	list, err := st.Sessions(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != SessionID("new") || list[0].UserAgent != "Safari" {
+		t.Errorf("sessions = %+v", list)
+	}
+	if err := st.RevokeSession(ctx, u.ID, "new"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a cookie as an id = %v", err)
+	}
+	if err := st.RevokeSession(ctx, u.ID, SessionID("new")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SessionByToken(ctx, "new"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("signed out session = %v", err)
+	}
+}

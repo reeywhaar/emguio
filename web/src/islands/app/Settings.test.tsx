@@ -35,6 +35,11 @@ vi.mock("@app/api/actions/auth", () => ({
   postAuthLogout: async () => undefined,
 }));
 vi.mock("@app/leave", () => ({ leaveFor: vi.fn() }));
+vi.mock("@app/api/actions/sessions", () => ({
+  getSessions: async () => [],
+  deleteSessionsById: vi.fn(),
+  deleteSessions: vi.fn(),
+}));
 vi.mock("@app/api/actions/push", () => ({
   getDevices: () => getDevices(),
   deleteDevicesById: (id: string) => deleteDevicesById(id),

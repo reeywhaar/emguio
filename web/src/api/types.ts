@@ -8,6 +8,19 @@ export type Me = {
   seal: "none" | "sealed" | "open";
 };
 
+/** One sign-in, as its user sees it. */
+export type Session = {
+  id: string;
+  /** The one this page came with. */
+  current: boolean;
+  created_at: number;
+  last_seen_at: number;
+  expires_at: number;
+  /** A guess at the browser and platform, from user_agent. */
+  device: string;
+  user_agent: string;
+};
+
 /** How a server is secured: TLS from the first byte, or upgraded with STARTTLS. */
 export type Security = "implicit" | "starttls";
 
