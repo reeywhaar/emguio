@@ -30,7 +30,7 @@ export function Field({
 // Mobile Safari replaces a select's min-height with its own unless it has a height.
 const selectHeights = {
   field: "h-10",
-  bar: "h-8 pointer-coarse:h-10",
+  bar: "h-8",
 } as const;
 
 /**

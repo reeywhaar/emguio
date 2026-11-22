@@ -83,7 +83,7 @@ export function Search({
             e.stopPropagation();
             clear();
           }}
-          className={`${fieldLook} min-h-8 w-full py-1 pr-9 pointer-coarse:min-h-10 [&::-webkit-search-cancel-button]:appearance-none`}
+          className={`${fieldLook} min-h-8 w-full py-1 pr-9 [&::-webkit-search-cancel-button]:appearance-none`}
         />
         {draft || text ? (
           <button

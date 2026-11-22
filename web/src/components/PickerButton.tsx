@@ -8,7 +8,7 @@ export function pickerLook(plain: boolean) {
   const look = plain
     ? "gap-1 rounded-md px-2 hover:bg-fill"
     : `${fieldLook} gap-2`;
-  return `${look} flex h-8 min-w-0 items-center text-left text-sm pointer-coarse:h-10`;
+  return `${look} flex h-8 min-w-0 items-center text-left text-sm`;
 }
 
 /**

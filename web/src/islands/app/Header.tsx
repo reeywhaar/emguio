@@ -59,7 +59,7 @@ export function Header({ route }: { route: Route }) {
         href={paths.settings}
         title="Settings"
         aria-current={route.page === "settings" ? "page" : undefined}
-        className="inline-flex min-h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted hover:bg-fill hover:text-fg aria-[current=page]:text-fg pointer-coarse:min-h-10"
+        className="inline-flex min-h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted hover:bg-fill hover:text-fg aria-[current=page]:text-fg"
       >
         <span className="shrink-0">
           <ProfileMark />
@@ -83,7 +83,7 @@ const GAP = 4;
 type Sizes = { room: number; widths: Record<string, number>; button: number };
 
 const tab =
-  "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap pointer-coarse:min-h-10";
+  "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap";
 
 /**
  * The mail accounts side by side, as many as fit, and the rest behind a button after them. The
@@ -284,8 +284,7 @@ function ConfigPicker({
   );
 }
 
-const item =
-  "flex min-h-8 items-center gap-2 rounded-md px-3 text-sm pointer-coarse:min-h-10";
+const item = "flex min-h-8 items-center gap-2 rounded-md px-3 text-sm";
 
 /** Mail accounts as a menu lists them: by name, with the address beside a name, and unread. */
 function Items({

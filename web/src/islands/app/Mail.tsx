@@ -969,7 +969,7 @@ function FetchMail({
   return (
     <Button
       variant="link"
-      className="rounded-md p-1.5 hover:bg-shade pointer-coarse:p-2.5"
+      className="rounded-md p-1.5 hover:bg-shade"
       aria-label="Fetch new mail"
       title="Fetch new mail"
       disabled={sync.isPending || waiting}
