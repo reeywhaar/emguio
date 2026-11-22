@@ -67,12 +67,14 @@ image and the event stream, each described where it occurs.
 **Bodies have a cap.** 1 MB, except sending and drafts, which take up to 36 MB so attachments
 fit. A larger body answers `413 body_too_large`.
 
-**Requests from other sites are refused.** A request with any method but `GET`, `HEAD` and
-`OPTIONS` answers `403 forbidden` when it carries `Sec-Fetch-Site: cross-site`, and
+**Requests from other origins are refused.** A request with any method but `GET`, `HEAD` and
+`OPTIONS` answers `403 forbidden` when it carries a `Sec-Fetch-Site` other than `same-origin` —
+`same-site` too, since a page on a sibling subdomain is sent the cookie — and
 `415 unsupported_media_type` when it has a body that is not `application/json`. A browser sets
 `Sec-Fetch-Site` and a page cannot forge it; a program that sends no `Sec-Fetch-Site` at all is
 fine. A request with no body, like a `DELETE`, needs no `Content-Type`. emguio sends no CORS
-headers, so a page on another origin cannot read its answers.
+headers, so a page on another origin cannot read its answers, and `X-Frame-Options: DENY` on
+every answer, so no page of it is shown in another's frame.
 
 **Success has no envelope.** A successful answer is the object described for its endpoint, or
 `204` with no body. A refusal is always `{"ok": false, "code": "…", "message": "…"}`; see
@@ -1128,7 +1130,7 @@ do not match on it. Two codes can share a status: `gone` and `not_found` are bot
 | `unauthenticated` | 401 | No live session. At sign-in, a username and password that do not match. |
 | `not_found` | 404 | No such thing, or not this user's: an email config, folder, draft, failed job, device, invitation, message part, image address or endpoint. |
 | `conflict` | 409 | A username taken; a mail account with no outgoing server to send through, or no Drafts folder to keep a draft in; a draft closed with nowhere to write it. |
-| `forbidden` | 403 | A request that changes something, sent with `Sec-Fetch-Site: cross-site`. |
+| `forbidden` | 403 | A request that changes something, sent from a page of another origin. |
 | `unsupported_media_type` | 415 | A request body that is not `application/json`; a proxied image whose bytes are not an image. |
 | `body_too_large` | 413 | A request body over 1 MB, or over 36 MB for sending and drafts. |
 | `too_large` | 413 | Attachments over 25 MB; a proxied image over 10 MB. |

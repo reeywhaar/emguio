@@ -99,14 +99,44 @@ func TestNoCORSHeaderIsEverEmitted(t *testing.T) {
 	}
 }
 
+// A sibling subdomain is same-site, and gets the cookie: only this origin writes.
 func TestACrossSiteWriteIsRefused(t *testing.T) {
 	s := newServer(t, nil)
-	resp := do(t, s, "POST", "/api/auth/login", `{}`, map[string]string{
-		"Sec-Fetch-Site": "cross-site",
-		"Content-Type":   "application/json",
-	})
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("status = %s, want 403", resp.Status)
+	for _, site := range []string{"cross-site", "same-site", "none"} {
+		resp := do(t, s, "POST", "/api/auth/logout", "", map[string]string{"Sec-Fetch-Site": site})
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status = %s, want 403", site, resp.Status)
+		}
+	}
+	for _, site := range []string{"same-origin", ""} {
+		resp := do(t, s, "POST", "/api/auth/logout", "", map[string]string{"Sec-Fetch-Site": site})
+		if resp.StatusCode == http.StatusForbidden {
+			t.Errorf("%q: refused", site)
+		}
+	}
+}
+
+// No page of this origin is shown in another's frame.
+func TestNothingIsFramed(t *testing.T) {
+	s := newServer(t, nil)
+	for _, path := range []string{"/login", "/api/auth/me", "/healthz"} {
+		if v := do(t, s, "GET", path, "", nil).Header.Get("X-Frame-Options"); v != "DENY" {
+			t.Errorf("%s: X-Frame-Options = %q", path, v)
+		}
+	}
+}
+
+// A live invitation is a way in, and the request log is read by more people than it should be.
+func TestAnInvitationsTokenIsNotLogged(t *testing.T) {
+	for path, want := range map[string]string{
+		"/invite/abc123":                    "/invite/…",
+		"/api/auth/invites/abc123":          "/api/auth/invites/…",
+		"/api/auth/invites/abc123/accept":   "/api/auth/invites/…/accept",
+		"/api/email-configs/ec_1/mailboxes": "/api/email-configs/ec_1/mailboxes",
+	} {
+		if got := loggedPath(path); got != want {
+			t.Errorf("%s logged as %s, want %s", path, got, want)
+		}
 	}
 }
 

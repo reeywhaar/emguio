@@ -259,6 +259,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(context.WithValue(r.Context(), ctxServed, sv))
 	defer s.logRequest(r, sv)
 	w = sv
+	// Nothing here is shown in another page's frame, where a click could be steered.
+	w.Header().Set("X-Frame-Options", "DENY")
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		// Reads take no writer, and the event stream rightly runs for as long as the tab is open.
@@ -316,11 +318,24 @@ func (s *Server) logRequest(r *http.Request, sv *served) {
 	if status >= 500 {
 		level = slog.LevelWarn
 	}
-	attrs := []any{"method", r.Method, "path", path, "status", status, "took", elapsed(r)}
+	attrs := []any{"method", r.Method, "path", loggedPath(path), "status", status, "took", elapsed(r)}
 	if sv.user != "" {
 		attrs = append(attrs, "user", sv.user)
 	}
 	s.log.Log(r.Context(), level, "request answered", attrs...)
+}
+
+// loggedPath is path with an invitation's token blanked: a live one is a way in.
+func loggedPath(path string) string {
+	for _, prefix := range []string{"/invite/", "/api/auth/invites/"} {
+		if rest, ok := strings.CutPrefix(path, prefix); ok {
+			if _, tail, more := strings.Cut(rest, "/"); more {
+				return prefix + "…/" + tail
+			}
+			return prefix + "…"
+		}
+	}
+	return path
 }
 
 // elapsed is how long the request has been running.
@@ -345,8 +360,9 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// A browser sets this; a script cannot forge it.
-		if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		// A browser sets this; a script cannot forge it. Same-site is refused too: a sibling
+		// subdomain gets the cookie. Absent, it is not a browser.
+		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
 			refuse(w, http.StatusForbidden, CodeForbidden, "That request came from somewhere else.")
 			return
 		}

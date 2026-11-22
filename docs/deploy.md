@@ -191,7 +191,7 @@ being up to date, failing and stopping; each mail action and each message sent; 
 and settings lookups as they change; and the sweeps. At `debug`, also each routine look at the mail server.
 
 Never in a line: a password, an email address, a subject, a folder's name, what somebody searched
-for, or a request's query. A folder is named by its id and its use — `sent`, `drafts` or `own`.
+for, a request's query, or an invitation's token, which a request's path shows as `…`. A folder is named by its id and its use — `sent`, `drafts` or `own`.
 
 ### A wrong password is one line, for fail2ban
 
