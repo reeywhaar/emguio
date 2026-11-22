@@ -13,6 +13,12 @@ export const postTransfersByIdCancel = (id: string) =>
     method: "POST",
   });
 
+/** Sends again the messages a stopped or cancelled transfer left where they were. */
+export const postTransfersByIdRetry = (id: string) =>
+  request<Transfer>(`/api/transfers/${encodeURIComponent(id)}/retry`, {
+    method: "POST",
+  });
+
 /** Lets a finished transfer go, once it has been shown. */
 export const deleteTransfersById = (id: string) =>
   request<void>(`/api/transfers/${encodeURIComponent(id)}`, {

@@ -727,6 +727,16 @@ Leaves where they are the messages still waiting. What has moved stays moved, an
 under way finishes. `200` with the transfer; one already finished is given back as it ended.
 
 ```
+POST /api/transfers/{transfer}/retry
+```
+
+Sends again the messages a stopped or cancelled transfer left where they were, as if asked now:
+after any job asked since. Its `error` is cleared and it is `moving` again, with what it moved
+still counted. `200` with the transfer; one still moving is given back as it is. One that moved
+everything answers `400 invalid`, and one whose account, or the account it goes to, is turned
+off answers `409 conflict`.
+
+```
 DELETE /api/transfers/{transfer}
 ```
 

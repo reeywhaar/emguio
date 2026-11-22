@@ -59,6 +59,23 @@ func TestATransferIsAskedListedAndCancelled(t *testing.T) {
 	if j := c.json(c.do("GET", "/api/jobs", ""))["jobs"].([]any)[0].(map[string]any); j["error"] != "Cancelled." {
 		t.Errorf("its job = %v", j)
 	}
+
+	fake.kicked = nil
+	again := c.json(c.do("POST", "/api/transfers/"+tr+"/retry", ""))
+	if again["state"] != "moving" || len(fake.kicked) != 1 || fake.kicked[0] != cfg {
+		t.Errorf("tried again = %v, kicked %v", again, fake.kicked)
+	}
+	if j := c.json(c.do("GET", "/api/jobs", ""))["jobs"].([]any)[0].(map[string]any); j["error"] != "" {
+		t.Errorf("its job = %v", j)
+	}
+	if err := s.store.SetEmailConfigOff(ctx, u.ID, other.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	c.do("POST", "/api/transfers/"+tr+"/cancel", "")
+	if resp := c.do("POST", "/api/transfers/"+tr+"/retry", ""); resp.StatusCode != http.StatusConflict {
+		t.Errorf("tried again into an account turned off = %s", resp.Status)
+	}
+
 	if resp := c.do("DELETE", "/api/transfers/"+tr, ""); resp.StatusCode != http.StatusNoContent {
 		t.Errorf("dismissing = %s", resp.Status)
 	}

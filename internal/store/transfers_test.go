@@ -124,6 +124,56 @@ func TestAStoppedTransferSaysWhy(t *testing.T) {
 	}
 }
 
+// Tried again, a stopped transfer's messages wait once more, after what was asked since, and
+// it is moving again with what it moved still counted.
+func TestAStoppedTransferIsTriedAgain(t *testing.T) {
+	st, u, cfg, inbox, archive := transferWorld(t, 3)
+	ctx := context.Background()
+	jobs, _ := st.AddJobs(ctx, transferJobs(u, cfg, inbox, archive, "1-1", "1-2", "1-3"))
+	tr := jobs[0].Transfer
+	st.FinishJob(ctx, jobs[0].ID)
+	st.TransferMoved(ctx, tr)
+	st.StopTransfer(ctx, tr, "Over quota.")
+	since := must(st.AddJob(ctx, Job{UserID: u.ID, EmailConfigID: cfg.ID, MailboxID: inbox.ID, Message: "1-3", Kind: JobSeen, Value: true}))
+
+	got, err := st.RetryTransfer(ctx, u.ID, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State() != TransferMoving || got.Error != "" || got.Moved != 1 || got.Waiting != 2 || got.Total != 3 {
+		t.Errorf("tried again = %+v", got)
+	}
+	if n := next(t, st, cfg.ID); n == nil || n.ID != since.ID {
+		t.Errorf("first to do = %+v, want what was asked since", n)
+	}
+	var waiting []string
+	for _, j := range must(st.Jobs(ctx, u.ID)) {
+		if j.Kind == JobTransfer {
+			if j.Error != "" || j.Attempts != 0 || j.Transfer != tr {
+				t.Errorf("job = %+v", j)
+			}
+			waiting = append(waiting, j.Message)
+		}
+	}
+	if len(waiting) != 2 || waiting[0] != "1-2" || waiting[1] != "1-3" {
+		t.Errorf("waiting = %v", waiting)
+	}
+
+	if again, err := st.RetryTransfer(ctx, u.ID, tr); err != nil || again.Waiting != 2 {
+		t.Errorf("one moving tried again = %+v, %v", again, err)
+	}
+	st.CancelTransfer(ctx, u.ID, tr)
+	if got, err := st.RetryTransfer(ctx, u.ID, tr); err != nil || got.State() != TransferMoving {
+		t.Errorf("a cancelled one tried again = %+v, %v", got, err)
+	}
+
+	done, _ := st.AddJobs(ctx, transferJobs(u, cfg, inbox, archive, "1-1"))
+	st.FinishJob(ctx, done[0].ID)
+	if _, err := st.RetryTransfer(ctx, u.ID, done[0].Transfer); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a finished one tried again = %v", err)
+	}
+}
+
 // A finished transfer nobody came back to see goes after a day; one still moving does not.
 func TestFinishedTransfersAreSweptAfterADay(t *testing.T) {
 	st, u, cfg, inbox, archive := transferWorld(t, 2)

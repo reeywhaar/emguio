@@ -174,6 +174,60 @@ func (s *Store) StopTransfer(ctx context.Context, id, sentence string) error {
 	return s.endTransfer(ctx, id, "error = ?", sentence, sentence)
 }
 
+// RetryTransfer sends again the messages a stopped or cancelled transfer left where they were,
+// as if asked now: after whatever was asked since. One still moving stays as it is.
+func (s *Store) RetryTransfer(ctx context.Context, userID, id string) (*Transfer, error) {
+	t, err := s.Transfer(ctx, userID, id)
+	if err != nil || t.State() == TransferMoving {
+		return t, err
+	}
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("retry transfer: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx,
+		`SELECT `+jobColumns+` FROM jobs WHERE transfer = ? AND error <> '' ORDER BY rowid`, id)
+	if err != nil {
+		return nil, fmt.Errorf("retry transfer: %w", err)
+	}
+	var left []*Job
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("retry transfer: %w", err)
+		}
+		left = append(left, j)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("retry transfer: %w", err)
+	}
+	if len(left) == 0 {
+		return nil, Invalid("Nothing is left to move.")
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE transfer = ? AND error <> ''`, id); err != nil {
+		return nil, fmt.Errorf("retry transfer: %w", err)
+	}
+	now := s.Now()
+	for _, j := range left {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?)`,
+			ids.New(ids.Job, now.UnixMilli()), j.UserID, j.EmailConfigID, j.MailboxID, j.Message, j.Kind, j.Value,
+			j.Target, j.Transfer, j.Seen, unix(now), unix(now)); err != nil {
+			return nil, fmt.Errorf("retry transfer: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE transfers SET error = '', cancelled = 0 WHERE id = ?`, id); err != nil {
+		return nil, fmt.Errorf("retry transfer: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("retry transfer: %w", err)
+	}
+	return s.Transfer(ctx, userID, id)
+}
+
 // endTransfer marks a transfer ended, and its waiting jobs with sentence: ended, they are no
 // longer done, and a page draws their messages where they are again.
 func (s *Store) endTransfer(ctx context.Context, id, set, sentence string, args ...any) error {

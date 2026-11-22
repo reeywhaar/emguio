@@ -230,7 +230,9 @@ corner says where they are going and how far it has got, and cancels it: what ha
 moved, the message under way finishes, and the rest stay. The waiting jobs of a cancelled or
 stopped transfer end with that as their error, so they stop being drawn as done and those
 messages are back in the list, in every tab. It then says how it ended: done, cancelled, or
-stopped with the server's sentence, which waits to be read. One of fewer than ten messages that
+stopped with the server's sentence, which waits to be read, with Try again. Tried again, the
+messages it left go as if asked now, after anything asked since, and the card counts on from what
+had moved. One of fewer than ten messages that
 finishes within two seconds has no card: the list shows they went.
 
 ## A message is named by what the server calls it

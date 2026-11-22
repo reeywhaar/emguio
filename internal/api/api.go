@@ -184,6 +184,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("DELETE /api/jobs/{job}", s.requireUnsealed(s.dismissJob))
 	s.handle("GET /api/transfers", s.requireUnsealed(s.listTransfers))
 	s.handle("POST /api/transfers/{transfer}/cancel", s.requireUnsealed(s.cancelTransfer))
+	s.handle("POST /api/transfers/{transfer}/retry", s.requireUnsealed(s.retryTransfer))
 	s.handle("DELETE /api/transfers/{transfer}", s.requireUnsealed(s.dismissTransfer))
 
 	s.handle("GET /api/reading", s.requireUnsealed(s.reading))

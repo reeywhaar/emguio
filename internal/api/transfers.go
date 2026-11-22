@@ -59,6 +59,40 @@ func (s *Server) cancelTransfer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, transferOut(t))
 }
 
+// retryTransfer sends again the messages a stopped or cancelled transfer left where they were.
+func (s *Server) retryTransfer(w http.ResponseWriter, r *http.Request) {
+	u := userOf(r)
+	t, err := s.store.Transfer(r.Context(), u.ID, r.PathValue("transfer"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for id, off := range map[string]string{
+		t.EmailConfigID:  offSentence,
+		t.TargetConfigID: "The account it would go to is turned off. Turn it on in Settings first.",
+	} {
+		c, err := s.store.EmailConfig(r.Context(), u.ID, id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if c.Off {
+			refuse(w, http.StatusConflict, CodeConflict, off)
+			return
+		}
+	}
+	if t, err = s.store.RetryTransfer(r.Context(), u.ID, t.ID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if s.mirror != nil {
+		s.mirror.Kick(t.EmailConfigID)
+	}
+	s.log.Info("transfer tried again", "user", u.ID, "transfer", t.ID, "moved", t.Moved, "total", t.Total)
+	s.store.Notify(u.ID)
+	writeJSON(w, http.StatusOK, transferOut(t))
+}
+
 // dismissTransfer lets a finished transfer go, once it has been shown.
 func (s *Server) dismissTransfer(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.DismissTransfer(r.Context(), userOf(r).ID, r.PathValue("transfer")); err != nil {

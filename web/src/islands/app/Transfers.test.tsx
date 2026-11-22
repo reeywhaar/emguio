@@ -8,11 +8,13 @@ import { mount } from "@app/test/harness";
 const getTransfers = vi.fn();
 const cancel = vi.fn();
 const dismiss = vi.fn();
+const retry = vi.fn();
 
 vi.mock("@app/api/actions/transfers", () => ({
   getTransfers: () => getTransfers(),
   postTransfersByIdCancel: (id: string) => cancel(id),
   deleteTransfersById: (id: string) => dismiss(id),
+  postTransfersByIdRetry: (id: string) => retry(id),
 }));
 
 const box = (
@@ -86,6 +88,20 @@ describe("transfers", () => {
     expect(dismiss).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(dismiss).toHaveBeenCalledWith("tr_1"));
+  });
+
+  // Tried again, what it left goes on moving, counted from what had moved.
+  it("tries a stopped move again", async () => {
+    getTransfers.mockResolvedValue([
+      transfer({ state: "stopped", error: "Over quota." }),
+    ]);
+    retry.mockResolvedValue(transfer());
+    mount(<Transfers />);
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("tr_1"));
+    await screen.findByText("Moving to Personal › Archive");
+    screen.getByText("340 of 1000");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
   // A few messages moved at once need no card: the list shows they went.

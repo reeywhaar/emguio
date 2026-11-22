@@ -9,6 +9,7 @@ import {
   deleteTransfersById,
   getTransfers,
   postTransfersByIdCancel,
+  postTransfersByIdRetry,
 } from "@app/api/actions/transfers";
 import { qk } from "@app/api/keys";
 import { messageOf } from "@app/api/transport";
@@ -125,15 +126,21 @@ function Card({
     .filter(Boolean)
     .join(" › ");
   const left = t.total - t.moved;
+  // Its jobs ended or wait again, which decides where the list draws its messages.
+  const settled = (now: Transfer) => {
+    client.setQueryData<Transfer[]>(qk.transfers, (old) =>
+      old?.map((x) => (x.id === now.id ? now : x)),
+    );
+    void client.invalidateQueries({ queryKey: qk.jobs });
+  };
   const cancel = useMutation({
     mutationFn: () => postTransfersByIdCancel(t.id),
-    onSuccess: (now) => {
-      client.setQueryData<Transfer[]>(qk.transfers, (old) =>
-        old?.map((x) => (x.id === now.id ? now : x)),
-      );
-      // Its waiting jobs ended: those messages are drawn where they are again.
-      void client.invalidateQueries({ queryKey: qk.jobs });
-    },
+    onSuccess: settled,
+    onError: (err) => say(messageOf(err)),
+  });
+  const retry = useMutation({
+    mutationFn: () => postTransfersByIdRetry(t.id),
+    onSuccess: settled,
     onError: (err) => say(messageOf(err)),
   });
 
@@ -168,33 +175,46 @@ function Card({
           </div>
         </>
       ) : (
-        <div className="flex items-start gap-2">
-          <p className="min-w-0 flex-1">
-            {t.state === "done" ? (
-              <>
-                Moved {messages(t.moved)} to {where || "another account"}.
-              </>
-            ) : (
-              <>
-                {t.state === "stopped" ? (
-                  <span className="text-accent">{t.error} </span>
-                ) : (
-                  "Cancelled: "
-                )}
-                {t.moved} moved, {left} still in{" "}
-                {from ? labelOfMailbox(from) : "the folder"}.
-              </>
-            )}
-          </p>
-          <button
-            type="button"
-            aria-label="Dismiss"
-            onClick={onDismiss}
-            className="-m-1 shrink-0 rounded p-1 text-faint hover:bg-fill hover:text-fg"
-          >
-            <Cross />
-          </button>
-        </div>
+        <>
+          <div className="flex items-start gap-2">
+            <p className="min-w-0 flex-1">
+              {t.state === "done" ? (
+                <>
+                  Moved {messages(t.moved)} to {where || "another account"}.
+                </>
+              ) : (
+                <>
+                  {t.state === "stopped" ? (
+                    <span className="text-accent">{t.error} </span>
+                  ) : (
+                    "Cancelled: "
+                  )}
+                  {t.moved} moved, {left} still in{" "}
+                  {from ? labelOfMailbox(from) : "the folder"}.
+                </>
+              )}
+            </p>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={onDismiss}
+              className="-m-1 shrink-0 rounded p-1 text-faint hover:bg-fill hover:text-fg"
+            >
+              <Cross />
+            </button>
+          </div>
+          {t.state === "stopped" && (
+            <div className="flex justify-end">
+              <Button
+                size="bar"
+                disabled={retry.isPending}
+                onClick={() => retry.mutate()}
+              >
+                Try again
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
