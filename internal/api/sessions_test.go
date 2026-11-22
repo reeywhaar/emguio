@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"testing"
 )
@@ -86,3 +87,50 @@ func TestOneUserCannotSignOutAnothersSession(t *testing.T) {
 	}
 }
 
+// A new password signs out every other session and keeps this one; the old one no longer signs in.
+func TestChangingThePasswordSignsOutTheOtherSessions(t *testing.T) {
+	s, st := newServerStore(t, nil)
+	here := signIn(t, s, st)
+	elsewhere := newClient(t, s)
+	elsewhere.do("POST", "/api/auth/login", `{"username":"misha","password":"a good password"}`)
+
+	if resp := here.do("PUT", "/api/auth/password", `{"current":"not it","password":"a new password"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a wrong current password = %s", resp.Status)
+	}
+	if resp := elsewhere.do("GET", "/api/auth/me", ""); resp.StatusCode != http.StatusOK {
+		t.Errorf("a refused change signed out the other session: %s", resp.Status)
+	}
+	if resp := here.do("PUT", "/api/auth/password", `{"current":"a good password","password":"short"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a short new password = %s", resp.Status)
+	}
+
+	if resp := here.do("PUT", "/api/auth/password", `{"current":"a good password","password":"a new password"}`); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("change = %s %v", resp.Status, here.json(resp))
+	}
+	if resp := here.do("GET", "/api/auth/me", ""); resp.StatusCode != http.StatusOK {
+		t.Errorf("this session was signed out: %s", resp.Status)
+	}
+	if resp := elsewhere.do("GET", "/api/auth/me", ""); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("the other session is still signed in: %s", resp.Status)
+	}
+	// The store, since these tries have spent the username's sign-in budget.
+	if _, err := st.Authenticate(context.Background(), "misha", "a good password"); err == nil {
+		t.Error("the old password still signs in")
+	}
+	if _, err := st.Authenticate(context.Background(), "misha", "a new password"); err != nil {
+		t.Errorf("the new password = %v", err)
+	}
+}
+
+// Guessing the current password from a session is no faster than guessing at sign-in.
+func TestGuessingTheCurrentPasswordIsLimited(t *testing.T) {
+	s, st := newServerStore(t, nil)
+	c := signIn(t, s, st)
+	var last int
+	for range 10 {
+		last = c.do("PUT", "/api/auth/password", `{"current":"not it","password":"a new password"}`).StatusCode
+	}
+	if last != http.StatusTooManyRequests {
+		t.Errorf("the tenth guess = %d, want 429", last)
+	}
+}

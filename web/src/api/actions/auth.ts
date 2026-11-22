@@ -11,6 +11,10 @@ export const postAuthLogout = () =>
 
 export const getAuthMe = () => request<Me>("/api/auth/me");
 
+/** A new password, given the current one; every other session is signed out. */
+export const putAuthPassword = (body: { current: string; password: string }) =>
+  request<void>("/api/auth/password", { method: "PUT", body });
+
 export const getAuthInvitesByToken = (token: string) =>
   request<{ expires_at: number }>(
     `/api/auth/invites/${encodeURIComponent(token)}`,

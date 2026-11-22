@@ -34,6 +34,7 @@ import {
   notifiesOf,
 } from "@app/islands/app/Notifications";
 import { Reading, ReadOn } from "@app/islands/app/Reading";
+import { PasswordDialog } from "@app/islands/app/PasswordDialog";
 import { SealKeySettings } from "@app/islands/app/Seal";
 import { Sessions } from "@app/islands/app/Sessions";
 import { Results } from "@app/islands/app/Results";
@@ -127,6 +128,7 @@ export function Settings({
 
 function Account() {
   const me = useQuery({ queryKey: qk.me, queryFn: getAuthMe });
+  const [changing, setChanging] = useState({ open: false, opened: 0 });
   const signOut = useMutation({
     // A device signed out of shows nobody's mail.
     mutationFn: async () => {
@@ -147,14 +149,33 @@ function Account() {
             "…"
           )}
         </span>
-        <Button
-          variant="link"
-          className="-mr-2 rounded-md px-2 py-1.5"
-          disabled={signOut.isPending}
-          onClick={() => signOut.mutate()}
-        >
-          Sign out
-        </Button>
+        <span className="-mr-2 flex items-center">
+          <Button
+            variant="link"
+            className="rounded-md px-2 py-1.5"
+            aria-haspopup="dialog"
+            onClick={() =>
+              setChanging((c) => ({ open: true, opened: c.opened + 1 }))
+            }
+          >
+            Change password
+          </Button>
+          <Button
+            variant="link"
+            className="rounded-md px-2 py-1.5"
+            disabled={signOut.isPending}
+            onClick={() => signOut.mutate()}
+          >
+            Sign out
+          </Button>
+        </span>
+        {changing.opened > 0 ? (
+          <PasswordDialog
+            key={changing.opened}
+            open={changing.open}
+            onClose={() => setChanging((c) => ({ ...c, open: false }))}
+          />
+        ) : null}
       </div>
     </section>
   );

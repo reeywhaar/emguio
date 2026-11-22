@@ -56,6 +56,40 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type passwordBody struct {
+	Current  string `json:"current"`
+	Password string `json:"password"`
+}
+
+// changePassword sets a new password, given the current one: being signed in is not knowing it.
+// Every other session is signed out and this one stays. Tries share sign-in's budget for the
+// username, so a borrowed session is no faster way to guess.
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
+	var body passwordBody
+	if !decode(w, r, &body) {
+		return
+	}
+	u := userOf(r)
+	if !s.loginUser.allow(strings.ToLower(u.Username)) {
+		refuse(w, http.StatusTooManyRequests, CodeRateLimited, "Too many tries. Wait a minute.")
+		return
+	}
+	if _, err := s.store.Authenticate(r.Context(), u.Username, body.Current); errors.Is(err, store.ErrNotFound) {
+		s.log.Info("password change refused: the current password does not match", "user", u.ID, "ip", s.clientIP(r))
+		refuse(w, http.StatusBadRequest, CodeInvalid, "That is not your current password.")
+		return
+	} else if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.store.SetPassword(r.Context(), u.ID, body.Password, session.Token(r)); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("password changed", "user", u.ID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if err := s.sessions.Revoke(r.Context(), w, r); err != nil {
 		s.fail(w, r, err)

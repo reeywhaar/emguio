@@ -125,6 +125,40 @@ var decoyHash = func() []byte {
 	return h
 }()
 
+// SetPassword changes a user's password and signs out their sessions but the one presenting
+// keep. The sessions go in the same transaction: live sessions behind a changed password would
+// be what the change was meant to end.
+func (s *Store) SetPassword(ctx context.Context, userID, password, keep string) error {
+	if err := ValidatePassword(password); err != nil {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	if err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM sessions WHERE user_id = ? AND id_hash <> ?`, userID, hashToken(keep)); err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, string(hash), userID)
+	if err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return NotFound("There is no such user.")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	s.changed()
+	return nil
+}
+
 // UserByID returns one user.
 func (s *Store) UserByID(ctx context.Context, id string) (*User, error) {
 	var (

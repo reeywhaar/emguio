@@ -48,7 +48,7 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 - An account can be turned off without deleting it: it is not read or notified from until it is
   turned on again.
 - Settings lists where the user is signed in, each with its browser, and signs any of them out,
-  or all but this one.
+  or all but this one. A new password, given the current one, signs out all but this one too.
 
 **Web app and notifications**
 

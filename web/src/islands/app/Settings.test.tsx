@@ -33,6 +33,7 @@ const putPushSettings = vi.fn();
 vi.mock("@app/api/actions/auth", () => ({
   getAuthMe: async () => ({ id: "u_1", username: "misha", created_at: 0 }),
   postAuthLogout: async () => undefined,
+  putAuthPassword: vi.fn(),
 }));
 vi.mock("@app/leave", () => ({ leaveFor: vi.fn() }));
 vi.mock("@app/api/actions/sessions", () => ({

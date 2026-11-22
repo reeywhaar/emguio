@@ -139,6 +139,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("POST /api/auth/invites/{token}/accept", http.HandlerFunc(s.acceptInvite))
 	s.handle("POST /api/auth/logout", s.requireSession(s.logout))
 	s.handle("GET /api/auth/me", s.requireSession(s.me))
+	s.handle("PUT /api/auth/password", s.requireSession(s.changePassword))
 	s.handle("GET /api/sessions", s.requireSession(s.listSessions))
 	s.handle("DELETE /api/sessions/{id}", s.requireSession(s.revokeSession))
 	s.handle("DELETE /api/sessions", s.requireSession(s.revokeOtherSessions))

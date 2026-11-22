@@ -1036,6 +1036,15 @@ The user signed in: `{"id": "u_…", "username": "ann", "created_at": 1790000000
 for a user from before seal keys, who has yet to make one; see below.
 
 ```
+PUT /api/auth/password
+```
+
+`{"current": "…", "password": "…"}` changes the user's password, given the current one: a
+session is not knowing it. The new one is at least 8 characters. Every other session is signed
+out and this one stays. `204`, or `400 invalid` for a current password that is not theirs. Tries
+share sign-in's limit for the username; past it, `429 rate_limited`.
+
+```
 POST /api/auth/logout
 ```
 
@@ -1096,8 +1105,8 @@ the link unspent.
 Each user's mail passwords are sealed with a key of their own, opened by their seal key: a
 passphrase apart from their password, which emguio never stores. After every start of the
 instance a user is sealed until they unseal, and until then every call but the ones in this
-section, signing out, the sessions and `GET /api/auth/me` answers `423 sealed`, and none of
-their mail is read. See [email-configs.md](email-configs.md).
+section, signing out, the sessions, changing the password and `GET /api/auth/me` answers
+`423 sealed`, and none of their mail is read. See [email-configs.md](email-configs.md).
 
 ```
 POST /api/seal/unseal
