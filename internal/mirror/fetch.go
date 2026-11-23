@@ -50,10 +50,15 @@ type fetcher struct {
 // fetcherFor is the config's session for reading, or for changing, a new one when the config
 // changed since the last: the old one would go on signing in with what was saved before.
 func (m *Mirror) fetcherFor(t store.SyncTarget, changing bool) *fetcher {
-	key := t.ID
 	if changing {
-		key += " changing"
+		return m.fetcherKeyed(t, "changing")
 	}
+	return m.fetcherKeyed(t, "reading")
+}
+
+// fetcherKeyed is the config's session for one kind of work.
+func (m *Mirror) fetcherKeyed(t store.SyncTarget, kind string) *fetcher {
+	key := t.ID + " " + kind
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	f := m.fetchers[key]
@@ -616,27 +621,8 @@ func (m *Mirror) DeleteOld(ctx context.Context, t store.SyncTarget, mailbox stri
 		if len(uids) == 0 {
 			return nil
 		}
-		caps := c.Caps()
-		if !caps.Has(imap.CapUIDPlus) && (to == "" || !caps.Has(imap.CapMove)) {
-			return ErrUnsupported
-		}
-		set := imap.UIDSetNum(uids...)
-		if read {
-			if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close(); err != nil {
-				return refused(err)
-			}
-		}
-		if to != "" {
-			if _, err := c.Move(set, to).Wait(); err != nil {
-				return refused(err)
-			}
-		} else {
-			if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
-				return refused(err)
-			}
-			if err := c.UIDExpunge(set).Close(); err != nil {
-				return refused(err)
-			}
+		if err := takeOut(f, uids, to, read); err != nil {
+			return err
 		}
 		for _, uid := range uids {
 			took = append(took, uint32(uid))
@@ -644,6 +630,35 @@ func (m *Mirror) DeleteOld(ctx context.Context, t store.SyncTarget, mailbox stri
 		return nil
 	})
 	return took, err
+}
+
+// takeOut moves uids of the open mailbox to another, to, or deletes them for good when to is
+// empty; marked read first when read is set.
+func takeOut(f *fetcher, uids []imap.UID, to string, read bool) error {
+	c := f.session.client
+	caps := c.Caps()
+	if !caps.Has(imap.CapUIDPlus) && (to == "" || !caps.Has(imap.CapMove)) {
+		return ErrUnsupported
+	}
+	set := imap.UIDSetNum(uids...)
+	if read {
+		if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close(); err != nil {
+			return refused(err)
+		}
+	}
+	if to != "" {
+		if _, err := c.Move(set, to).Wait(); err != nil {
+			return refused(err)
+		}
+		return nil
+	}
+	if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+		return refused(err)
+	}
+	if err := c.UIDExpunge(set).Close(); err != nil {
+		return refused(err)
+	}
+	return nil
 }
 
 // refused is a server's NO to an action, as the sentence a person is shown; a request the server

@@ -466,7 +466,7 @@ describe("the mail view", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/c/ec_1"));
   });
 
-  it("offers only reading and old mail for the server's own folders", async () => {
+  it("offers only reading, exporting and old mail for the server's own folders", async () => {
     window.history.pushState({}, "", "/c/ec_1/mb_sent");
     mount(<Routed />);
     await screen.findAllByText("Bob");
@@ -474,6 +474,7 @@ describe("the mail view", () => {
     const menu = within(await screen.findByRole("menu"));
     expect(menu.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Mark all as read",
+      "Export…",
       "Delete old mail…",
     ]);
   });

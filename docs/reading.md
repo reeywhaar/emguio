@@ -235,6 +235,35 @@ messages it left go as if asked now, after anything asked since, and the card co
 had moved. One of fewer than ten messages that
 finishes within two seconds has no card: the list shows they went.
 
+## Mail is exported as mbox or eml, streamed as it is read
+
+A folder's menu has Export…, and so does a selection. Mail goes out in one of two forms:
+
+- **mbox**, which every mail app imports: one file of messages one after another, mboxrd, so a
+  line that begins with `From ` is escaped by a `>` in a way that is always undone. Read,
+  replied, flagged and draft go in `Status` and `X-Status`, as mutt and Thunderbird read them,
+  and when it arrived in the `From ` line. A folder with its subfolders is a zip:
+  `Archive.mbox` beside an `Archive/` directory with `2025.mbox` and the rest inside, its mail and
+  its subfolders' kept apart as mail apps keep them.
+- **eml**: a zip of one file per message, exactly as the server holds it, named for when it
+  arrived and its UID so the files sort by date — `Archive/2026-11-21-090500-4521.eml` — and
+  subfolders as directories. An eml has nowhere to keep read or flagged. One message selected is
+  that message's `.eml`, not a zip.
+
+Nothing is held whole. The file is written as the download goes: each folder's messages are
+read a hundred at a time, what is said around them first, then each one's text passed through
+from the mail server as it comes. The most memory an export takes is the zip's buffers, whatever
+the size of the mail. It reads on a connection of its own, so the folder lists and messages of
+the same account do not wait behind it.
+
+An export is asked for, then downloaded from an address of its own, once: the browser saves it as
+it comes, and the dialog shows how far it has got. A server that stops answering partway cuts the
+download short, so the browser marks it failed rather than keeping half a file as whole.
+
+When it is done, the dialog offers to delete what was exported, and only that: mail that arrived
+since stays. It goes to Trash, as deleting does, or for good from Trash. emguio cannot know the
+file was saved, so the deleting waits for somebody to say so. An export is held for an hour.
+
 ## A message is named by what the server calls it
 
 Most messages have no row here to name them by, so a message's id is the server's own:

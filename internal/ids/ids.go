@@ -34,6 +34,7 @@ const (
 	DraftPart   = "dp_"
 	Device      = "dv_"
 	Transfer    = "tr_"
+	Export      = "ex_"
 )
 
 const (

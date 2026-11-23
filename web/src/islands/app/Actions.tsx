@@ -387,7 +387,7 @@ export function Action({
   ...props
 }: {
   label: string;
-  keyName: string;
+  keyName?: string;
   pressed?: boolean;
   children: ReactNode;
   disabled?: boolean;
@@ -399,7 +399,7 @@ export function Action({
       size="bar"
       aria-label={label}
       aria-pressed={pressed}
-      title={`${label} (${keyName})`}
+      title={keyName ? `${label} (${keyName})` : label}
       {...props}
     >
       {children}

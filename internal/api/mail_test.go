@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +42,9 @@ type fakeMirror struct {
 	emptied    []string
 	emptyBelow uint32
 	read       []string
+	// exportable is what each mailbox holds for an export, by name; discarded each Discard asked.
+	exportable map[string][]exportMessage
+	discarded  []discardAsked
 	// old is each DeleteOld asked for, and oldUIDs what it takes.
 	old     []oldAsked
 	oldUIDs []uint32
@@ -157,6 +162,43 @@ func (f *fakeMirror) Delete(_ context.Context, _ store.SyncTarget, mailbox strin
 		f.deleted = append(f.deleted, fmt.Sprintf("%s %d", mailbox, uid))
 	}
 	return had, nil
+}
+
+// exportable is what each mailbox holds for an export, by name; discarded each Discard asked.
+type exportMessage struct {
+	m    mirror.Exporting
+	text string
+}
+
+type discardAsked struct {
+	mailbox, to string
+	uids        []uint32
+	read        bool
+}
+
+func (f *fakeMirror) Export(_ context.Context, _ store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, each func(mirror.Exporting, io.Reader) error) (uint32, error) {
+	if f.err != nil {
+		return 0, f.err
+	}
+	for _, msg := range f.exportable[mailbox] {
+		if uids != nil && !slices.Contains(uids, msg.m.UID) {
+			continue
+		}
+		if err := each(msg.m, strings.NewReader(msg.text)); err != nil {
+			return 7, err
+		}
+	}
+	return 7, nil
+}
+
+func (f *fakeMirror) Discard(_ context.Context, _ store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, to string, read bool) ([]uint32, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.discarded = append(f.discarded, discardAsked{mailbox: mailbox, to: to, uids: uids, read: read})
+	return uids, nil
 }
 
 type oldAsked struct {

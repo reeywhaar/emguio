@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InfiniteData } from "@tanstack/react-query";
 
 import { useCached } from "@app/api/cached";
@@ -9,6 +9,7 @@ import { useConfirm } from "@app/components/Confirm";
 import {
   ArchiveMark,
   Cross,
+  ExportMark,
   InboxMark,
   MailMark,
   SpamMark,
@@ -24,6 +25,7 @@ import {
   useReadOn,
 } from "@app/islands/app/Actions";
 import { useAsk } from "@app/islands/app/ask";
+import { ExportDialog } from "@app/islands/app/ExportDialog";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 
 /**
@@ -65,6 +67,9 @@ export function Selection({
   const to = targets(boxes, mailbox, useArchiveTo(config));
   const readOn = useReadOn(config);
   const none = chosen.length === 0;
+  const [exporting, setExporting] = useState({ open: false, opened: 0 });
+  // What the dialog was opened with stays its selection, whatever is chosen meanwhile.
+  const [exportedIds, setExportedIds] = useState<string[]>([]);
 
   const job = (
     m: Message,
@@ -246,6 +251,28 @@ export function Selection({
         onMove={moveAll}
         onTransfer={(dest) => moveAll(dest, true)}
       />
+      <Action
+        label="Export…"
+        disabled={none}
+        onClick={() => {
+          setExportedIds(chosen.map((m) => m.id));
+          setExporting((x) => ({ open: true, opened: x.opened + 1 }));
+        }}
+      >
+        <ExportMark />
+      </Action>
+      {exporting.opened > 0 ? (
+        <ExportDialog
+          key={exporting.opened}
+          config={config}
+          folder={mailbox}
+          boxes={boxes}
+          messages={exportedIds}
+          open={exporting.open}
+          onClose={() => setExporting((x) => ({ ...x, open: false }))}
+          onDeleted={done}
+        />
+      ) : null}
     </div>
   );
 }

@@ -75,6 +75,12 @@ export const ArchiveMark = () => (
   </Mark>
 );
 
+export const ExportMark = () => (
+  <Mark>
+    <path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 11v2.5h11V11" />
+  </Mark>
+);
+
 export const TrashMark = () => (
   <Mark>
     <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4" />

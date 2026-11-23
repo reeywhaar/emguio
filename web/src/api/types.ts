@@ -8,6 +8,19 @@ export type Me = {
   seal: "none" | "sealed" | "open";
 };
 
+/** A download of mail asked for, and how far it has got. */
+export type Export = {
+  id: string;
+  state: "ready" | "exporting" | "done" | "failed" | "deleted";
+  /** How many there are as last counted, and how many have been written. */
+  total: number;
+  exported: number;
+  error: string;
+  /** The name it is saved under, and where it is downloaded from, once. */
+  file: string;
+  url: string;
+};
+
 /** One sign-in, as its user sees it. */
 export type Session = {
   id: string;

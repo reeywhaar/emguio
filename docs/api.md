@@ -745,6 +745,49 @@ DELETE /api/transfers/{transfer}
 Dismisses a finished transfer, and the jobs it ended. `204`. One still moving answers
 `400 invalid`: cancel it first.
 
+## Exporting
+
+```
+POST /api/email-configs/{id}/mailboxes/{mailbox}/export
+```
+
+Asks for a folder's mail as a file. `{"format": "mbox", "messages": [], "subfolders": false}`:
+`format` is `mbox` or `eml`; `messages` a selection of the folder's, or none for all of it, at
+most 10000; `subfolders` the folders inside it too, not with a selection. `201` with the
+export:
+
+```json
+{"id": "ex_01k6r2s4t6v8w0x2y4z6a8b0c2", "state": "ready", "total": 1500, "exported": 0,
+  "error": "", "file": "Archive.mbox", "url": "/api/exports/ex_01k6r2s4t6v8w0x2y4z6a8b0c2/file"}
+```
+
+`file` is an `.mbox`, an `.eml` for one message as eml, or a `.zip` for eml or for subfolders;
+see [reading.md](reading.md) for what is in each. `total` is how many there are as last counted.
+An export is held for an hour, in memory: a restart forgets it.
+
+```
+GET /api/exports/{export}
+```
+
+The export as above: `state` is `ready`, `exporting`, `done`, `failed` with `error` the
+sentence, or `deleted`; `exported` counts the messages written so far.
+
+```
+GET /api/exports/{export}/file
+```
+
+The file, once, written as the messages are read: `Content-Disposition: attachment` and no
+`Content-Length`. A second download answers `409 conflict`. A server that stops answering
+partway cuts the download short rather than ending it as if whole.
+
+```
+POST /api/exports/{export}/delete
+```
+
+`{"read": false}` deletes what went into a `done` export, and nothing that arrived since: moved
+to Trash, marked read first with `read`, or deleted for good from Trash or where there is none.
+`200 {"trash": 1500, "deleted": 0}`, how many went each way. Once: then the export is `deleted`.
+
 ## Sending
 
 ```

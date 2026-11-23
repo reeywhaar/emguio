@@ -18,6 +18,7 @@ import { useConfirm } from "@app/components/Confirm";
 import { MoreMark } from "@app/components/icons";
 import { Menu, MenuItem } from "@app/components/Menu";
 import { useReadOn } from "@app/islands/app/Actions";
+import { ExportDialog } from "@app/islands/app/ExportDialog";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
 import { labelOfMailbox } from "@app/islands/app/mailbox";
 import { say } from "@app/islands/app/notices";
@@ -29,8 +30,8 @@ const OLD = 30;
 const messages = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
 
 /**
- * What can be done to a folder: all of it marked read, its old mail deleted, and one of the
- * user's own renamed or moved, or deleted once empty. See docs/reading.md.
+ * What can be done to a folder: all of it marked read, exported, its old mail deleted, and one of
+ * the user's own renamed or moved, or deleted once empty. See docs/reading.md.
  */
 export function FolderMenu({
   config,
@@ -46,6 +47,7 @@ export function FolderMenu({
   const [editing, setEditing] = useState(false);
   // Each opening starts the form afresh.
   const [opened, setOpened] = useState(0);
+  const [exporting, setExporting] = useState({ open: false, opened: 0 });
   const own = folder.special_use === "";
   const name = labelOfMailbox(folder);
   const readOn = useReadOn(config);
@@ -178,6 +180,14 @@ export function FolderMenu({
               Mark all as read
             </MenuItem>
             <MenuItem
+              onClick={() => {
+                close();
+                setExporting((x) => ({ open: true, opened: x.opened + 1 }));
+              }}
+            >
+              Export…
+            </MenuItem>
+            <MenuItem
               disabled={folder.messages === 0 || deleteOld.isPending}
               onClick={() => {
                 close();
@@ -211,6 +221,16 @@ export function FolderMenu({
           </>
         )}
       </Menu>
+      {exporting.opened > 0 ? (
+        <ExportDialog
+          key={exporting.opened}
+          config={config}
+          folder={folder}
+          boxes={boxes}
+          open={exporting.open}
+          onClose={() => setExporting((x) => ({ ...x, open: false }))}
+        />
+      ) : null}
       <FolderDialog
         key={opened}
         config={config}

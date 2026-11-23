@@ -30,6 +30,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
   here, with a card in the corner showing how far it has got, and a way to cancel the rest.
 - Trash and Junk empty in one go. From any folder's menu, all of it is marked read, or its mail
   older than 30 days deleted.
+- A folder, with its subfolders or without, or a selection exports as mbox or as eml files,
+  streamed as it is read. What was exported can then be deleted, and nothing else.
 - Folders of one's own are made, renamed, moved, deleted when empty, and dragged into order. The
   server's own stay as they are.
 

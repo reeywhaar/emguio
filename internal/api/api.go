@@ -68,6 +68,9 @@ type Server struct {
 	// unseals bounds tries at a user's seal key, each an Argon2 derivation.
 	unseals *limiter
 
+	// exports are the downloads of mail asked for, held for an hour.
+	exports exports
+
 	// writeDeadline is how long a request that changes something may run. A field so a test
 	// can make it short.
 	writeDeadline time.Duration
@@ -182,6 +185,10 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/unsubscribe", s.requireUnsealed(s.awake(s.unsubscribe)))
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireUnsealed(s.awake(s.readPart)))
 	s.handle("GET /api/proxy", s.requireUnsealed(s.proxyImage))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/export", s.requireUnsealed(s.awake(s.createExport)))
+	s.handle("GET /api/exports/{export}", s.requireUnsealed(s.getExport))
+	s.handle("GET /api/exports/{export}/file", s.requireUnsealed(s.exportFile))
+	s.handle("POST /api/exports/{export}/delete", s.requireUnsealed(s.deleteExported))
 
 	s.handle("GET /api/jobs", s.requireUnsealed(s.listJobs))
 	s.handle("POST /api/jobs", s.requireUnsealed(s.postJobs))

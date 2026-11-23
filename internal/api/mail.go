@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,6 +46,10 @@ type Mirror interface {
 	// DeleteOld moves what arrived in a mailbox before a day to another, or deletes it for good
 	// when to is empty, read first if asked; it says the UIDs it took.
 	DeleteOld(ctx context.Context, t store.SyncTarget, mailbox string, before time.Time, to string, read bool) ([]uint32, error)
+	// Export hands on a mailbox's messages, uids or every one, each with its text to read as it
+	// comes; Discard moves some to another mailbox, or deletes them for good when to is empty.
+	Export(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, each func(mirror.Exporting, io.Reader) error) (uint32, error)
+	Discard(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, to string, read bool) ([]uint32, error)
 	// Unsubscribe is how a message says to stop its sender's mail, read from the server, or
 	// mirror.ErrGone.
 	Unsubscribe(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (message.Unsubscribe, error)
