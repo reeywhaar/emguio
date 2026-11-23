@@ -9,6 +9,8 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
   mixed: one is shown at a time.
 - **Sealed with each user's own key.** Mail passwords open only with the seal key their user types
   after each restart; neither the host nor a copy of the database reads them.
+- **Your mail goes where you take it.** Move it between your accounts, export it to a file, and
+  import it from one, all in the browser.
 
 ## What it does
 
@@ -26,16 +28,24 @@ IMAP server and, optionally, an outgoing SMTP one — and reads their mail in th
 
 - Read, star, archive, delete, spam and move, for one message or a selection, done on the mail
   server. Gmail's keys work, and with a mouse, mail is dragged onto a folder to move it there.
-- Mail moves to another of one's accounts too: each message is copied across and then deleted
-  here, with a card in the corner showing how far it has got, and a way to cancel the rest.
 - Trash and Junk empty in one go. From any folder's menu, all of it is marked read, or its mail
   older than 30 days deleted.
-- A folder, with its subfolders or without, or a selection exports as mbox or as eml files,
-  streamed as it is read. What was exported can then be deleted, and nothing else.
-- Mail is imported from an mbox, an eml, or a zip of them, made a tree of folders, in the
-  background. What a folder has already is passed over.
 - Folders of one's own are made, renamed, moved, deleted with their mail after asking, and dragged
   into order. The server's own stay as they are.
+
+**Taking your mail with you**
+
+- Move mail to another of your accounts, at another provider too. Each message is copied across
+  with its flags and the date it arrived, then deleted here. A card in the corner shows how far it
+  has got and can cancel the rest. If it stops partway, no message is lost.
+- Export a folder with its subfolders, or a selection, as a zip. Inside are mbox files, which every
+  mail app imports and which keep read and flagged, or eml files, one per message. The zip is
+  written as the mail is read, so a large folder takes no more memory than a small one.
+- After the download, delete exactly what went into the file, and nothing that arrived since. To
+  leave a provider: export, check the file, delete.
+- Import an mbox, an eml, or a zip of them, from emguio or another mail app. Folders in the zip
+  become folders here. It runs in the background, and mail a folder already has is skipped, so an
+  import that stopped can simply be run again.
 
 **Writing**
 
