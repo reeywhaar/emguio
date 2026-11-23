@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"emguio/internal/mirror"
 	"emguio/internal/store"
 )
 
@@ -127,23 +126,57 @@ func TestAnEmptyFolderIsDeleted(t *testing.T) {
 	parent := c.json(c.do("POST", path, `{"name":"Parent"}`))["id"].(string)
 	child := c.json(c.do("POST", path, fmt.Sprintf(`{"name":"Child","parent":%q}`, parent)))["id"].(string)
 
-	if resp := c.do("DELETE", path+"/"+parent, ""); resp.StatusCode != http.StatusConflict {
-		t.Errorf("with a folder inside = %s", resp.Status)
+	if got := c.json(c.do("DELETE", path+"/"+parent, "")); got["code"] != "not_empty" || got["message"] != "Parent holds 1 folder." {
+		t.Errorf("with a folder inside = %v", got)
 	}
 	if resp := c.do("DELETE", path+"/"+boxes["Drafts"], ""); resp.StatusCode != http.StatusConflict {
 		t.Errorf("Drafts = %s", resp.Status)
 	}
-	fake.err = mirror.ErrNotEmpty
-	if resp := c.do("DELETE", path+"/"+child, ""); resp.StatusCode != http.StatusConflict {
-		t.Errorf("with mail = %s", resp.Status)
+	fake.holding = map[string]bool{"Parent/Child": true}
+	if got := c.json(c.do("DELETE", path+"/"+child, "")); got["code"] != "not_empty" {
+		t.Errorf("with mail = %v", got)
 	}
-	fake.err = nil
+	fake.holding = nil
 	if resp := c.do("DELETE", path+"/"+child, ""); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("empty = %s", resp.Status)
 	}
 	for _, mb := range c.json(c.do("GET", path, ""))["mailboxes"].([]any) {
 		if mb.(map[string]any)["id"] == child {
 			t.Error("the folder is still listed")
+		}
+	}
+}
+
+// Asked to, a folder goes with the folders inside it and their mail: the mail to Trash, the
+// deepest folder first.
+func TestAFolderIsDeletedWithWhatItHolds(t *testing.T) {
+	c, cfg, _, _, fake := withOutbox(t)
+	path := "/api/email-configs/" + cfg + "/mailboxes"
+	c.do("POST", path, `{"name":"Trash"}`)
+	ctx := context.Background()
+	all, _ := fake.store.MirrorMailboxes(ctx, cfg)
+	var listed []store.Listed
+	for _, mb := range all {
+		use := mb.SpecialUse
+		if mb.Name == "Trash" {
+			use = store.UseTrash
+		}
+		listed = append(listed, store.Listed{Name: mb.Name, Delimiter: "/", SpecialUse: use, Selectable: true})
+	}
+	fake.store.PutMailboxes(ctx, cfg, listed)
+	parent := c.json(c.do("POST", path, `{"name":"Parent"}`))["id"].(string)
+	c.do("POST", path, fmt.Sprintf(`{"name":"Child","parent":%q}`, parent))
+
+	if resp := c.do("DELETE", path+"/"+parent+"?with=mail&read=1", ""); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete = %s %v", resp.Status, c.json(resp))
+	}
+	if len(fake.old) != 2 || fake.old[0].mailbox != "Parent/Child" || fake.old[1].mailbox != "Parent" ||
+		fake.old[0].to != "Trash" || !fake.old[0].read || !fake.old[0].before.IsZero() {
+		t.Errorf("mail taken %+v", fake.old)
+	}
+	for _, mb := range c.json(c.do("GET", path, ""))["mailboxes"].([]any) {
+		if strings.HasPrefix(mb.(map[string]any)["name"].(string), "Parent") {
+			t.Errorf("%v is still listed", mb)
 		}
 	}
 }

@@ -4,12 +4,12 @@ import type { InfiniteData } from "@tanstack/react-query";
 import { useCached } from "@app/api/cached";
 import { qk } from "@app/api/keys";
 import type { JobDraft, Mailbox, Message, MessagePage } from "@app/api/types";
-import { Button } from "@app/components/Button";
+import { Button, buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
 import {
   ArchiveMark,
   Cross,
-  ExportMark,
+  MoreMark,
   InboxMark,
   MailMark,
   SpamMark,
@@ -25,7 +25,9 @@ import {
   useReadOn,
 } from "@app/islands/app/Actions";
 import { useAsk } from "@app/islands/app/ask";
-import { ExportDialog } from "@app/islands/app/ExportDialog";
+import { Menu, MenuItem } from "@app/components/Menu";
+import { useExportMail } from "@app/islands/app/Exports";
+import { ImportDialog } from "@app/islands/app/ImportDialog";
 import { listWithPending, usePending } from "@app/islands/app/pending";
 
 /**
@@ -67,9 +69,8 @@ export function Selection({
   const to = targets(boxes, mailbox, useArchiveTo(config));
   const readOn = useReadOn(config);
   const none = chosen.length === 0;
-  const [exporting, setExporting] = useState({ open: false, opened: 0 });
-  // What the dialog was opened with stays its selection, whatever is chosen meanwhile.
-  const [exportedIds, setExportedIds] = useState<string[]>([]);
+  const exportMail = useExportMail(config);
+  const [importing, setImporting] = useState({ open: false, opened: 0 });
 
   const job = (
     m: Message,
@@ -251,26 +252,52 @@ export function Selection({
         onMove={moveAll}
         onTransfer={(dest) => moveAll(dest, true)}
       />
-      <Action
-        label="Export…"
-        disabled={none}
-        onClick={() => {
-          setExportedIds(chosen.map((m) => m.id));
-          setExporting((x) => ({ open: true, opened: x.opened + 1 }));
-        }}
+      {/* What is done seldom, in a menu rather than as more icons. */}
+      <Menu
+        name="More"
+        title="More"
+        chevron={false}
+        end
+        look={buttonLook("quiet", "bar")}
+        label={<MoreMark />}
       >
-        <ExportMark />
-      </Action>
-      {exporting.opened > 0 ? (
-        <ExportDialog
-          key={exporting.opened}
+        {(close) => (
+          <>
+            {(["mbox", "eml"] as const).map((format) => (
+              <MenuItem
+                key={format}
+                disabled={none}
+                onClick={() => {
+                  close();
+                  exportMail.mutate({
+                    mailbox: mailbox.id,
+                    format,
+                    messages: chosen.map((m) => m.id),
+                    subfolders: false,
+                  });
+                }}
+              >
+                Export selected as {format}
+              </MenuItem>
+            ))}
+            <MenuItem
+              onClick={() => {
+                close();
+                setImporting((x) => ({ open: true, opened: x.opened + 1 }));
+              }}
+            >
+              Import mail…
+            </MenuItem>
+          </>
+        )}
+      </Menu>
+      {importing.opened > 0 ? (
+        <ImportDialog
+          key={importing.opened}
           config={config}
           folder={mailbox}
-          boxes={boxes}
-          messages={exportedIds}
-          open={exporting.open}
-          onClose={() => setExporting((x) => ({ ...x, open: false }))}
-          onDeleted={done}
+          open={importing.open}
+          onClose={() => setImporting((x) => ({ ...x, open: false }))}
         />
       ) : null}
     </div>

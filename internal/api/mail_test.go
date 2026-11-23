@@ -42,6 +42,10 @@ type fakeMirror struct {
 	emptied    []string
 	emptyBelow uint32
 	read       []string
+	// holding are the mailboxes, by name, with mail in them still, which are not deleted.
+	holding map[string]bool
+	// appended is what each Append put, by mailbox name.
+	appended map[string][]appended
 	// exportable is what each mailbox holds for an export, by name; discarded each Discard asked.
 	exportable map[string][]exportMessage
 	discarded  []discardAsked
@@ -201,6 +205,40 @@ func (f *fakeMirror) Discard(_ context.Context, _ store.SyncTarget, mailbox stri
 	return uids, nil
 }
 
+// Append keeps what it is given, by mailbox, and passes over a Message-ID it has.
+func (f *fakeMirror) Append(_ context.Context, _ store.SyncTarget, mailbox string, a mirror.Appending) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	var text strings.Builder
+	if err := a.Write(&text); err != nil {
+		return false, err
+	}
+	if int64(text.Len()) != a.Size {
+		return false, fmt.Errorf("append said %d bytes and wrote %d", a.Size, text.Len())
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, had := range f.appended[mailbox] {
+		if a.MessageID != "" && had.MessageID == a.MessageID {
+			return false, nil
+		}
+	}
+	if f.appended == nil {
+		f.appended = map[string][]appended{}
+	}
+	f.appended[mailbox] = append(f.appended[mailbox], appended{Appending: a, text: text.String()})
+	return true, nil
+}
+
+type appended struct {
+	mirror.Appending
+	text string
+}
+
+// Go runs fn at once, so a test sees what it did when the request answers.
+func (f *fakeMirror) Go(fn func(ctx context.Context)) { fn(context.Background()) }
+
 type oldAsked struct {
 	mailbox, to string
 	before      time.Time
@@ -240,6 +278,9 @@ func (f *fakeMirror) Empty(_ context.Context, _ store.SyncTarget, mailbox string
 func (f *fakeMirror) DeleteMailbox(ctx context.Context, t store.SyncTarget, name string) ([]store.Listed, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.holding[name] {
+		return nil, mirror.ErrNotEmpty
 	}
 	return f.listedAs(ctx, t, func(n string) (string, bool) { return n, n != name })
 }

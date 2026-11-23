@@ -50,6 +50,10 @@ type Mirror interface {
 	// comes; Discard moves some to another mailbox, or deletes them for good when to is empty.
 	Export(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, each func(mirror.Exporting, io.Reader) error) (uint32, error)
 	Discard(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity uint32, uids []uint32, to string, read bool) ([]uint32, error)
+	// Append puts a message in a mailbox unless one there has its Message-ID, and says whether it
+	// did; Go runs work a request started that outlives it.
+	Append(ctx context.Context, t store.SyncTarget, mailbox string, a mirror.Appending) (bool, error)
+	Go(fn func(ctx context.Context))
 	// Unsubscribe is how a message says to stop its sender's mail, read from the server, or
 	// mirror.ErrGone.
 	Unsubscribe(ctx context.Context, t store.SyncTarget, mailbox string, uidValidity, uid uint32) (message.Unsubscribe, error)

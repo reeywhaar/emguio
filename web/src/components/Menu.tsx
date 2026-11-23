@@ -109,6 +109,11 @@ export function Menu({
   );
 }
 
+/** A line between groups of a menu's items. */
+export function MenuSeparator() {
+  return <div role="separator" className="-mx-1 my-1 h-px bg-line" />;
+}
+
 /** One line of a menu. */
 export function MenuItem({
   danger,

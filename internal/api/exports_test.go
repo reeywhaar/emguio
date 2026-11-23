@@ -21,7 +21,7 @@ func withExportable(t *testing.T) (*client, string, map[string]string, *fakeMirr
 	c, cfg, boxes, _, fake := withOutbox(t)
 	ctx := context.Background()
 	fake.store.PutMailboxes(ctx, cfg, []store.Listed{
-		{Name: "INBOX", SpecialUse: store.UseInbox, Selectable: true},
+		{Name: "INBOX", Delimiter: "/", SpecialUse: store.UseInbox, Selectable: true},
 		{Name: "Archive", Delimiter: "/", Selectable: true},
 		{Name: "Archive/2025", Delimiter: "/", Selectable: true},
 		{Name: "Trash", Delimiter: "/", SpecialUse: store.UseTrash, Selectable: true},
@@ -100,6 +100,52 @@ func TestAFolderIsExportedAsMboxAndThenDeleted(t *testing.T) {
 	}
 	if resp := c.do("POST", "/api/exports/"+id+"/delete", `{}`); resp.StatusCode != http.StatusConflict {
 		t.Errorf("deleting twice = %s", resp.Status)
+	}
+
+	list := c.json(c.do("GET", "/api/exports", ""))["exports"].([]any)
+	if len(list) != 1 || list[0].(map[string]any)["mailbox"] != boxes["Archive"] {
+		t.Errorf("exports = %v", list)
+	}
+	if resp := c.do("DELETE", "/api/exports/"+id, ""); resp.StatusCode != http.StatusNoContent {
+		t.Errorf("dismiss = %s", resp.Status)
+	}
+	if list := c.json(c.do("GET", "/api/exports", ""))["exports"].([]any); len(list) != 0 {
+		t.Errorf("after dismissing = %v", list)
+	}
+}
+
+// A folder exported with its subfolders goes with them once emptied, the deepest first; one that
+// mail came into since stays, and so does each folder holding it.
+func TestDeletingAnExportedFolderDeletesTheFolders(t *testing.T) {
+	c, cfg, boxes, fake := withExportable(t)
+	x := exported(t, c, cfg, boxes["Archive"], `{"format":"mbox","subfolders":true}`)
+	download(t, c, x["url"].(string))
+	got := c.json(c.do("POST", "/api/exports/"+x["id"].(string)+"/delete", `{}`))
+	if got["trash"] != 3.0 || got["folders"] != 2.0 || got["kept"] != 0.0 {
+		t.Errorf("deleted = %v", got)
+	}
+	left, _ := fake.store.MirrorMailboxes(context.Background(), cfg)
+	for _, mb := range left {
+		if strings.HasPrefix(mb.Name, "Archive") {
+			t.Errorf("%s is still there", mb.Name)
+		}
+	}
+
+	c, cfg, boxes, fake = withExportable(t)
+	fake.holding = map[string]bool{"Archive/2025": true}
+	x = exported(t, c, cfg, boxes["Archive"], `{"format":"mbox","subfolders":true}`)
+	download(t, c, x["url"].(string))
+	got = c.json(c.do("POST", "/api/exports/"+x["id"].(string)+"/delete", `{}`))
+	if got["folders"] != 0.0 || got["kept"] != 2.0 {
+		t.Errorf("with mail since = %v", got)
+	}
+
+	// A selection's folder stays.
+	c, cfg, boxes, _ = withExportable(t)
+	x = exported(t, c, cfg, boxes["Archive"], `{"format":"mbox","messages":["7-4","7-9"]}`)
+	download(t, c, x["url"].(string))
+	if got := c.json(c.do("POST", "/api/exports/"+x["id"].(string)+"/delete", `{}`)); got["folders"] != 0.0 {
+		t.Errorf("a selection = %v", got)
 	}
 }
 

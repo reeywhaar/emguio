@@ -61,8 +61,11 @@ vi.mock("@app/api/actions/emailConfigs", () => ({
     mailbox: string,
     body: unknown,
   ) => putMailbox(id, mailbox, body),
-  deleteEmailConfigsByIdMailboxesByMailbox: (id: string, mailbox: string) =>
-    deleteMailbox(id, mailbox),
+  deleteEmailConfigsByIdMailboxesByMailbox: (
+    id: string,
+    mailbox: string,
+    withMail?: { read: boolean },
+  ) => deleteMailbox(id, mailbox, withMail),
   putEmailConfigsByIdMailboxesOrder: (id: string, ids: string[]) =>
     putOrder(id, ids),
   postEmailConfigsByIdMailboxesByMailboxEmpty: (id: string, mailbox: string) =>
@@ -451,17 +454,22 @@ describe("the mail view", () => {
     );
   });
 
-  it("deletes a folder of one's own, after asking", async () => {
+  // What it holds is said and goes with it: the folder inside it, and the mail of both.
+  it("deletes a folder of one's own with what it holds, after asking", async () => {
     deleteMailbox.mockResolvedValue(undefined);
     window.history.pushState({}, "", "/c/ec_1/mb_work");
     mount(<Routed />);
     fireEvent.click(await screen.findByRole("button", { name: "Folder:" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete…" }));
-    await screen.findByText("Delete Work?");
+    await screen.findByText(
+      "Delete Work, the folder inside it and the 20 messages in them?",
+    );
     const sure = screen.getAllByRole("button", { name: "Delete" });
     fireEvent.click(sure[sure.length - 1]!);
     await waitFor(() =>
-      expect(deleteMailbox).toHaveBeenCalledWith("ec_1", "mb_work"),
+      expect(deleteMailbox).toHaveBeenCalledWith("ec_1", "mb_work", {
+        read: expect.any(Boolean),
+      }),
     );
     await waitFor(() => expect(window.location.pathname).toBe("/c/ec_1"));
   });
@@ -474,8 +482,10 @@ describe("the mail view", () => {
     const menu = within(await screen.findByRole("menu"));
     expect(menu.getAllByRole("menuitem").map((i) => i.textContent)).toEqual([
       "Mark all as read",
-      "Export…",
       "Delete old mail…",
+      "Export as mbox",
+      "Export as eml",
+      "Import mail…",
     ]);
   });
 

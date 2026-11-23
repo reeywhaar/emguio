@@ -11,16 +11,17 @@ import {
   postEmailConfigsByIdMailboxesByMailboxRead,
 } from "@app/api/actions/emailConfigs";
 import { mk, qk } from "@app/api/keys";
-import { messageOf } from "@app/api/transport";
+import { ApiError, messageOf } from "@app/api/transport";
 import type { Mailbox, MessagePage } from "@app/api/types";
 import { buttonLook } from "@app/components/Button";
 import { useConfirm } from "@app/components/Confirm";
 import { MoreMark } from "@app/components/icons";
-import { Menu, MenuItem } from "@app/components/Menu";
+import { Menu, MenuItem, MenuSeparator } from "@app/components/Menu";
 import { useReadOn } from "@app/islands/app/Actions";
-import { ExportDialog } from "@app/islands/app/ExportDialog";
+import { useExportMail } from "@app/islands/app/Exports";
+import { ImportDialog } from "@app/islands/app/ImportDialog";
 import { FolderDialog } from "@app/islands/app/FolderDialog";
-import { labelOfMailbox } from "@app/islands/app/mailbox";
+import { labelOfMailbox, within } from "@app/islands/app/mailbox";
 import { say } from "@app/islands/app/notices";
 import { go, paths } from "@app/islands/app/route";
 
@@ -30,8 +31,9 @@ const OLD = 30;
 const messages = (n: number) => (n === 1 ? "1 message" : `${n} messages`);
 
 /**
- * What can be done to a folder: all of it marked read, exported, its old mail deleted, and one of
- * the user's own renamed or moved, or deleted once empty. See docs/reading.md.
+ * What can be done to a folder: all of it marked read, exported or mail imported into it, its old
+ * mail deleted, and one of the user's own renamed or moved, or deleted once empty. See
+ * docs/reading.md.
  */
 export function FolderMenu({
   config,
@@ -47,7 +49,10 @@ export function FolderMenu({
   const [editing, setEditing] = useState(false);
   // Each opening starts the form afresh.
   const [opened, setOpened] = useState(0);
-  const [exporting, setExporting] = useState({ open: false, opened: 0 });
+  const exportMail = useExportMail(config);
+  // A folder goes with its subfolders.
+  const nested = boxes.some((mb) => within(mb, folder));
+  const [importing, setImporting] = useState({ open: false, opened: 0 });
   const own = folder.special_use === "";
   const name = labelOfMailbox(folder);
   const readOn = useReadOn(config);
@@ -131,29 +136,75 @@ export function FolderMenu({
       void client.invalidateQueries({ queryKey: qk.mailboxes(config) });
     },
   });
+  // What goes with it: the folders inside it and the mail in all of them, as last counted.
+  const inside = boxes.filter((mb) => within(mb, folder));
+  const held = [folder, ...inside].reduce((n, mb) => n + mb.messages, 0);
+  // The mail goes to Trash, as deleting does; from inside Trash, or with none, for good.
+  const trash = boxes.find((mb) => mb.special_use === "trash" && mb.selectable);
+  const mailToTrash =
+    trash !== undefined && trash.id !== folder.id && !within(folder, trash);
   const remove = useMutation({
-    mutationFn: () =>
-      deleteEmailConfigsByIdMailboxesByMailbox(config, folder.id),
+    mutationFn: (withMail: boolean) =>
+      deleteEmailConfigsByIdMailboxesByMailbox(
+        config,
+        folder.id,
+        withMail ? { read: mailToTrash && readOn.trash } : undefined,
+      ),
     onSuccess: () => {
       client.setQueryData<Mailbox[]>(qk.mailboxes(config), (old) =>
-        old?.filter((mb) => mb.id !== folder.id),
+        old?.filter((mb) => mb.id !== folder.id && !within(mb, folder)),
       );
       void client.invalidateQueries({ queryKey: qk.mailboxes(config) });
+      void client.invalidateQueries({ queryKey: qk.lists(config) });
       go(paths.mail(config));
     },
-    onError: (err) => say(messageOf(err)),
+    onError: async (err) => {
+      // It held more than was counted: asked again, with what the server says it holds.
+      if (err instanceof ApiError && err.code === "not_empty") {
+        if (
+          await confirm({
+            title: `Delete the mail in ${name} too?`,
+            message: `${err.message} ${mailToTrash ? "The mail goes to Trash, then the folder is deleted." : "The mail is deleted for good, then the folder. This cannot be undone."}`,
+            confirm: "Delete",
+            danger: true,
+          })
+        ) {
+          remove.mutate(true);
+        }
+        return;
+      }
+      say(messageOf(err));
+    },
   });
   const drop = async () => {
+    const what = [
+      inside.length === 1
+        ? "the folder inside it"
+        : inside.length > 1
+          ? `the ${inside.length} folders inside it`
+          : "",
+      held > 0
+        ? `the ${messages(held)} in ${inside.length > 0 ? "them" : "it"}`
+        : "",
+    ].filter(Boolean);
+    const withMail = what.length > 0;
     if (
       await confirm({
-        title: `Delete ${name}?`,
-        message:
-          "It is deleted from the server. A folder with mail or other folders in it is not.",
+        title: withMail
+          ? `Delete ${name}${what.length === 2 ? ", " : " and "}${what.join(" and ")}?`
+          : `Delete ${name}?`,
+        message: !withMail
+          ? "It is deleted from the server."
+          : held === 0
+            ? "They are deleted from the server, the deepest first."
+            : mailToTrash
+              ? "The mail goes to Trash, then the folders are deleted from the server."
+              : "The mail is deleted from the server for good, then the folders. This cannot be undone.",
         confirm: "Delete",
         danger: true,
       })
     ) {
-      remove.mutate();
+      remove.mutate(withMail);
     }
   };
 
@@ -178,14 +229,6 @@ export function FolderMenu({
               }}
             >
               Mark all as read
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                close();
-                setExporting((x) => ({ open: true, opened: x.opened + 1 }));
-              }}
-            >
-              Export…
             </MenuItem>
             <MenuItem
               disabled={folder.messages === 0 || deleteOld.isPending}
@@ -218,17 +261,43 @@ export function FolderMenu({
                 </MenuItem>
               </>
             ) : null}
+            <MenuSeparator />
+            {(["mbox", "eml"] as const).map((format) => (
+              <MenuItem
+                key={format}
+                disabled={!folder.selectable && !nested}
+                onClick={() => {
+                  close();
+                  exportMail.mutate({
+                    mailbox: folder.id,
+                    format,
+                    messages: [],
+                    subfolders: nested,
+                  });
+                }}
+              >
+                Export as {format}
+              </MenuItem>
+            ))}
+            <MenuItem
+              disabled={!folder.selectable}
+              onClick={() => {
+                close();
+                setImporting((x) => ({ open: true, opened: x.opened + 1 }));
+              }}
+            >
+              Import mail…
+            </MenuItem>
           </>
         )}
       </Menu>
-      {exporting.opened > 0 ? (
-        <ExportDialog
-          key={exporting.opened}
+      {importing.opened > 0 ? (
+        <ImportDialog
+          key={importing.opened}
           config={config}
           folder={folder}
-          boxes={boxes}
-          open={exporting.open}
-          onClose={() => setExporting((x) => ({ ...x, open: false }))}
+          open={importing.open}
+          onClose={() => setImporting((x) => ({ ...x, open: false }))}
         />
       ) : null}
       <FolderDialog

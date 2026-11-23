@@ -35,6 +35,7 @@ const (
 	Device      = "dv_"
 	Transfer    = "tr_"
 	Export      = "ex_"
+	Import      = "im_"
 )
 
 const (

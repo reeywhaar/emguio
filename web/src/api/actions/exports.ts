@@ -12,13 +12,17 @@ export const postEmailConfigsByIdMailboxesByMailboxExport = (
     { method: "POST", body },
   );
 
-/** How far an export has got. */
-export const getExportsById = (id: string) =>
-  request<Export>(`/api/exports/${encodeURIComponent(id)}`);
+/** The user's exports of the last hour, oldest first. */
+export const getExports = () =>
+  request<{ exports: Export[] }>("/api/exports").then((it) => it.exports);
+
+/** Lets an export go once it has been shown. */
+export const deleteExportsById = (id: string) =>
+  request<void>(`/api/exports/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 /** Deletes what went into a finished export: to Trash, or for good from Trash. */
 export const postExportsByIdDelete = (id: string, body: { read: boolean }) =>
-  request<{ trash: number; deleted: number }>(
+  request<{ trash: number; deleted: number; folders: number; kept: number }>(
     `/api/exports/${encodeURIComponent(id)}/delete`,
     { method: "POST", body },
   );

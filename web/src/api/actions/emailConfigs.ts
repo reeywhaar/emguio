@@ -71,9 +71,12 @@ export const putEmailConfigsByIdMailboxesByMailbox = (
 export const deleteEmailConfigsByIdMailboxesByMailbox = (
   id: string,
   mailbox: string,
+  /** The mail and the folders inside it go too: the mail to Trash, read first with read. */
+  withMail?: { read: boolean },
 ) =>
   request<void>(
-    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}`,
+    `/api/email-configs/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(mailbox)}` +
+      (withMail ? `?with=mail${withMail.read ? "&read=1" : ""}` : ""),
     { method: "DELETE" },
   );
 

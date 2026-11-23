@@ -15,6 +15,8 @@ import { Notice } from "@app/islands/app/Notice";
 import { paths, useRoute, type Route } from "@app/islands/app/route";
 import { Seal } from "@app/islands/app/Seal";
 import { Settings } from "@app/islands/app/Settings";
+import { Exports } from "@app/islands/app/Exports";
+import { Imports } from "@app/islands/app/Imports";
 import { Transfers } from "@app/islands/app/Transfers";
 
 export function App() {
@@ -50,7 +52,12 @@ export function App() {
       </Boundary>
       <Compose />
       <Jobs />
-      <Transfers />
+      {/* The cards of work going on in the background, in the bottom-right corner. */}
+      <div className="fixed right-4 bottom-4 z-10 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
+        <Exports />
+        <Imports />
+        <Transfers />
+      </div>
       <Notice />
     </div>
   );

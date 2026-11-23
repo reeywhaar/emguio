@@ -70,7 +70,8 @@ fit. A larger body answers `413 body_too_large`.
 **Requests from other origins are refused.** A request with any method but `GET`, `HEAD` and
 `OPTIONS` answers `403 forbidden` when it carries a `Sec-Fetch-Site` other than `same-origin` —
 `same-site` too, since a page on a sibling subdomain is sent the cookie — and
-`415 unsupported_media_type` when it has a body that is not `application/json`. A browser sets
+`415 unsupported_media_type` when it has a body that is not `application/json`, but for a file
+to import, sent as itself. A browser sets
 `Sec-Fetch-Site` and a page cannot forge it; a program that sends no `Sec-Fetch-Site` at all is
 fine. A request with no body, like a `DELETE`, needs no `Content-Type`. emguio sends no CORS
 headers, so a page on another origin cannot read its answers, and `X-Frame-Options: DENY` on
@@ -396,8 +397,12 @@ and places: `409 conflict`.
 DELETE /api/email-configs/{id}/mailboxes/{mailbox}
 ```
 
-Deletes an empty folder from the mail server. One that holds messages, or other folders, answers
-`409 conflict` rather than taking them with it, as does one of the server's own. `204`.
+Deletes a folder from the mail server. One that holds messages or other folders answers
+`409 not_empty`, its message saying what — `Reading list holds 1 folder and 12 messages.` —
+unless `?with=mail` asks for them to go too: the mail of each folder to Trash, as deleting does,
+marked read first with `&read=1`, or for good from Trash or where there is none; then the folders,
+the deepest first. One of the server's own, or one with one of them inside, answers
+`409 conflict`. `204`.
 
 ```
 POST /api/email-configs/{id}/mailboxes/{mailbox}/empty
@@ -757,8 +762,9 @@ most 10000; `subfolders` the folders inside it too, not with a selection. `201` 
 export:
 
 ```json
-{"id": "ex_01k6r2s4t6v8w0x2y4z6a8b0c2", "state": "ready", "total": 1500, "exported": 0,
-  "error": "", "file": "Archive.mbox", "url": "/api/exports/ex_01k6r2s4t6v8w0x2y4z6a8b0c2/file"}
+{"id": "ex_01k6r2s4t6v8w0x2y4z6a8b0c2", "email_config": "ec_…", "mailbox": "mb_…",
+  "state": "ready", "total": 1500, "exported": 0, "error": "", "file": "Archive.mbox",
+  "url": "/api/exports/ex_01k6r2s4t6v8w0x2y4z6a8b0c2/file"}
 ```
 
 `file` is an `.mbox`, an `.eml` for one message as eml, or a `.zip` for eml or for subfolders;
@@ -766,10 +772,16 @@ see [reading.md](reading.md) for what is in each. `total` is how many there are 
 An export is held for an hour, in memory: a restart forgets it.
 
 ```
+GET /api/exports
+```
+
+`{"exports": [ … ]}`: the user's exports of the last hour, oldest first, each as below.
+
+```
 GET /api/exports/{export}
 ```
 
-The export as above: `state` is `ready`, `exporting`, `done`, `failed` with `error` the
+The export as above, `mailbox` the folder exported: `state` is `ready`, `exporting`, `done`, `failed` with `error` the
 sentence, or `deleted`; `exported` counts the messages written so far.
 
 ```
@@ -786,7 +798,59 @@ POST /api/exports/{export}/delete
 
 `{"read": false}` deletes what went into a `done` export, and nothing that arrived since: moved
 to Trash, marked read first with `read`, or deleted for good from Trash or where there is none.
-`200 {"trash": 1500, "deleted": 0}`, how many went each way. Once: then the export is `deleted`.
+For a folder exported whole, the folders go too, deepest first, once empty; one that mail came
+into since stays, with those it is in, and Inbox and the server's own folders stay.
+`200 {"trash": 1500, "deleted": 0, "folders": 2, "kept": 0}`: how many messages went each way,
+how many folders went, and how many stayed. Once: then the export is `deleted`.
+
+```
+DELETE /api/exports/{export}
+```
+
+Dismisses an export once it has been shown. `204`. One downloading goes on; what went into it can
+no longer be deleted here.
+
+## Importing
+
+```
+POST /api/email-configs/{id}/mailboxes/{mailbox}/import
+```
+
+The body is the file itself, not JSON, with its type: `application/mbox`, `message/rfc822` for
+one `.eml`, or `application/zip` for a zip of them. `?name=Archive.zip` is the file's name, which
+an eml's date is read from. Up to 10 GB, written to disk as it arrives; the request runs as long as the
+upload does. `202` with the import, which then goes on in the background:
+
+```json
+{"id": "im_01k6r2s4t6v8w0x2y4z6a8b0c2", "email_config": "ec_…", "mailbox": "mb_…",
+  "file": "Archive.zip", "state": "importing", "total": 1500, "imported": 340, "skipped": 2,
+  "folders": 1, "error": "", "created_at": 1790000000}
+```
+
+An mbox or an eml goes into the folder; a zip is a tree inside it, folders made where they are
+not there yet. See [reading.md](reading.md) for what is read from each. `state` is `importing`,
+then `done`, `cancelled`, or `failed` with `error` the sentence. `skipped` counts messages the
+folder had already, by `Message-ID`. A folder that holds only other folders answers `400 invalid`;
+a file of another type `415 unsupported_media_type`.
+
+```
+GET /api/imports
+```
+
+`{"imports": [ … ]}`: the user's imports, running and finished, oldest first. A finished one is
+listed until it is dismissed, or for a day; a restart forgets them all.
+
+```
+POST /api/imports/{import}/cancel
+```
+
+Stops an import: what went in stays. `200` with the import.
+
+```
+DELETE /api/imports/{import}
+```
+
+Dismisses a finished import. `204`. One still importing answers `400 invalid`.
 
 ## Sending
 
@@ -1210,6 +1274,7 @@ do not match on it. Two codes can share a status: `gone` and `not_found` are bot
 | `unauthenticated` | 401 | No live session. At sign-in, a username and password that do not match. |
 | `not_found` | 404 | No such thing, or not this user's: an email config, folder, draft, failed job, device, invitation, message part, image address or endpoint. |
 | `conflict` | 409 | A username taken; a mail account with no outgoing server to send through, or no Drafts folder to keep a draft in; a draft closed with nowhere to write it. |
+| `not_empty` | 409 | A folder deleted that holds messages or other folders, without `?with=mail`. |
 | `forbidden` | 403 | A request that changes something, sent from a page of another origin. |
 | `unsupported_media_type` | 415 | A request body that is not `application/json`; a proxied image whose bytes are not an image. |
 | `body_too_large` | 413 | A request body over 1 MB, or over 36 MB for sending and drafts. |

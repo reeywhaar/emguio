@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -602,9 +603,9 @@ func (m *Mirror) ReadAll(ctx context.Context, t store.SyncTarget, mailbox string
 	return below, err
 }
 
-// DeleteOld deletes from a mailbox what arrived before a day: moved to another mailbox, Trash,
-// when to names one, and for good when it does not; marked read first when read is set. It says
-// the UIDs it took. A move needs MOVE or UIDPLUS, and deleting for good UIDPLUS, as Move and
+// DeleteOld deletes from a mailbox what arrived before a day, or with a zero day all of it: moved
+// to another mailbox, Trash, when to names one, and for good when it does not; marked read first
+// when read is set. It says the UIDs it took. A move needs MOVE or UIDPLUS, and deleting for good UIDPLUS, as Move and
 // Delete do.
 func (m *Mirror) DeleteOld(ctx context.Context, t store.SyncTarget, mailbox string, before time.Time, to string, read bool) ([]uint32, error) {
 	var took []uint32
@@ -614,6 +615,9 @@ func (m *Mirror) DeleteOld(ctx context.Context, t store.SyncTarget, mailbox stri
 		}
 		c := f.session.client
 		found, err := c.UIDSearch(&imap.SearchCriteria{Before: before}, f.session.all()).Wait()
+		if before.IsZero() {
+			found, err = c.UIDSearch(&imap.SearchCriteria{}, f.session.all()).Wait()
+		}
 		if err != nil {
 			return refused(err)
 		}
@@ -789,6 +793,13 @@ func (m *Mirror) RenameMailbox(ctx context.Context, t store.SyncTarget, from str
 // ErrNotEmpty is a folder that still holds messages, which deleting it would delete too.
 var ErrNotEmpty = errors.New("mirror: not empty")
 
+// NotEmpty is ErrNotEmpty with how many messages the server said the folder holds.
+type NotEmpty struct{ Messages uint32 }
+
+func (e *NotEmpty) Error() string { return fmt.Sprintf("mirror: not empty, %d messages", e.Messages) }
+
+func (e *NotEmpty) Is(target error) bool { return target == ErrNotEmpty }
+
 // DeleteMailbox deletes an empty folder from the server, and says the folders it then lists. One
 // that holds messages is ErrNotEmpty: deleting it would delete them.
 func (m *Mirror) DeleteMailbox(ctx context.Context, t store.SyncTarget, name string) ([]store.Listed, error) {
@@ -803,7 +814,7 @@ func (m *Mirror) DeleteMailbox(ctx context.Context, t store.SyncTarget, name str
 			return refused(err)
 		}
 		if st.NumMessages != nil && *st.NumMessages > 0 {
-			return ErrNotEmpty
+			return &NotEmpty{Messages: *st.NumMessages}
 		}
 		if err := f.session.client.Delete(name).Wait(); err != nil {
 			return refused(err)

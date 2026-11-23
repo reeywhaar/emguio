@@ -5,8 +5,10 @@
  */
 export const qk = {
   me: ["me"] as const,
-  /** A download of mail asked for. */
-  export: (id: string) => ["export", id] as const,
+  /** The user's imports of mail from files. */
+  imports: ["imports"] as const,
+  /** The user's downloads of mail of the last hour. */
+  exports: ["exports"] as const,
   /** Where the user is signed in. */
   sessions: ["sessions"] as const,
   /** The user's jobs, across every config: what is drawn as still to be done. */

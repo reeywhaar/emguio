@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -68,8 +69,10 @@ type Server struct {
 	// unseals bounds tries at a user's seal key, each an Argon2 derivation.
 	unseals *limiter
 
-	// exports are the downloads of mail asked for, held for an hour.
+	// exports are the downloads of mail asked for, held for an hour; imports the files of mail
+	// being put into folders, and how each went.
 	exports exports
+	imports imports
 
 	// writeDeadline is how long a request that changes something may run. A field so a test
 	// can make it short.
@@ -186,9 +189,15 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 	s.handle("GET /api/email-configs/{id}/mailboxes/{mailbox}/messages/{message}/parts/{section}", s.requireUnsealed(s.awake(s.readPart)))
 	s.handle("GET /api/proxy", s.requireUnsealed(s.proxyImage))
 	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/export", s.requireUnsealed(s.awake(s.createExport)))
+	s.handle("GET /api/exports", s.requireUnsealed(s.listExports))
 	s.handle("GET /api/exports/{export}", s.requireUnsealed(s.getExport))
+	s.handle("DELETE /api/exports/{export}", s.requireUnsealed(s.dismissExport))
 	s.handle("GET /api/exports/{export}/file", s.requireUnsealed(s.exportFile))
 	s.handle("POST /api/exports/{export}/delete", s.requireUnsealed(s.deleteExported))
+	s.handle("POST /api/email-configs/{id}/mailboxes/{mailbox}/import", s.requireUnsealed(s.awake(s.importMail)))
+	s.handle("GET /api/imports", s.requireUnsealed(s.listImports))
+	s.handle("POST /api/imports/{import}/cancel", s.requireUnsealed(s.cancelImport))
+	s.handle("DELETE /api/imports/{import}", s.requireUnsealed(s.dismissImport))
 
 	s.handle("GET /api/jobs", s.requireUnsealed(s.listJobs))
 	s.handle("POST /api/jobs", s.requireUnsealed(s.postJobs))
@@ -276,6 +285,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		// Reads take no writer, and the event stream rightly runs for as long as the tab is open.
 	default:
+		// An upload to import takes as long as the file takes to arrive.
+		if uploading(r) {
+			break
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), s.writeDeadline)
 		defer cancel()
 		r = r.WithContext(ctx)
@@ -377,13 +390,24 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			refuse(w, http.StatusForbidden, CodeForbidden, "That request came from somewhere else.")
 			return
 		}
-		// Only when a body is present: a DELETE legitimately carries none.
-		if r.ContentLength != 0 && !isJSON(r.Header.Get("Content-Type")) {
+		// Only when a body is present: a DELETE legitimately carries none. A file to import is
+		// sent as itself, in a type no form can send.
+		if r.ContentLength != 0 && !isJSON(r.Header.Get("Content-Type")) && !uploading(r) {
 			refuse(w, http.StatusUnsupportedMediaType, CodeUnsupportedMediaType, "Send application/json.")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// uploading is a file sent to import, as itself rather than as JSON: in a type a page of another
+// origin cannot send without asking first, which this answers no to.
+func uploading(r *http.Request) bool {
+	if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/import") {
+		return false
+	}
+	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return importKinds[ct] != ""
 }
 
 // decode reads a JSON body into v, refusing anything it does not recognize.

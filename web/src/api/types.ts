@@ -8,9 +8,29 @@ export type Me = {
   seal: "none" | "sealed" | "open";
 };
 
+/** Mail put into a folder from a file, in the background, and how far it has got. */
+export type Import = {
+  id: string;
+  email_config: string;
+  mailbox: string;
+  /** The name the file was uploaded under. */
+  file: string;
+  state: "importing" | "done" | "failed" | "cancelled";
+  /** How many the file holds; how many went in, were there already, and folders made. */
+  total: number;
+  imported: number;
+  skipped: number;
+  folders: number;
+  error: string;
+  created_at: number;
+};
+
 /** A download of mail asked for, and how far it has got. */
 export type Export = {
   id: string;
+  email_config: string;
+  /** The folder exported, first of its subfolders when they went too. */
+  mailbox: string;
   state: "ready" | "exporting" | "done" | "failed" | "deleted";
   /** How many there are as last counted, and how many have been written. */
   total: number;

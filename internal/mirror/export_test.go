@@ -84,3 +84,49 @@ func TestWhatWasExportedIsTakenOut(t *testing.T) {
 		t.Errorf("under another UIDVALIDITY = %v", err)
 	}
 }
+
+// A message goes in with its flags and when it arrived, once: one with its Message-ID there is
+// passed over.
+func TestAMessageIsImportedOnce(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	ctx := context.Background()
+	w.create("Archive")
+	text := "Message-ID: <x@example.com>\r\nSubject: In\r\n\r\nHello.\r\n"
+	a := Appending{
+		Size: int64(len(text)), MessageID: "<x@example.com>",
+		Flags: []imap.Flag{imap.FlagSeen}, Date: start,
+		Write: func(out io.Writer) error { _, err := io.WriteString(out, text); return err },
+	}
+	for i, want := range []bool{true, false} {
+		put, err := w.mirror.Append(ctx, w.target, "Archive", a)
+		if err != nil || put != want {
+			t.Fatalf("append %d = %v, %v", i, put, err)
+		}
+	}
+	var got []Exporting
+	if _, err := w.mirror.Export(ctx, w.target, "Archive", 0, nil, func(e Exporting, body io.Reader) error {
+		got = append(got, e)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !got[0].Seen || !got[0].Date.Equal(start) {
+		t.Errorf("Archive holds %+v", got)
+	}
+}
+
+// With no day, Delete old takes all of a folder, as deleting the folder with its mail asks.
+func TestWithNoDayAllMailIsTaken(t *testing.T) {
+	w := newWorld(t, "hunter2")
+	ctx := context.Background()
+	w.create("Old")
+	w.deliver("Old", 1, "alice@example.com", "One")
+	w.deliver("Old", 99999, "bob@example.com", "Two")
+	took, err := w.mirror.DeleteOld(ctx, w.target, "Old", time.Time{}, "", false)
+	if err != nil || len(took) != 2 {
+		t.Fatalf("took %v, %v", took, err)
+	}
+	if _, err := w.mirror.DeleteMailbox(ctx, w.target, "Old"); err != nil {
+		t.Errorf("the emptied folder = %v", err)
+	}
+}

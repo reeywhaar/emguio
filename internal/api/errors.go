@@ -22,6 +22,7 @@ const (
 	CodeBusy                 = "busy"
 	CodeInternal             = "internal"
 	CodeSealed               = "sealed"
+	CodeNotEmpty             = "not_empty"
 )
 
 // errorBody is the shape of every refusal.

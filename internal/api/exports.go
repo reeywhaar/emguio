@@ -92,8 +92,31 @@ func (x *exports) get(user, id string) *export {
 	return e
 }
 
+// of is a user's exports of the last hour, oldest first.
+func (x *exports) of(user string) []*export {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	var out []*export
+	for _, e := range x.m {
+		if e.user == user && time.Since(e.made) <= exportLife {
+			out = append(out, e)
+		}
+	}
+	slices.SortFunc(out, func(a, b *export) int { return a.made.Compare(b.made) })
+	return out
+}
+
+func (x *exports) drop(id string) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	delete(x.m, id)
+}
+
 type exportJSON struct {
-	ID string `json:"id"`
+	ID          string `json:"id"`
+	EmailConfig string `json:"email_config"`
+	// Mailbox is the folder exported, first of its subfolders when they went too.
+	Mailbox string `json:"mailbox"`
 	// State is ready, exporting, done, failed or deleted.
 	State string `json:"state"`
 	// Total is how many messages are to go, as last counted; Exported how many have.
@@ -109,8 +132,8 @@ func (e *export) out() exportJSON {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return exportJSON{
-		ID: e.id, State: e.state, Total: e.total, Exported: e.done, Error: e.reason,
-		File: e.file(), URL: "/api/exports/" + e.id + "/file",
+		ID: e.id, EmailConfig: e.config, Mailbox: e.boxes[0].ID, State: e.state, Total: e.total,
+		Exported: e.done, Error: e.reason, File: e.file(), URL: "/api/exports/" + e.id + "/file",
 	}
 }
 
@@ -204,6 +227,28 @@ func (s *Server) createExport(w http.ResponseWriter, r *http.Request) {
 	}
 	s.exports.put(e)
 	writeJSON(w, http.StatusCreated, e.out())
+}
+
+// listExports is the user's exports of the last hour, oldest first: what the corner shows.
+func (s *Server) listExports(w http.ResponseWriter, r *http.Request) {
+	list := s.exports.of(userOf(r).ID)
+	out := make([]exportJSON, len(list))
+	for k, e := range list {
+		out[k] = e.out()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"exports": out})
+}
+
+// dismissExport lets an export go once it has been shown. One downloading goes on downloading;
+// only what went into it can no longer be deleted here.
+func (s *Server) dismissExport(w http.ResponseWriter, r *http.Request) {
+	e := s.exports.get(userOf(r).ID, r.PathValue("export"))
+	if e == nil {
+		refuse(w, http.StatusNotFound, CodeNotFound, "There is no such export.")
+		return
+	}
+	s.exports.drop(e.id)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) getExport(w http.ResponseWriter, r *http.Request) {
@@ -474,11 +519,53 @@ func (s *Server) deleteExported(w http.ResponseWriter, r *http.Request) {
 			forGood += len(gone)
 		}
 	}
+	folders, kept := 0, 0
+	if e.uids == nil {
+		var err error
+		if folders, kept, err = s.dropExported(r, t, e); !s.serverError(w, r, c.ID, err, "") {
+			return
+		}
+	}
 	s.store.Notify(u.ID)
 	s.mirror.Refresh(c.ID)
 	s.log.Info("exported mail deleted", "user", u.ID, "email_config", c.ID, "export", e.id,
-		"to_trash", toTrash, "for_good", forGood)
-	writeJSON(w, http.StatusOK, map[string]any{"trash": toTrash, "deleted": forGood})
+		"to_trash", toTrash, "for_good", forGood, "folders", folders, "folders_kept", kept)
+	writeJSON(w, http.StatusOK, map[string]any{"trash": toTrash, "deleted": forGood, "folders": folders, "kept": kept})
+}
+
+// dropExported deletes the folders a folder's export took, now emptied: the deepest first, so
+// each parent is empty of folders by its turn. One that mail came into since, or that still holds
+// a folder, stays and is counted; the server's own folders stay and are not.
+func (s *Server) dropExported(r *http.Request, t store.SyncTarget, e *export) (int, int, error) {
+	boxes := slices.Clone(e.boxes)
+	slices.SortStableFunc(boxes, func(a, b *store.Mailbox) int { return len(b.Path()) - len(a.Path()) })
+	folders, kept := 0, 0
+	for _, b := range boxes {
+		if b.SpecialUse != "" {
+			continue
+		}
+		now, err := s.store.MirrorMailboxes(r.Context(), t.ID)
+		if err != nil {
+			return folders, kept, err
+		}
+		if slices.ContainsFunc(now, func(other *store.Mailbox) bool { return inside(other, b) }) {
+			kept++
+			continue
+		}
+		listed, err := s.mirror.DeleteMailbox(r.Context(), t, b.Name)
+		if errors.Is(err, mirror.ErrNotEmpty) {
+			kept++
+			continue
+		}
+		if err != nil {
+			return folders, kept, err
+		}
+		if _, err := s.store.PutMailboxes(r.Context(), t.ID, listed); err != nil {
+			return folders, kept, err
+		}
+		folders++
+	}
+	return folders, kept, nil
 }
 
 // fileName is a folder's name as a file is named after it: Inbox for INBOX.

@@ -91,7 +91,7 @@ export function Transfers() {
 
   if (shown.length === 0) return null;
   return (
-    <div className="fixed right-4 bottom-4 z-10 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
+    <div className="flex flex-col gap-2">
       {shown.map((t) => (
         <Card key={t.id} transfer={t} onDismiss={() => dismiss.mutate(t.id)} />
       ))}

@@ -74,8 +74,13 @@ or moved there, in the same dialog, and deleted. Renaming is
 `RENAME`, and so is moving, into another folder or to the top: what is inside goes with it. Here
 the folder and those inside it are renamed in place before the folders are listed again, so each
 keeps its id, and a link, a waiting job or the folder chosen to archive to goes on naming it.
-Nothing goes inside itself. Deleting is `DELETE`, of an empty folder only: one holding mail, which
-the server would delete with it, or other folders, is refused, with what to do first.
+Nothing goes inside itself. Deleting is `DELETE`, of an empty folder only, as the server sees it.
+A folder that holds mail or other folders is deleted with them once asked: the confirmation says
+what it holds, as last counted — "Delete Work, the folder inside it and the 20 messages in them?"
+— and then each folder's mail goes to Trash, as deleting does, or for good from inside Trash, and
+the folders are deleted, the deepest first. Counted empty and holding mail after all, it is asked
+again with what the server says it holds. A folder of the server's own inside it keeps the rest
+where they are.
 
 The server's own folders — those with a use, and those holding one, like Gmail's `[Gmail]` —
 come first in a fixed order and stay there, with a wider gap after them. The user's follow, and
@@ -237,7 +242,10 @@ finishes within two seconds has no card: the list shows they went.
 
 ## Mail is exported as mbox or eml, streamed as it is read
 
-A folder's menu has Export…, and so does a selection. Mail goes out in one of two forms:
+A folder's menu has Export as mbox and Export as eml, and so does the More menu at the end of a
+selection's buttons, for what is selected: seldom used, so in a menu rather than as more icons. A
+folder goes with its subfolders. Nothing is asked: the download starts at the press, and a card in
+the corner, beside a move's, says how far it has got. Mail goes out in one of two forms:
 
 - **mbox**, which every mail app imports: one file of messages one after another, mboxrd, so a
   line that begins with `From ` is escaped by a `>` in a way that is always undone. Read,
@@ -257,12 +265,44 @@ the size of the mail. It reads on a connection of its own, so the folder lists a
 the same account do not wait behind it.
 
 An export is asked for, then downloaded from an address of its own, once: the browser saves it as
-it comes, and the dialog shows how far it has got. A server that stops answering partway cuts the
-download short, so the browser marks it failed rather than keeping half a file as whole.
+it comes. A server that stops answering partway cuts the download short, so the browser marks it
+failed rather than keeping half a file as whole.
 
-When it is done, the dialog offers to delete what was exported, and only that: mail that arrived
-since stays. It goes to Trash, as deleting does, or for good from Trash. emguio cannot know the
-file was saved, so the deleting waits for somebody to say so. An export is held for an hour.
+When it is done, the card says the file is downloaded, with Delete downloaded and Cancel. Delete
+downloaded deletes what went into the file, and only that, from the folder and its subfolders:
+mail that arrived since stays. It goes to Trash, as deleting does, at the press; from Trash it is
+deleted for good, which asks first. A folder exported whole goes too, its subfolders first, once
+each is empty: one that mail came into since stays, with the folders it is in, and so do Inbox and
+the server's own. A selection's folder stays. emguio cannot know the file was saved, so the
+deleting waits for somebody to say so. Cancel lets the card go. An export is held for an hour.
+
+## Mail is imported from mbox, eml, or a zip of them, in the background
+
+A folder's menu has Import mail…, and so does a selection's More menu. One file is imported at a
+time; a folder of eml files is zipped first, which makes it one. The file is uploaded, with
+how much has gone, and written to disk as it comes; then it is imported in the background with a
+card in the corner, beside a move's to another account: how far it has got, a way to cancel, and
+how it ended.
+
+- An **mbox** or an **eml** goes into the folder.
+- A **zip** is a tree inside it: `Name.mbox` and the `.eml` files in a directory go into the
+  folder of that name, made where it is not there yet. Directories named `Name.sbd`, as
+  Thunderbird keeps them, and Mail's `Name.mbox/mbox`, are read the same way. When everything in
+  the zip is under one name, as an export's is, that name is the folder imported into: an export
+  of Archive imported into Old Archive fills Old Archive, its subfolders inside.
+
+A message the folder has already, by its `Message-ID`, is passed over, so an import stopped
+partway is run again without doubling what went in. Read, replied, flagged and draft come from
+`Status` and `X-Status`, which are not put on the server; a message without them, an eml, is read,
+as an archive is. When it arrived comes from the mbox's `From ` line, or an eml's name as an
+export writes it, or else its `Date`. Mail imported with its old date is not new mail, and tells
+no device.
+
+Nothing is held whole here either. A server needs a message's size before its text, so each is
+read twice from the file on disk: once to measure it, its lines ended with CRLF and its escaping
+undone, and once to send it. An mbox inside a zip is written out to a file of its own first,
+since a compressed one cannot be read from the middle. A server with no folders inside folders
+imports a zip's top folder only when it has no others.
 
 ## A message is named by what the server calls it
 

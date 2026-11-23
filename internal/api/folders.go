@@ -2,9 +2,11 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -316,8 +318,10 @@ func (s *Server) renameMailbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, mailboxOut(now))
 }
 
-// deleteMailbox deletes an empty folder from the mail server, and from here. One that holds mail,
-// or other folders, is refused: deleting it would delete them.
+// deleteMailbox deletes a folder from the mail server, and from here. One that holds mail or other
+// folders answers not_empty, saying what, unless with=mail asks for that to go too: the mail to
+// Trash, as deleting does, marked read first with read=1, or for good from Trash; then the
+// folders, the deepest first. See docs/reading.md.
 func (s *Server) deleteMailbox(w http.ResponseWriter, r *http.Request) {
 	c, mb, ok := s.mailboxOf(w, r)
 	if !ok || owned(w, mb) {
@@ -329,30 +333,105 @@ func (s *Server) deleteMailbox(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if slices.ContainsFunc(boxes, func(other *store.Mailbox) bool { return inside(other, mb) }) {
-		refuse(w, http.StatusConflict, CodeConflict, "Move or delete the folders inside it first.")
+	tree := []*store.Mailbox{mb}
+	var messages uint32
+	for _, other := range boxes {
+		if inside(other, mb) {
+			if other.SpecialUse != "" {
+				refuse(w, http.StatusConflict, CodeConflict, "One of the server's own folders is inside it, and keeps its place.")
+				return
+			}
+			tree = append(tree, other)
+		}
+	}
+	for _, b := range tree {
+		messages += b.Messages
+	}
+	q := r.URL.Query()
+	withMail := q.Get("with") == "mail"
+	if !withMail && (len(tree) > 1 || messages > 0) {
+		refuse(w, http.StatusConflict, CodeNotEmpty, holding(folderLabel(mb), len(tree)-1, messages))
 		return
 	}
 	if s.mirror == nil {
 		refuse(w, http.StatusServiceUnavailable, CodeUnreachable, "The server cannot be reached right now.")
 		return
 	}
-	listed, err := s.mirror.DeleteMailbox(r.Context(), targetOf(u, c), mb.Name)
-	if errors.Is(err, mirror.ErrNotEmpty) {
-		refuse(w, http.StatusConflict, CodeConflict, "Move or delete the mail in it first.")
-		return
+	t := targetOf(u, c)
+	var trash *store.Mailbox
+	for _, other := range boxes {
+		if other.SpecialUse == store.UseTrash && other.Selectable {
+			trash = other
+		}
 	}
-	if !s.serverError(w, r, c.ID, err, "") {
-		return
+	slices.SortStableFunc(tree, func(a, b *store.Mailbox) int { return len(b.Path()) - len(a.Path()) })
+	took := 0
+	for _, b := range tree {
+		if withMail && b.Selectable {
+			to := ""
+			if trash != nil && !inside(b, trash) {
+				to = trash.Name
+			}
+			gone, err := s.mirror.DeleteOld(r.Context(), t, b.Name, time.Time{}, to, q.Get("read") == "1" && to != "")
+			if !s.serverError(w, r, c.ID, err, "This folder is no longer on the server.") {
+				return
+			}
+			took += len(gone)
+		}
+		listed, err := s.mirror.DeleteMailbox(r.Context(), t, b.Name)
+		if errors.Is(err, mirror.ErrNotEmpty) {
+			// Counted before it was looked at, or mail came in meanwhile.
+			var full *mirror.NotEmpty
+			var n uint32
+			if errors.As(err, &full) {
+				n = full.Messages
+			}
+			refuse(w, http.StatusConflict, CodeNotEmpty, holding(folderLabel(b), 0, n))
+			return
+		}
+		if !s.serverError(w, r, c.ID, err, "") {
+			return
+		}
+		if _, err := s.store.PutMailboxes(r.Context(), c.ID, listed); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
-	if _, err := s.store.PutMailboxes(r.Context(), c.ID, listed); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.log.Info("folder deleted", "user", u.ID, "email_config", c.ID, "mailbox", mb.ID)
+	s.log.Info("folder deleted", "user", u.ID, "email_config", c.ID, "mailbox", mb.ID,
+		"folders", len(tree), "messages", took)
 	s.store.Notify(u.ID)
 	s.mirror.Refresh(c.ID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// folderLabel is a folder's name as a person reads it: Inbox for INBOX.
+func folderLabel(mb *store.Mailbox) string {
+	path := mb.Path()
+	if mb.SpecialUse == store.UseInbox && len(path) == 1 {
+		return "Inbox"
+	}
+	return path[len(path)-1]
+}
+
+// holding says what a folder holds, in a sentence a confirmation can stand on.
+func holding(name string, folders int, messages uint32) string {
+	var parts []string
+	switch {
+	case folders == 1:
+		parts = append(parts, "1 folder")
+	case folders > 1:
+		parts = append(parts, fmt.Sprintf("%d folders", folders))
+	}
+	switch {
+	case messages == 1:
+		parts = append(parts, "1 message")
+	case messages > 1:
+		parts = append(parts, fmt.Sprintf("%d messages", messages))
+	}
+	if len(parts) == 0 {
+		return name + " holds mail."
+	}
+	return name + " holds " + strings.Join(parts, " and ") + "."
 }
 
 type orderBody struct {

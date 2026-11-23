@@ -91,6 +91,57 @@ export async function request<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/**
+ * Sends a file as itself, of type kind, saying how much of it has gone as it goes: fetch cannot
+ * say that of an upload. Refused as request is.
+ */
+export function upload<T>(
+  path: string,
+  file: Blob,
+  kind: string,
+  onProgress: (sent: number, total: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", kind);
+    xhr.upload.addEventListener("progress", (e) =>
+      onProgress(e.loaded, e.total),
+    );
+    xhr.addEventListener("error", () =>
+      reject(
+        new ApiError(
+          0,
+          "unreachable",
+          "The upload did not get through. Check your connection and try again.",
+        ),
+      ),
+    );
+    xhr.addEventListener("load", () => {
+      const text = xhr.responseText;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve((text ? JSON.parse(text) : undefined) as T);
+        return;
+      }
+      const refusal = refusalOf(text);
+      if (refusal?.code === "sealed") sealed?.();
+      reject(
+        new ApiError(
+          xhr.status,
+          refusal?.code ??
+            (gateway.has(xhr.status) ? "unreachable" : "invalid"),
+          refusal?.message ??
+            (gateway.has(xhr.status)
+              ? "The server is not answering. Try again in a moment."
+              : "Something went wrong here."),
+        ),
+      );
+    });
+    xhr.send(file);
+  });
+}
+
 /** What a proxy answers with when what is behind it is down or slow. */
 const gateway = new Set([502, 503, 504]);
 
