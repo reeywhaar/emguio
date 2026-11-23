@@ -767,8 +767,8 @@ export:
   "url": "/api/exports/ex_01k6r2s4t6v8w0x2y4z6a8b0c2/file"}
 ```
 
-`file` is an `.mbox`, an `.eml` for one message as eml, or a `.zip` for eml or for subfolders;
-see [reading.md](reading.md) for what is in each. `total` is how many there are as last counted.
+`file` is always a `.zip`, of mbox files or of eml files; see [reading.md](reading.md) for what
+is in it. `total` is how many there are as last counted.
 An export is held for an hour, in memory: a restart forgets it.
 
 ```

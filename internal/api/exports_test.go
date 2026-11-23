@@ -59,11 +59,34 @@ func download(t *testing.T, c *client, url string) (*http.Response, []byte) {
 	return resp, b
 }
 
-// A folder downloads as one mbox, once; then what went into it, and only that, goes to Trash.
+// unzipped is each file of a zip by name, read whole, and the names in order.
+func unzipped(t *testing.T, body []byte) ([]string, map[string]string) {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	files := map[string]string{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(rc)
+		rc.Close()
+		names = append(names, f.Name)
+		files[f.Name] = string(b)
+	}
+	return names, files
+}
+
+// A folder downloads as a zip of its mbox, once; then what went into it, and only that, goes to
+// Trash.
 func TestAFolderIsExportedAsMboxAndThenDeleted(t *testing.T) {
 	c, cfg, boxes, fake := withExportable(t)
 	x := exported(t, c, cfg, boxes["Archive"], `{"format":"mbox"}`)
-	if x["state"] != "ready" || x["file"] != "Archive.mbox" {
+	if x["state"] != "ready" || x["file"] != "Archive.zip" {
 		t.Errorf("export = %v", x)
 	}
 	id, url := x["id"].(string), x["url"].(string)
@@ -72,14 +95,15 @@ func TestAFolderIsExportedAsMboxAndThenDeleted(t *testing.T) {
 	}
 
 	resp, body := download(t, c, url)
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/mbox" ||
-		!strings.Contains(resp.Header.Get("Content-Disposition"), `filename=Archive.mbox`) {
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/zip" ||
+		!strings.Contains(resp.Header.Get("Content-Disposition"), `filename=Archive.zip`) {
 		t.Fatalf("file = %s %v", resp.Status, resp.Header)
 	}
+	names, files := unzipped(t, body)
 	want := "From ann@example.com Sat Nov 21 09:05:00 2026\nStatus: RO\nSubject: one\n\n>From me\n\n" +
 		"From MAILER-DAEMON Sat Nov 21 10:05:00 2026\nStatus: O\nX-Status: F\nSubject: two\n\nhi\n\n"
-	if string(body) != want {
-		t.Errorf("file =\n%q\nwant\n%q", body, want)
+	if len(names) != 1 || files["Archive.mbox"] != want {
+		t.Errorf("files %v, Archive.mbox =\n%q\nwant\n%q", names, files["Archive.mbox"], want)
 	}
 	if again, _ := download(t, c, url); again.StatusCode != http.StatusConflict {
 		t.Errorf("a second download = %s", again.Status)
@@ -179,13 +203,15 @@ func TestAFolderTreeIsExportedAsEml(t *testing.T) {
 	}
 }
 
-// One message selected, as eml, is that message's file; mbox with subfolders a zip of mboxes.
+// One message selected, as eml, is a zip of that message's file; mbox with subfolders a zip of
+// mboxes.
 func TestASelectionAndAnMboxTree(t *testing.T) {
 	c, cfg, boxes, _ := withExportable(t)
 	x := exported(t, c, cfg, boxes["Archive"], `{"format":"eml","messages":["7-9"]}`)
-	resp, body := download(t, c, x["url"].(string))
-	if x["file"] != "Archive.eml" || resp.Header.Get("Content-Type") != "message/rfc822" || string(body) != "Subject: two\r\n\r\nhi\r\n" {
-		t.Errorf("one message = %v %s %q", x, resp.Header.Get("Content-Type"), body)
+	_, body := download(t, c, x["url"].(string))
+	names, files := unzipped(t, body)
+	if x["file"] != "Archive.zip" || len(names) != 1 || files["Archive/2026-11-21-100500-9.eml"] != "Subject: two\r\n\r\nhi\r\n" {
+		t.Errorf("one message = %v %v", x, names)
 	}
 
 	x = exported(t, c, cfg, boxes["Archive"], `{"format":"mbox","subfolders":true}`)

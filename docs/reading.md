@@ -245,18 +245,19 @@ finishes within two seconds has no card: the list shows they went.
 A folder's menu has Export as mbox and Export as eml, and so does the More menu at the end of a
 selection's buttons, for what is selected: seldom used, so in a menu rather than as more icons. A
 folder goes with its subfolders. Nothing is asked: the download starts at the press, and a card in
-the corner, beside a move's, says how far it has got. Mail goes out in one of two forms:
+the corner, beside a move's, says how far it has got. It is always a zip, `Archive.zip`: mail
+compresses well, which is time saved over a slow line, and a zip holds the folders as a tree.
+Inside it, mail is in one of two forms:
 
 - **mbox**, which every mail app imports: one file of messages one after another, mboxrd, so a
   line that begins with `From ` is escaped by a `>` in a way that is always undone. Read,
   replied, flagged and draft go in `Status` and `X-Status`, as mutt and Thunderbird read them,
-  and when it arrived in the `From ` line. A folder with its subfolders is a zip:
-  `Archive.mbox` beside an `Archive/` directory with `2025.mbox` and the rest inside, its mail and
-  its subfolders' kept apart as mail apps keep them.
-- **eml**: a zip of one file per message, exactly as the server holds it, named for when it
-  arrived and its UID so the files sort by date — `Archive/2026-11-21-090500-4521.eml` — and
-  subfolders as directories. An eml has nowhere to keep read or flagged. One message selected is
-  that message's `.eml`, not a zip.
+  and when it arrived in the `From ` line. A folder is `Archive.mbox`; its subfolders are in an
+  `Archive/` directory beside it, `2025.mbox` and the rest, its mail and theirs kept apart as mail
+  apps keep them.
+- **eml**: one file per message, exactly as the server holds it, named for when it arrived and its
+  UID so the files sort by date — `Archive/2026-11-21-090500-4521.eml` — and subfolders as
+  directories. An eml has nowhere to keep read or flagged.
 
 Nothing is held whole. The file is written as the download goes: each folder's messages are
 read a hundred at a time, what is said around them first, then each one's text passed through

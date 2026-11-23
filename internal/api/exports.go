@@ -137,24 +137,9 @@ func (e *export) out() exportJSON {
 	}
 }
 
-// zipped is whether the file is a zip: eml always but for one message, mbox with subfolders.
-func (e *export) zipped() bool {
-	if e.format == "eml" {
-		return len(e.uids) != 1
-	}
-	return len(e.boxes) > 1
-}
-
-func (e *export) file() string {
-	name := fileName(e.boxes[0])
-	switch {
-	case e.zipped():
-		return name + ".zip"
-	case e.format == "eml":
-		return name + ".eml"
-	}
-	return name + ".mbox"
-}
+// file is what the export is saved as: always a zip, which is smaller to download and holds the
+// folders as a tree.
+func (e *export) file() string { return fileName(e.boxes[0]) + ".zip" }
 
 type exportBody struct {
 	// Format is mbox or eml.
@@ -302,14 +287,7 @@ func (s *Server) exportFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kind := "application/mbox"
-	switch {
-	case e.zipped():
-		kind = "application/zip"
-	case e.format == "eml":
-		kind = "message/rfc822"
-	}
-	w.Header().Set("Content-Type", kind)
+	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": e.file()}))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
@@ -343,12 +321,9 @@ func (e *export) fail(why string) {
 	e.state, e.reason = exportFailed, why
 }
 
-// writeExport writes each folder's messages to out in the export's format.
+// writeExport writes each folder's messages to out as a zip, in the export's format.
 func (s *Server) writeExport(r *http.Request, t store.SyncTarget, e *export, out io.Writer) error {
-	var zw *zip.Writer
-	if e.zipped() {
-		zw = zip.NewWriter(out)
-	}
+	zw := zip.NewWriter(out)
 	root := e.boxes[0].Path()
 	for _, b := range e.boxes {
 		if !b.Selectable {
@@ -362,15 +337,11 @@ func (s *Server) writeExport(r *http.Request, t store.SyncTarget, e *export, out
 		dir := strings.Join(path, "/")
 		var mw *mbox.Writer
 		if e.format == "mbox" {
-			to := out
-			if zw != nil {
-				entry, err := zw.CreateHeader(&zip.FileHeader{Name: dir + ".mbox", Method: zip.Deflate, Modified: time.Now()})
-				if err != nil {
-					return err
-				}
-				to = entry
+			entry, err := zw.CreateHeader(&zip.FileHeader{Name: dir + ".mbox", Method: zip.Deflate, Modified: time.Now()})
+			if err != nil {
+				return err
 			}
-			mw = mbox.NewWriter(to)
+			mw = mbox.NewWriter(entry)
 		}
 		var uids []uint32
 		each := func(m mirror.Exporting, body io.Reader) error {
@@ -381,7 +352,7 @@ func (s *Server) writeExport(r *http.Request, t store.SyncTarget, e *export, out
 					From: m.From, Date: m.Date,
 					Seen: m.Seen, Answered: m.Answered, Flagged: m.Flagged, Draft: m.Draft,
 				}, body)
-			case zw != nil:
+			default:
 				var entry io.Writer
 				entry, err = zw.CreateHeader(&zip.FileHeader{
 					Name:   fmt.Sprintf("%s/%s-%d.eml", dir, m.Date.UTC().Format("2006-01-02-150405"), m.UID),
@@ -390,8 +361,6 @@ func (s *Server) writeExport(r *http.Request, t store.SyncTarget, e *export, out
 				if err == nil {
 					_, err = io.Copy(entry, body)
 				}
-			default:
-				_, err = io.Copy(out, body)
 			}
 			if err != nil {
 				return err
@@ -421,10 +390,7 @@ func (s *Server) writeExport(r *http.Request, t store.SyncTarget, e *export, out
 			return err
 		}
 	}
-	if zw != nil {
-		return zw.Close()
-	}
-	return nil
+	return zw.Close()
 }
 
 // exportProblem is why an export stopped, in a sentence.
