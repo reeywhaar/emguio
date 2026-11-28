@@ -7,7 +7,6 @@ import { qk } from "@app/api/keys";
 import type { EmailConfig } from "@app/api/types";
 import { Dummy } from "@app/components/Dummy";
 import { OverflowMark, PlusMark, ProfileMark } from "@app/components/icons";
-import { pickerLook } from "@app/components/PickerButton";
 import { Menu } from "@app/components/Menu";
 import { Wordmark } from "@app/components/Wordmark";
 import { labelOf, pick, turnedOn } from "@app/islands/app/emailConfig";
@@ -59,7 +58,7 @@ export function Header({ route }: { route: Route }) {
         href={paths.settings}
         title="Settings"
         aria-current={route.page === "settings" ? "page" : undefined}
-        className="inline-flex min-h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted hover:bg-fill hover:text-fg aria-[current=page]:text-fg"
+        className="-mr-2 inline-flex min-h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-sm text-muted hover:bg-fill hover:text-fg aria-[current=page]:text-fg"
       >
         <span className="shrink-0">
           <ProfileMark />
@@ -82,8 +81,12 @@ const GAP = 4;
 /** What the row has room for, and what each part of it takes. */
 type Sizes = { room: number; widths: Record<string, number>; button: number };
 
+// Closer together on a phone, where the row is short of room.
 const tab =
-  "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap";
+  "inline-flex min-h-8 items-center gap-1.5 rounded-md px-1.5 text-sm whitespace-nowrap sm:px-2.5";
+
+/** The open account in the row, drawn as the others are but marked. */
+const open = `${tab} bg-shade font-medium hover:bg-fill`;
 
 /**
  * The mail accounts side by side, as many as fit, and the rest behind a button after them. The
@@ -142,11 +145,7 @@ function Accounts({
       >
         {configs.map((c) =>
           c.id === current?.id ? (
-            <span
-              key={c.id}
-              data-config={c.id}
-              className={`${pickerLook(true)} font-medium whitespace-nowrap`}
-            >
+            <span key={c.id} data-config={c.id} className={open}>
               {labelOf(c)}
               <Unread config={c} />
             </span>
@@ -250,11 +249,8 @@ function ConfigPicker({
       name="Mail account"
       plain
       chevron={!inRow}
-      className={
-        inRow
-          ? "bg-shade font-medium whitespace-nowrap"
-          : "max-w-64 font-medium"
-      }
+      look={inRow ? open : undefined}
+      className={inRow ? "" : "max-w-64 font-medium"}
       label={
         inRow && current ? (
           <>
