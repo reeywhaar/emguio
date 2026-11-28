@@ -85,11 +85,26 @@ type Sizes = { room: number; widths: Record<string, number>; button: number };
 const tab =
   "inline-flex min-h-8 items-center gap-1.5 rounded-md px-1.5 text-sm whitespace-nowrap sm:px-2.5";
 
+/** The open account in the row: its ground, and its name in bold, which takes no more room. */
+const open = `${tab} bg-shade font-semibold text-fg hover:bg-fill`;
+
 /**
- * The open account in the row, marked by its ground and its darker text, never by weight: as wide
- * as when it is not open, so the row stays where it is as another is opened.
+ * Text as wide as its bold self, whether bold or not, so an account opened or left moves nothing
+ * beside it: an unseen bold copy holds the room.
  */
-const open = `${tab} bg-shade text-fg hover:bg-fill`;
+function Steady({ text }: { text: string }) {
+  return (
+    <span className="inline-grid">
+      <span className="col-start-1 row-start-1">{text}</span>
+      <span
+        aria-hidden="true"
+        className="invisible col-start-1 row-start-1 font-semibold"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
 
 /**
  * An account as the header names it, on two short lines rather than one long one where it can be:
@@ -109,7 +124,7 @@ function Label({ config }: { config: EmailConfig }) {
     );
   }
   const at = config.email.lastIndexOf("@");
-  if (name || at <= 0) return <>{labelOf(config)}</>;
+  if (name || at <= 0) return <Steady text={labelOf(config)} />;
   return (
     <Lines top={config.email.slice(0, at)} under={config.email.slice(at)} />
   );
@@ -127,9 +142,11 @@ function Lines({
 }) {
   return (
     <span className="flex flex-col text-left text-xs leading-tight">
-      <span>{top}</span>
+      <Steady text={top} />
       {spoken ? <span className="sr-only">{spoken}</span> : null}
-      <span className="opacity-70">{under}</span>
+      <span className="opacity-70">
+        <Steady text={under} />
+      </span>
     </span>
   );
 }
@@ -306,7 +323,7 @@ function ConfigPicker({
         ) : (
           <>
             <span className="min-w-0 flex-1 truncate">
-              {current ? <Label config={current} /> : "Choose one"}
+              {current ? labelOf(current) : "Choose one"}
             </span>
             {elsewhere ? (
               <>

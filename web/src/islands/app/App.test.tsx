@@ -118,13 +118,20 @@ function measuring(room: number) {
 const row = () =>
   within(screen.getByRole("navigation", { name: "Mail accounts" }));
 
-/** What the header's row of mail accounts says, each link and button in turn. */
+/** What the header's row of mail accounts says, each link and button in turn, unseen copies left out. */
 const names = () =>
   [
     ...screen
       .getByRole("navigation", { name: "Mail accounts" })
       .querySelectorAll("a, button"),
-  ].map((el) => el.textContent!.replace(/\s+/g, " ").trim());
+  ].map((el) => {
+    const seen = el.cloneNode(true) as HTMLElement;
+    seen.querySelectorAll('[aria-hidden="true"]').forEach((n) => n.remove());
+    return seen.textContent!.replace(/\s+/g, " ").trim();
+  });
+
+/** Text as it is seen, not the unseen bold copy that holds a name's room. */
+const seen = { ignore: '[aria-hidden="true"], script, style' };
 
 describe("the application", () => {
   it("says who is signed in", async () => {
@@ -231,8 +238,8 @@ describe("the application", () => {
       await screen.findByRole("navigation", { name: "Mail accounts" });
       // Read whole, as it is written.
       const link = row().getByRole("link", { name: "inbox@vyrtsev.com" });
-      expect(within(link).getByText("inbox").tagName).toBe("SPAN");
-      within(link).getByText("@vyrtsev.com");
+      expect(within(link).getByText("inbox", seen).tagName).toBe("SPAN");
+      within(link).getByText("@vyrtsev.com", seen);
       fireEvent.click(row().getByRole("button", { name: /^Mail account/ }));
       const menu = within(await screen.findByRole("menu"));
       menu.getByRole("menuitem", { name: "inbox@vyrtsev.com" });
@@ -253,8 +260,8 @@ describe("the application", () => {
       await screen.findByRole("navigation", { name: "Mail accounts" });
       // Heard as it is written.
       const link = row().getByRole("link", { name: "Test/Kidsout/Old" });
-      within(link).getByText("Test");
-      within(link).getByText("Kidsout/Old");
+      within(link).getByText("Test", seen);
+      within(link).getByText("Kidsout/Old", seen);
     } finally {
       restore();
     }

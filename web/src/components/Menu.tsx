@@ -72,7 +72,9 @@ export function Menu({
   }, [open]);
 
   return (
-    <div className="relative min-w-0">
+    // Flex, so the button is not set on a line of text: two lines in it would hang below the
+    // first one's baseline and make the row taller.
+    <div className="relative flex min-w-0">
       <PickerButton
         name={name}
         plain={plain}
