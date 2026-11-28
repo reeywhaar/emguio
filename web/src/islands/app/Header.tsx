@@ -89,6 +89,21 @@ const tab =
 const open = `${tab} bg-shade font-medium hover:bg-fill`;
 
 /**
+ * An account as the header names it: by its name, or else by its address, the part before the @
+ * over the rest, on two short lines rather than one long one.
+ */
+function Label({ config }: { config: EmailConfig }) {
+  const at = config.email.lastIndexOf("@");
+  if (config.name || at <= 0) return <>{labelOf(config)}</>;
+  return (
+    <span className="flex flex-col text-left text-xs leading-tight">
+      <span className="font-semibold text-fg">{config.email.slice(0, at)}</span>
+      <span className="text-muted">{config.email.slice(at)}</span>
+    </span>
+  );
+}
+
+/**
  * The mail accounts side by side, as many as fit, and the rest behind a button after them. The
  * open one is always among them, and opens the list of them all; where not even it fits beside the
  * button, it is all there is. What fits is measured, since that depends on what they are called; a
@@ -146,12 +161,12 @@ function Accounts({
         {configs.map((c) =>
           c.id === current?.id ? (
             <span key={c.id} data-config={c.id} className={open}>
-              {labelOf(c)}
+              <Label config={c} />
               <Unread config={c} />
             </span>
           ) : (
             <span key={c.id} data-config={c.id} className={tab}>
-              {labelOf(c)}
+              <Label config={c} />
               <Unread config={c} />
             </span>
           ),
@@ -174,7 +189,7 @@ function Accounts({
                   href={paths.mail(c.id)}
                   className={`${tab} text-muted hover:bg-fill hover:text-fg`}
                 >
-                  {labelOf(c)}
+                  <Label config={c} />
                   <Unread config={c} />
                 </Link>
               ),
@@ -254,13 +269,13 @@ function ConfigPicker({
       label={
         inRow && current ? (
           <>
-            {labelOf(current)}
+            <Label config={current} />
             <Unread config={current} />
           </>
         ) : (
           <>
             <span className="min-w-0 flex-1 truncate">
-              {current ? labelOf(current) : "Choose one"}
+              {current ? <Label config={current} /> : "Choose one"}
             </span>
             {elsewhere ? (
               <>

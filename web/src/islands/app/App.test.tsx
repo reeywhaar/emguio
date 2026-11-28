@@ -217,6 +217,29 @@ describe("the application", () => {
     }
   });
 
+  // An account with no name is its address, the part before the @ over the rest; the list of them
+  // all still has it whole.
+  it("names an account without a name by its address on two lines", async () => {
+    getEmailConfigs.mockResolvedValue([
+      config("ec_1", "Work"),
+      { ...config("ec_2", "Home"), name: "", email: "inbox@vyrtsev.com" },
+    ]);
+    const restore = measuring(1000);
+    try {
+      mount(<App />);
+      await screen.findByRole("navigation", { name: "Mail accounts" });
+      // Read whole, as it is written.
+      const link = row().getByRole("link", { name: "inbox@vyrtsev.com" });
+      expect(within(link).getByText("inbox").tagName).toBe("SPAN");
+      within(link).getByText("@vyrtsev.com");
+      fireEvent.click(row().getByRole("button", { name: /^Mail account/ }));
+      const menu = within(await screen.findByRole("menu"));
+      menu.getByRole("menuitem", { name: "inbox@vyrtsev.com" });
+    } finally {
+      restore();
+    }
+  });
+
   // Settings has no account open: each one in the row goes to its mail, a lone one too.
   it("goes to an account's mail from the header in Settings", async () => {
     getEmailConfigs.mockResolvedValue([config("ec_1", "Work")]);
