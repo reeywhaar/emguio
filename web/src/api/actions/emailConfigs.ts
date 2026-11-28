@@ -135,10 +135,10 @@ export const putEmailConfigsByIdOff = (id: string, off: boolean) =>
     body: { off },
   });
 
-/** Chooses whether a config marks mail read as it is archived or deleted; null follows Reading. */
+/** Chooses whether a config marks mail read as it is archived, deleted or marked spam; null follows Reading. */
 export const putEmailConfigsByIdReading = (
   id: string,
-  body: Pick<EmailConfig, "read_on_archive" | "read_on_trash">,
+  body: Pick<EmailConfig, "read_on_archive" | "read_on_trash" | "read_on_junk">,
 ) =>
   request<EmailConfig>(`/api/email-configs/${encodeURIComponent(id)}/reading`, {
     method: "PUT",

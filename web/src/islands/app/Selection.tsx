@@ -122,7 +122,7 @@ export function Selection({
       ? () => moveAll(to.archive!, false, readOn.archive)
       : undefined,
     remove,
-    spam: to.spam ? () => moveAll(to.spam!) : undefined,
+    spam: to.spam ? () => moveAll(to.spam!, false, readOn.junk) : undefined,
     notSpam: to.notSpam ? () => moveAll(to.notSpam!) : undefined,
     star: () =>
       ask(

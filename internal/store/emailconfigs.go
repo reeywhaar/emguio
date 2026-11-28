@@ -62,10 +62,11 @@ type EmailConfig struct {
 	DigestEvery int
 	// Off is its being turned off: kept, but neither read nor told about until turned on.
 	Off bool
-	// ReadOnArchive and ReadOnTrash are whether its mail is marked read before it is archived or
-	// deleted; nil follows its user's Reading.
+	// ReadOnArchive, ReadOnTrash and ReadOnJunk are whether its mail is marked read before it is
+	// archived, deleted or marked as spam; nil follows its user's Reading.
 	ReadOnArchive *bool
 	ReadOnTrash   *bool
+	ReadOnJunk    *bool
 }
 
 // How an email config tells its user's devices about new mail — see docs/push.md.
@@ -121,7 +122,7 @@ const emailConfigSelect = emailConfigColumns + `, synced_at, sync_error,
   (SELECT COALESCE(SUM(unseen), 0) FROM mailboxes
     WHERE mailboxes.email_config_id = email_configs.id
       AND (notify = 1 OR (notify IS NULL AND special_use IN ('inbox', '')))),
-  COALESCE(archive_mailbox, ''), notify, digest_every, off, read_on_archive, read_on_trash`
+  COALESCE(archive_mailbox, ''), notify, digest_every, off, read_on_archive, read_on_trash, read_on_junk`
 
 func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error) {
 	var (
@@ -131,12 +132,13 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 		created, updated   int64
 		synced             sql.NullInt64
 		onArchive, onTrash sql.NullBool
+		onJunk             sql.NullBool
 	)
 	err := sc.Scan(&r.ID, &r.UserID, &r.Name, &r.Email, &r.SenderName,
 		&r.Incoming.Protocol, &r.Incoming.Host, &r.Incoming.Port, &r.Incoming.TLS, &r.Incoming.Username, &r.incomingSecret,
 		&oHost, &oPort, &oTLS, &oUser, &r.outgoingSecret,
 		&created, &updated, &synced, &r.SyncError, &r.Unseen, &r.ArchiveMailbox, &r.Notify, &r.DigestEvery, &r.Off,
-		&onArchive, &onTrash)
+		&onArchive, &onTrash, &onJunk)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +147,9 @@ func scanEmailConfig(sc interface{ Scan(...any) error }) (*emailConfigRow, error
 	}
 	if onTrash.Valid {
 		r.ReadOnTrash = &onTrash.Bool
+	}
+	if onJunk.Valid {
+		r.ReadOnJunk = &onJunk.Bool
 	}
 	if oHost.Valid {
 		r.Outgoing = &Server{Host: oHost.String, Port: int(oPort.Int64), TLS: oTLS.String, Username: oUser.String}
@@ -292,7 +297,7 @@ func (s *Store) UpdateEmailConfig(ctx context.Context, userID, id string, in Ema
 	out := shown(id, userID, in, r.CreatedAt, now)
 	out.Notify, out.DigestEvery = r.Notify, r.DigestEvery
 	out.Unseen, out.ArchiveMailbox, out.Off = r.Unseen, r.ArchiveMailbox, r.Off
-	out.ReadOnArchive, out.ReadOnTrash = r.ReadOnArchive, r.ReadOnTrash
+	out.ReadOnArchive, out.ReadOnTrash, out.ReadOnJunk = r.ReadOnArchive, r.ReadOnTrash, r.ReadOnJunk
 	if !moved {
 		out.SyncedAt, out.SyncError = r.SyncedAt, r.SyncError
 	}
@@ -605,11 +610,12 @@ func (s *Store) SetArchiveMailbox(ctx context.Context, userID, configID, mailbox
 }
 
 // SetEmailConfigReading chooses whether one of a user's email configs marks its mail read before
-// it is archived, and before it is deleted; nil follows the user's Reading.
-func (s *Store) SetEmailConfigReading(ctx context.Context, userID, configID string, onArchive, onTrash *bool) error {
+// it is archived, before it is deleted, and before it is marked as spam; nil follows the user's
+// Reading.
+func (s *Store) SetEmailConfigReading(ctx context.Context, userID, configID string, onArchive, onTrash, onJunk *bool) error {
 	res, err := s.writer.ExecContext(ctx,
-		`UPDATE email_configs SET read_on_archive = ?, read_on_trash = ? WHERE id = ? AND user_id = ?`,
-		onArchive, onTrash, configID, userID)
+		`UPDATE email_configs SET read_on_archive = ?, read_on_trash = ?, read_on_junk = ? WHERE id = ? AND user_id = ?`,
+		onArchive, onTrash, onJunk, configID, userID)
 	if err != nil {
 		return fmt.Errorf("set email config reading: %w", err)
 	}

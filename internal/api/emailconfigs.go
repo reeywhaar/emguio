@@ -46,10 +46,11 @@ type emailConfigJSON struct {
 	DigestEvery int    `json:"digest_every"`
 	// Off is its being turned off: kept, but neither read nor told about.
 	Off bool `json:"off"`
-	// ReadOnArchive and ReadOnTrash are whether its mail is marked read before it is archived or
-	// deleted, null where it follows the user's reading settings.
+	// ReadOnArchive, ReadOnTrash and ReadOnJunk are whether its mail is marked read before it is
+	// archived, deleted or marked as spam, null where it follows the user's reading settings.
 	ReadOnArchive *bool `json:"read_on_archive"`
 	ReadOnTrash   *bool `json:"read_on_trash"`
+	ReadOnJunk    *bool `json:"read_on_junk"`
 }
 
 func toJSON(c *store.EmailConfig) emailConfigJSON {
@@ -69,6 +70,7 @@ func toJSON(c *store.EmailConfig) emailConfigJSON {
 		Off:           c.Off,
 		ReadOnArchive: c.ReadOnArchive,
 		ReadOnTrash:   c.ReadOnTrash,
+		ReadOnJunk:    c.ReadOnJunk,
 	}
 	if c.ArchiveMailbox != "" {
 		out.ArchiveMailbox = &c.ArchiveMailbox
@@ -315,17 +317,19 @@ func (s *Server) putOff(w http.ResponseWriter, r *http.Request) {
 type configReadingBody struct {
 	ReadOnArchive *bool `json:"read_on_archive"`
 	ReadOnTrash   *bool `json:"read_on_trash"`
+	ReadOnJunk    *bool `json:"read_on_junk"`
 }
 
 // putConfigReading chooses whether an email config marks its mail read before it is archived,
-// and before it is deleted, or follows the user's. See docs/reading.md.
+// before it is deleted, and before it is marked as spam, or follows the user's. See
+// docs/reading.md.
 func (s *Server) putConfigReading(w http.ResponseWriter, r *http.Request) {
 	var body configReadingBody
 	if !decode(w, r, &body) {
 		return
 	}
 	u := userOf(r)
-	if err := s.store.SetEmailConfigReading(r.Context(), u.ID, r.PathValue("id"), body.ReadOnArchive, body.ReadOnTrash); err != nil {
+	if err := s.store.SetEmailConfigReading(r.Context(), u.ID, r.PathValue("id"), body.ReadOnArchive, body.ReadOnTrash, body.ReadOnJunk); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -340,6 +344,7 @@ func (s *Server) putConfigReading(w http.ResponseWriter, r *http.Request) {
 type readingJSON struct {
 	ReadOnArchive bool `json:"read_on_archive"`
 	ReadOnTrash   bool `json:"read_on_trash"`
+	ReadOnJunk    bool `json:"read_on_junk"`
 }
 
 func (s *Server) reading(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +357,7 @@ func (s *Server) reading(w http.ResponseWriter, r *http.Request) {
 }
 
 // putReading chooses, for every email config that does not choose for itself, whether mail is
-// marked read before it is archived, and before it is deleted.
+// marked read before it is archived, before it is deleted, and before it is marked as spam.
 func (s *Server) putReading(w http.ResponseWriter, r *http.Request) {
 	var body readingJSON
 	if !decode(w, r, &body) {

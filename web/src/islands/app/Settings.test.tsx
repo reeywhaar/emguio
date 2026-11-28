@@ -130,6 +130,7 @@ const work: EmailConfig = {
   off: false,
   read_on_archive: null,
   read_on_trash: null,
+  read_on_junk: null,
 };
 
 /** The Change of the Settings section headed so. */
@@ -163,6 +164,7 @@ beforeEach(() => {
   getReading.mockResolvedValue({
     read_on_archive: false,
     read_on_trash: false,
+    read_on_junk: false,
   });
   putReading.mockImplementation(async (body: unknown) => body);
   putPushSettings.mockImplementation(async (body: unknown) => body);
@@ -552,18 +554,23 @@ describe("settings", () => {
     expect(open.queryByText(/^from/)).toBeNull();
   });
 
-  it("chooses for every account whether archived and deleted mail is marked read", async () => {
+  it("chooses for every account whether archived, deleted and spam mail is marked read", async () => {
     mount(<Settings editing={null} />);
     const section = within(
       (await screen.findByRole("heading", { name: "Reading" })).closest(
         "section",
       )!,
     );
-    await section.findByText("Archiving and deleting leave mail as it is");
+    await section.findByText(
+      "Archiving, deleting and marking spam leave mail as it is",
+    );
     fireEvent.click(section.getByRole("button", { name: "Change" }));
     const dialog = within(await screen.findByRole("form", { name: "Reading" }));
     fireEvent.click(
       dialog.getByRole("switch", { name: "Mark read when deleting" }),
+    );
+    fireEvent.click(
+      dialog.getByRole("switch", { name: "Mark read when marking spam" }),
     );
     expect(putReading).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -571,9 +578,10 @@ describe("settings", () => {
       expect(putReading).toHaveBeenCalledWith({
         read_on_archive: false,
         read_on_trash: true,
+        read_on_junk: true,
       }),
     );
-    await section.findByText("Deleted mail is marked read");
+    await section.findByText("Deleted and spam mail is marked read");
   });
 
   // Its own choice, or as set for all, which the choice says.
@@ -596,6 +604,7 @@ describe("settings", () => {
       expect(putConfigReading).toHaveBeenCalledWith("ec_1", {
         read_on_archive: true,
         read_on_trash: null,
+        read_on_junk: null,
       }),
     );
     await waitFor(() => expect(archived.value).toBe("read"));

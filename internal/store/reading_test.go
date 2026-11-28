@@ -17,25 +17,25 @@ func TestReadingIsTheUsersAndEachEmailConfigCanChooseOtherwise(t *testing.T) {
 	if got, err := st.Reading(ctx, u.ID); err != nil || got.ReadOnArchive || got.ReadOnTrash {
 		t.Fatalf("a new user's reading %+v, %v", got, err)
 	}
-	if err := st.SetReading(ctx, u.ID, Reading{ReadOnArchive: true}); err != nil {
+	if err := st.SetReading(ctx, u.ID, Reading{ReadOnArchive: true, ReadOnJunk: true}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := st.Reading(ctx, u.ID); !got.ReadOnArchive || got.ReadOnTrash {
+	if got, _ := st.Reading(ctx, u.ID); !got.ReadOnArchive || got.ReadOnTrash || !got.ReadOnJunk {
 		t.Errorf("kept %+v", got)
 	}
 
 	if got, _ := st.EmailConfig(ctx, u.ID, cfg.ID); got.ReadOnArchive != nil || got.ReadOnTrash != nil {
 		t.Fatalf("a new config chooses %v, %v", got.ReadOnArchive, got.ReadOnTrash)
 	}
-	no := false
-	if err := st.SetEmailConfigReading(ctx, u.ID, cfg.ID, &no, nil); err != nil {
+	no, yes := false, true
+	if err := st.SetEmailConfigReading(ctx, u.ID, cfg.ID, &no, nil, &yes); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := st.EmailConfig(ctx, u.ID, cfg.ID)
-	if got.ReadOnArchive == nil || *got.ReadOnArchive || got.ReadOnTrash != nil {
-		t.Errorf("chose %v, %v", got.ReadOnArchive, got.ReadOnTrash)
+	if got.ReadOnArchive == nil || *got.ReadOnArchive || got.ReadOnTrash != nil || got.ReadOnJunk == nil || !*got.ReadOnJunk {
+		t.Errorf("chose %v, %v, %v", got.ReadOnArchive, got.ReadOnTrash, got.ReadOnJunk)
 	}
-	if err := st.SetEmailConfigReading(ctx, u.ID, "ec_nope", nil, nil); !errors.Is(err, ErrNotFound) {
+	if err := st.SetEmailConfigReading(ctx, u.ID, "ec_nope", nil, nil, nil); !errors.Is(err, ErrNotFound) {
 		t.Errorf("another's config: %v", err)
 	}
 }
@@ -50,7 +50,7 @@ func TestAnEditedEmailConfigKeepsWhatItsFormDoesNotHold(t *testing.T) {
 		t.Fatal(err)
 	}
 	yes := true
-	st.SetEmailConfigReading(ctx, u.ID, cfg.ID, nil, &yes)
+	st.SetEmailConfigReading(ctx, u.ID, cfg.ID, nil, &yes, nil)
 	st.SetEmailConfigOff(ctx, u.ID, cfg.ID, true)
 	edited, err := st.UpdateEmailConfig(ctx, u.ID, cfg.ID, draft())
 	if err != nil {

@@ -493,8 +493,8 @@ function FolderList({
   const ask = useAsk(config);
   const readOn = useReadOn(config);
   const archiveTo = useArchiveTo(config);
-  // Mail dropped on a folder goes there as a move to it would, read first where archiving or
-  // deleting is set to; one open beside the list has gone, and so has the pane.
+  // Mail dropped on a folder goes there as a move to it would, read first where archiving,
+  // deleting or marking spam is set to; one open beside the list has gone, and so has the pane.
   const take = (d: Dragged, dest: Mailbox) => {
     const to = targets(boxes, d.mailbox, archiveTo);
     const read =
@@ -502,7 +502,9 @@ function FolderList({
         ? readOn.archive
         : dest.id === to.trash?.id
           ? readOn.trash
-          : false;
+          : dest.id === to.spam?.id
+            ? readOn.junk
+            : false;
     ask(moveJobs(config, d.mailbox, d.messages, dest, { read }));
     d.dropped?.();
     if (open && d.messages.some((m) => m.id === open)) {

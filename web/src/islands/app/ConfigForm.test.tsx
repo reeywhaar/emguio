@@ -54,6 +54,7 @@ const saved: EmailConfig = {
   off: false,
   read_on_archive: null,
   read_on_trash: null,
+  read_on_junk: null,
 };
 
 beforeEach(() => {

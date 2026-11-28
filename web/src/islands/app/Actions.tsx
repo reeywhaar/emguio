@@ -51,12 +51,13 @@ import { go, paths } from "@app/islands/app/route";
 import { SIDE_BY_SIDE } from "@app/media";
 
 /**
- * Whether a config's mail is marked read before it is archived, and before it is deleted: its own
+ * Whether a config's mail is marked read before it is archived, deleted or marked spam: its own
  * choice, or else the user's. See docs/reading.md.
  */
 export function useReadOn(config: string): {
   archive: boolean;
   trash: boolean;
+  junk: boolean;
 } {
   const configs = useQuery({
     queryKey: qk.emailConfigs,
@@ -67,6 +68,7 @@ export function useReadOn(config: string): {
   return {
     archive: c?.read_on_archive ?? reading.data?.read_on_archive ?? false,
     trash: c?.read_on_trash ?? reading.data?.read_on_trash ?? false,
+    junk: c?.read_on_junk ?? reading.data?.read_on_junk ?? false,
   };
 }
 
@@ -252,7 +254,7 @@ export function Actions({
           ? () => moveTo(to.archive!, false, readOn.archive)
           : undefined,
         remove,
-        spam: to.spam ? () => moveTo(to.spam!) : undefined,
+        spam: to.spam ? () => moveTo(to.spam!, false, readOn.junk) : undefined,
         notSpam: to.notSpam ? () => moveTo(to.notSpam!) : undefined,
         star,
         seen: markSeen,

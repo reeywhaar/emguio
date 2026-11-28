@@ -137,6 +137,7 @@ const work: EmailConfig = {
   off: false,
   read_on_archive: null,
   read_on_trash: null,
+  read_on_junk: null,
 };
 
 const box = (
@@ -191,6 +192,7 @@ beforeEach(() => {
   getReading.mockResolvedValue({
     read_on_archive: false,
     read_on_trash: false,
+    read_on_junk: false,
   });
   getMessages.mockResolvedValue({
     messages: [
@@ -1347,6 +1349,7 @@ describe("the mail view", () => {
       getReading.mockResolvedValue({
         read_on_archive: true,
         read_on_trash: false,
+        read_on_junk: false,
       });
       getEmailConfigsByIdMailboxes.mockResolvedValue([
         ...boxes,
@@ -1382,6 +1385,47 @@ describe("the mail view", () => {
         ["m_1", "seen", true],
         ["m_1", "move", true],
         ["m_2", "move", true],
+      ]);
+    });
+
+    // Marked spam, the unread are asked read first where that is chosen, as archiving does.
+    it("marks a selection read before marking it spam, where that is chosen", async () => {
+      getReading.mockResolvedValue({
+        read_on_archive: false,
+        read_on_trash: false,
+        read_on_junk: true,
+      });
+      getEmailConfigsByIdMailboxes.mockResolvedValue([
+        ...boxes,
+        box("mb_junk", ["Junk"], "junk"),
+      ]);
+      getMessages.mockResolvedValue({
+        messages: [
+          message("m_1", "First", { seen: false }),
+          message("m_2", "Second"),
+        ],
+      });
+      postJob.mockImplementation(take);
+      await start();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Spam" }).hasAttribute("disabled"),
+        ).toBe(false),
+      );
+      await waitFor(() => expect(getReading).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole("button", { name: "Spam" }));
+      await waitFor(() => expect(postJobsRequest).toHaveBeenCalledTimes(1));
+      expect(
+        (postJobsRequest.mock.calls[0]![0] as JobDraft[]).map((j) => [
+          j.message,
+          j.kind,
+          j.target,
+        ]),
+      ).toEqual([
+        ["m_1", "seen", ""],
+        ["m_1", "move", "mb_junk"],
+        ["m_2", "move", "mb_junk"],
       ]);
     });
 

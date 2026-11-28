@@ -46,11 +46,11 @@ server that names none, or names one other than the one wanted. Saved with
 `PUT /api/email-configs/{id}/archive` and nothing else about the account, so its sessions go on as
 they are; a folder the server later drops goes back to the server's.
 
-## Archiving or deleting can mark mail read first
+## Archiving, deleting or marking as spam can mark mail read first
 
 Unread mail put away stays unread on the server, and every other client counts it. So a user can
-choose to have it marked read as it goes: when it is archived, and when it is deleted to Trash,
-each on its own. The choice is the user's, in Settings under Reading, and each mail account can
+choose to have it marked read as it goes: when it is archived, when it is deleted to Trash, and
+when it is marked as spam, each on its own. The choice is the user's, in Settings under Reading, and each mail account can
 follow it or choose for itself on its card: a newsletter account read as it is thrown away, a work
 account left as it was.
 

@@ -13,20 +13,27 @@ import { Dummy } from "@app/components/Dummy";
 import { Select } from "@app/components/Field";
 import { Switch } from "@app/components/Switch";
 
-/** What archiving and deleting do to unread mail, in a few words. */
+/** What archiving, deleting and marking spam do to unread mail, in a few words. */
 function summaryOf(r: Settings): string {
-  if (r.read_on_archive && r.read_on_trash) {
-    return "Archived and deleted mail is marked read";
+  const marked = [
+    r.read_on_archive ? "archived" : "",
+    r.read_on_trash ? "deleted" : "",
+    r.read_on_junk ? "spam" : "",
+  ].filter(Boolean);
+  if (marked.length === 0) {
+    return "Archiving, deleting and marking spam leave mail as it is";
   }
-  if (r.read_on_archive) return "Archived mail is marked read";
-  if (r.read_on_trash) return "Deleted mail is marked read";
-  return "Archiving and deleting leave mail as it is";
+  const listed =
+    marked.length === 1
+      ? marked[0]!
+      : `${marked.slice(0, -1).join(", ")} and ${marked[marked.length - 1]}`;
+  return `${listed[0]!.toUpperCase()}${listed.slice(1)} mail is marked read`;
 }
 
 /**
- * Whether unread mail is marked read as it is archived, and as it is deleted, for every mail
- * account that does not choose for itself: in a line, and chosen in a dialog. See
- * docs/reading.md.
+ * Whether unread mail is marked read as it is archived, as it is deleted, and as it is marked
+ * spam, for every mail account that does not choose for itself: in a line, and chosen in a
+ * dialog. See docs/reading.md.
  */
 export function Reading() {
   const [opened, setOpened] = useState(0);
@@ -71,7 +78,7 @@ export function Reading() {
   );
 }
 
-/** Both choices, changed together and saved at once. */
+/** The choices, changed together and saved at once. */
 function ReadingDialog({
   reading,
   open,
@@ -144,6 +151,16 @@ function ReadingDialog({
             onChange={(on) => setDraft({ ...draft, read_on_trash: on })}
           />
         </Choice>
+        <Choice
+          title="Mark read when marking spam"
+          note="Unread mail you move to Junk is marked read first."
+        >
+          <Switch
+            on={draft.read_on_junk}
+            label="Mark read when marking spam"
+            onChange={(on) => setDraft({ ...draft, read_on_junk: on })}
+          />
+        </Choice>
         <p className="text-xs text-muted">
           A mail account can choose otherwise on its card.
         </p>
@@ -152,12 +169,19 @@ function ReadingDialog({
   );
 }
 
+/** What each choice is called on an account's card. */
+const labels = {
+  read_on_archive: "When archived",
+  read_on_trash: "When deleted",
+  read_on_junk: "When marked spam",
+};
+
 const choiceOf = (v: boolean | null) =>
   v === null ? "" : v ? "read" : "leave";
 const valueOf = (choice: string) => (choice === "" ? null : choice === "read");
 
 /**
- * Whether one config's mail is marked read as it is archived, or as it is deleted: as set for
+ * Whether one config's mail is marked read as it is archived, deleted or marked spam: as set for
  * all, or its own. Saved as it is chosen.
  */
 export function ReadOn({
@@ -165,7 +189,7 @@ export function ReadOn({
   which,
 }: {
   config: EmailConfig;
-  which: "read_on_archive" | "read_on_trash";
+  which: "read_on_archive" | "read_on_trash" | "read_on_junk";
 }) {
   const client = useQueryClient();
   const reading = useQuery({ queryKey: qk.reading, queryFn: getReading });
@@ -174,6 +198,7 @@ export function ReadOn({
       putEmailConfigsByIdReading(config.id, {
         read_on_archive: config.read_on_archive,
         read_on_trash: config.read_on_trash,
+        read_on_junk: config.read_on_junk,
         [which]: valueOf(choice),
       }),
     onSuccess: (saved) =>
@@ -186,9 +211,7 @@ export function ReadOn({
     <div className="flex flex-col gap-1">
       <Select
         size="bar"
-        aria-label={
-          which === "read_on_archive" ? "When archived" : "When deleted"
-        }
+        aria-label={labels[which]}
         className="max-w-full sm:max-w-72"
         value={choose.isPending ? choose.variables : choiceOf(config[which])}
         disabled={choose.isPending}

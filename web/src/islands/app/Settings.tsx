@@ -463,6 +463,9 @@ function Details({
         <Row label="When deleted">
           <ReadOn config={config} which="read_on_trash" />
         </Row>
+        <Row label="When marked spam">
+          <ReadOn config={config} which="read_on_junk" />
+        </Row>
         <Row label="Notify">
           <Delivery config={config} />
         </Row>
