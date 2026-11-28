@@ -85,8 +85,11 @@ type Sizes = { room: number; widths: Record<string, number>; button: number };
 const tab =
   "inline-flex min-h-8 items-center gap-1.5 rounded-md px-1.5 text-sm whitespace-nowrap sm:px-2.5";
 
-/** The open account in the row, drawn as the others are but marked. */
-const open = `${tab} bg-shade font-medium hover:bg-fill`;
+/**
+ * The open account in the row, marked by its ground and its darker text, never by weight: as wide
+ * as when it is not open, so the row stays where it is as another is opened.
+ */
+const open = `${tab} bg-shade text-fg hover:bg-fill`;
 
 /**
  * An account as the header names it, on two short lines rather than one long one where it can be:
@@ -112,7 +115,7 @@ function Label({ config }: { config: EmailConfig }) {
   );
 }
 
-/** Two short lines, the first marked; spoken is what a screen reader hears between them. */
+/** Two short lines in the tab's own color, the second fainter; spoken is heard between them. */
 function Lines({
   top,
   under,
@@ -124,9 +127,9 @@ function Lines({
 }) {
   return (
     <span className="flex flex-col text-left text-xs leading-tight">
-      <span className="font-semibold text-fg">{top}</span>
+      <span>{top}</span>
       {spoken ? <span className="sr-only">{spoken}</span> : null}
-      <span className="text-muted">{under}</span>
+      <span className="opacity-70">{under}</span>
     </span>
   );
 }
