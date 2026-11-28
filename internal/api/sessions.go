@@ -21,6 +21,8 @@ type sessionJSON struct {
 	// Device is a guess and UserAgent what it was guessed from.
 	Device    string `json:"device"`
 	UserAgent string `json:"user_agent"`
+	// IP is where it was last used from, as of its last slide; empty for one from before.
+	IP string `json:"ip"`
 }
 
 // listSessions is the user's sign-ins, most recently used first.
@@ -41,6 +43,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 			ExpiresAt:  sess.ExpiresAt.Unix(),
 			Device:     describeAgent(sess.UserAgent),
 			UserAgent:  sess.UserAgent,
+			IP:         sess.IP,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": out})

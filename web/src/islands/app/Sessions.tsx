@@ -66,9 +66,15 @@ export function Sessions() {
                       · last used {when(s.last_seen_at)}
                     </span>
                   )}
-                  {/* A guess, so what it was guessed from is under it, whole. */}
-                  <span className="scroll-thin block overflow-x-auto text-xs whitespace-nowrap text-faint">
-                    {s.user_agent}
+                  {/* Where it was used from, then what the guess was made from, whole: only that
+                      scrolls, so the address stays in view. */}
+                  <span className="flex min-w-0 gap-1 text-xs text-faint">
+                    {s.ip ? (
+                      <span className="shrink-0 tabular-nums">{s.ip} ·</span>
+                    ) : null}
+                    <span className="scroll-thin min-w-0 overflow-x-auto whitespace-nowrap">
+                      {s.user_agent}
+                    </span>
                   </span>
                 </span>
                 <Button

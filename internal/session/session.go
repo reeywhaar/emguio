@@ -20,10 +20,12 @@ const CookieName = "emguio_auth"
 type Manager struct {
 	store  *store.Store
 	secure bool
+	// ip is the address a request came from, as the proxies in front say it: kept on its session.
+	ip func(*http.Request) string
 }
 
-func New(st *store.Store, secure bool) *Manager {
-	return &Manager{store: st, secure: secure}
+func New(st *store.Store, secure bool, ip func(*http.Request) string) *Manager {
+	return &Manager{store: st, secure: secure, ip: ip}
 }
 
 // Issue signs somebody in and sets the cookie.
@@ -32,7 +34,7 @@ func (m *Manager) Issue(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return err
 	}
-	sess, err := m.store.CreateSession(ctx, token, userID, r.UserAgent())
+	sess, err := m.store.CreateSession(ctx, token, userID, r.UserAgent(), m.ip(r))
 	if err != nil {
 		return err
 	}
@@ -64,7 +66,7 @@ func (m *Manager) Resolve(ctx context.Context, w http.ResponseWriter, r *http.Re
 	if m.store.Now().Sub(sess.LastSeenAt) < store.SessionRefresh {
 		return sess, nil
 	}
-	expires, moved, err := m.store.TouchSession(ctx, token, r.UserAgent())
+	expires, moved, err := m.store.TouchSession(ctx, token, r.UserAgent(), m.ip(r))
 	if err != nil {
 		// Best effort: a window that did not slide now slides on the next request, and a read is
 		// not refused for want of a bookkeeping write.

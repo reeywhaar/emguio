@@ -30,6 +30,7 @@ const session = (extra: Partial<Session>): Session => ({
   expires_at: 1790600000,
   device: "Firefox on a Mac",
   user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Firefox/140.0",
+  ip: "203.0.113.7",
   ...extra,
 });
 
@@ -40,7 +41,11 @@ describe("sessions", () => {
   it("signs out a session, and this browser after asking", async () => {
     getSessions.mockResolvedValue([
       session({ id: "s_000000000001", current: true }),
-      session({ id: "s_000000000002", device: "Safari on iPhone" }),
+      session({
+        id: "s_000000000002",
+        device: "Safari on iPhone",
+        ip: "198.51.100.1",
+      }),
     ]);
     deleteSessionsById.mockResolvedValue(undefined);
     postAuthLogout.mockResolvedValue(undefined);
@@ -52,6 +57,7 @@ describe("sessions", () => {
     ];
     within(here).getByText(/this browser/);
     within(there).getByText(/last used/);
+    within(there).getByText("198.51.100.1 ·");
 
     fireEvent.click(within(there).getByRole("button", { name: "Sign out" }));
     await waitFor(() =>

@@ -29,6 +29,9 @@ func TestTheSessionListShowsThisBrowserAndTheOthers(t *testing.T) {
 		if m["user_agent"] == "" {
 			t.Error("the user agent is not shown beside the guess")
 		}
+		if m["ip"] != "192.0.2.1" {
+			t.Errorf("ip = %v, want where the request came from", m["ip"])
+		}
 	}
 	if current != 1 {
 		t.Errorf("%d rows are the current session", current)

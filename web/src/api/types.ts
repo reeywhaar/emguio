@@ -52,6 +52,8 @@ export type Session = {
   /** A guess at the browser and platform, from user_agent. */
   device: string;
   user_agent: string;
+  /** Where it was last used from; empty for one from before this was kept. */
+  ip: string;
 };
 
 /** How a server is secured: TLS from the first byte, or upgraded with STARTTLS. */

@@ -38,6 +38,7 @@ var all = []Migration{
 	readOnMove,
 	sealKeys,
 	readOnJunk,
+	sessionIP,
 }
 
 // exec runs a statement block as one migration.

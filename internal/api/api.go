@@ -102,12 +102,11 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		docs = NewDocs(nil, nil, "")
 	}
 	s := &Server{
-		cfg:      cfg,
-		log:      log,
-		store:    st,
-		sessions: session.New(st, cfg.Secure),
-		spa:      spa,
-		mux:      http.NewServeMux(),
+		cfg:   cfg,
+		log:   log,
+		store: st,
+		spa:   spa,
+		mux:   http.NewServeMux(),
 
 		connector: connect.New(cfg.AllowNetworks),
 		mirror:    mirror,
@@ -127,6 +126,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, spa *SPA, docs *
 		writeDeadline: WriteDeadline,
 	}
 
+	s.sessions = session.New(st, cfg.Secure, s.clientIP)
 	s.web = webClient(s.connector)
 	s.finder = finderOf(s.connector)
 

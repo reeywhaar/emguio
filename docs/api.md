@@ -1166,11 +1166,14 @@ The user's sessions, the most recently used first:
 ```json
 {"sessions": [{"id": "s_3f9a1c0b7e2d", "current": true, "created_at": 1790000000,
   "last_seen_at": 1790003600, "expires_at": 1790608400, "device": "Firefox on a Mac",
-  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Firefox/140.0"}]}
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Firefox/140.0",
+  "ip": "203.0.113.7"}]}
 ```
 
 `current` is the one this request came with. `device` is a guess at the browser and platform, and
-`user_agent` what it was guessed from. An `id` is derived from the session, never the cookie's
+`user_agent` what it was guessed from. `ip` is the address it was last used from, read through the
+trusted proxies as [deploy.md](deploy.md) says, and noted as the session slides, at most hourly;
+empty for a session from before it was kept. An `id` is derived from the session, never the cookie's
 value. A session is good for seven days from when it was last used.
 
 ```

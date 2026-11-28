@@ -86,7 +86,7 @@ func TestOnlyWhatPeopleChooseCountsAsAChange(t *testing.T) {
 		t.Fatal("a new user is not a change")
 	}
 	before = st.Changes()
-	if _, err := st.CreateSession(ctx, "token", u.ID, "curl/8"); err != nil {
+	if _, err := st.CreateSession(ctx, "token", u.ID, "curl/8", "203.0.113.7"); err != nil {
 		t.Fatal(err)
 	}
 	if st.Changes() != before {

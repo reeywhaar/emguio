@@ -16,7 +16,7 @@ func TestALapsedSessionIsNotASession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateSession(ctx, "cookie", u.ID, "Firefox"); err != nil {
+	if _, err := st.CreateSession(ctx, "cookie", u.ID, "Firefox", "203.0.113.7"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -39,18 +39,18 @@ func TestASessionSlidesAtMostOnceARefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateSession(ctx, "cookie", u.ID, "Firefox"); err != nil {
+	if _, err := st.CreateSession(ctx, "cookie", u.ID, "Firefox", "203.0.113.7"); err != nil {
 		t.Fatal(err)
 	}
 
 	st.SetClock(func() time.Time { return at.Add(SessionRefresh / 2) })
-	if _, moved, err := st.TouchSession(ctx, "cookie", "Firefox"); err != nil || moved {
+	if _, moved, err := st.TouchSession(ctx, "cookie", "Firefox", "203.0.113.7"); err != nil || moved {
 		t.Fatalf("touch inside the refresh = %v, %v; want nothing moved", moved, err)
 	}
 
 	later := at.Add(SessionRefresh)
 	st.SetClock(func() time.Time { return later })
-	expires, moved, err := st.TouchSession(ctx, "cookie", "Firefox")
+	expires, moved, err := st.TouchSession(ctx, "cookie", "Firefox", "203.0.113.7")
 	if err != nil || !moved {
 		t.Fatalf("touch after the refresh = %v, %v; want it moved", moved, err)
 	}
@@ -67,7 +67,7 @@ func TestDeletingAUserTakesTheirSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateSession(ctx, "cookie", u.ID, "Firefox"); err != nil {
+	if _, err := st.CreateSession(ctx, "cookie", u.ID, "Firefox", "203.0.113.7"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.writer.Exec(`DELETE FROM users WHERE id = ?`, u.ID); err != nil {
@@ -88,16 +88,16 @@ func TestTheListIsLiveSessionsMostRecentFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.CreateSession(ctx, "old", u.ID, "Firefox")
+	st.CreateSession(ctx, "old", u.ID, "Firefox", "203.0.113.7")
 	st.SetClock(func() time.Time { return at.Add(SessionLifetime - time.Hour) })
-	st.CreateSession(ctx, "new", u.ID, "Safari")
+	st.CreateSession(ctx, "new", u.ID, "Safari", "198.51.100.1")
 	st.SetClock(func() time.Time { return at.Add(SessionLifetime) })
 
 	list, err := st.Sessions(ctx, u.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].ID != SessionID("new") || list[0].UserAgent != "Safari" {
+	if len(list) != 1 || list[0].ID != SessionID("new") || list[0].UserAgent != "Safari" || list[0].IP != "198.51.100.1" {
 		t.Errorf("sessions = %+v", list)
 	}
 	if err := st.RevokeSession(ctx, u.ID, "new"); !errors.Is(err, ErrInvalid) {
