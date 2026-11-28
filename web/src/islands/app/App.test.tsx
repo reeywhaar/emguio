@@ -241,6 +241,25 @@ describe("the application", () => {
     }
   });
 
+  // A name splits at its first / into two lines, and only there.
+  it("puts a name on two lines at its first slash", async () => {
+    getEmailConfigs.mockResolvedValue([
+      config("ec_1", "Work"),
+      { ...config("ec_2", "Home"), name: "Test/Kidsout/Old" },
+    ]);
+    const restore = measuring(1000);
+    try {
+      mount(<App />);
+      await screen.findByRole("navigation", { name: "Mail accounts" });
+      // Heard as it is written.
+      const link = row().getByRole("link", { name: "Test/Kidsout/Old" });
+      within(link).getByText("Test");
+      within(link).getByText("Kidsout/Old");
+    } finally {
+      restore();
+    }
+  });
+
   // Settings has no account open: each one in the row goes to its mail, a lone one too.
   it("goes to an account's mail from the header in Settings", async () => {
     getEmailConfigs.mockResolvedValue([config("ec_1", "Work")]);

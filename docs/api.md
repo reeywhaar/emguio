@@ -140,7 +140,7 @@ An email config:
 
 | field | |
 | --- | --- |
-| `name` | A label for it. May be empty. |
+| `name` | A label for it. May be empty, and the header then shows the address. The header puts it on two lines at its first `/`. |
 | `email` | The address mail is sent from. |
 | `sender_name` | The name sent beside the address. Empty sends the address alone. |
 | `incoming` | The IMAP server. `protocol` is always `imap`. |

@@ -89,16 +89,44 @@ const tab =
 const open = `${tab} bg-shade font-medium hover:bg-fill`;
 
 /**
- * An account as the header names it: by its name, or else by its address, the part before the @
- * over the rest, on two short lines rather than one long one.
+ * An account as the header names it, on two short lines rather than one long one where it can be:
+ * a name over the rest of it where it holds a /, its first one only, or else the address, the part
+ * before the @ over the rest.
  */
 function Label({ config }: { config: EmailConfig }) {
+  const name = config.name;
+  const slash = name.indexOf("/");
+  if (name && slash > 0 && slash < name.length - 1) {
+    return (
+      <Lines
+        top={name.slice(0, slash)}
+        under={name.slice(slash + 1)}
+        spoken="/"
+      />
+    );
+  }
   const at = config.email.lastIndexOf("@");
-  if (config.name || at <= 0) return <>{labelOf(config)}</>;
+  if (name || at <= 0) return <>{labelOf(config)}</>;
+  return (
+    <Lines top={config.email.slice(0, at)} under={config.email.slice(at)} />
+  );
+}
+
+/** Two short lines, the first marked; spoken is what a screen reader hears between them. */
+function Lines({
+  top,
+  under,
+  spoken = "",
+}: {
+  top: string;
+  under: string;
+  spoken?: string;
+}) {
   return (
     <span className="flex flex-col text-left text-xs leading-tight">
-      <span className="font-semibold text-fg">{config.email.slice(0, at)}</span>
-      <span className="text-muted">{config.email.slice(at)}</span>
+      <span className="font-semibold text-fg">{top}</span>
+      {spoken ? <span className="sr-only">{spoken}</span> : null}
+      <span className="text-muted">{under}</span>
     </span>
   );
 }

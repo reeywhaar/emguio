@@ -330,7 +330,10 @@ function Form({
               data-autofocus={editing ? undefined : true}
             />
           </Field>
-          <Field label="Name" hint="In the switcher. Empty shows the address.">
+          <Field
+            label="Name"
+            hint="In the switcher; a / starts a second line there. Empty shows the address."
+          >
             <TextField
               placeholder="Work"
               value={draft.name}
